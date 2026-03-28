@@ -3,12 +3,17 @@ services:
     name: platformer-buddies
     runtime: node
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: SECRET_KEY
         generateValue: true
-      - key: PORT
-        value: 5000
-
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATA_DIR
+        value: data
+      - key: CHUNK_DIR
+        value: secure_asset_chunks
