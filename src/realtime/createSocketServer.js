@@ -9,7 +9,9 @@ const { createGameServer } = require('../serverState/createGameServer');
  */
 function createSocketServer(input) {
   const io = new Server(input.httpServer, {
+    path: '/socket.io/',
     cors: { origin: '*' },
+    transports: ['websocket', 'polling'],
     pingTimeout: 60000,
     pingInterval: 25000,
   });

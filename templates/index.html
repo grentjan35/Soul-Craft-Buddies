@@ -660,11 +660,13 @@
 
     <script>
         // AutoConnect FALSE prevents the socket from firing until we're ready!
-        // Configure for Render environment with better transport options
+        // Render is much more reliable when we skip long-polling and open a WebSocket directly.
+        const prefersDirectWebSocket = location.protocol === 'https:' || location.hostname.endsWith('.onrender.com');
         const socket = io({ 
             autoConnect: false,
-            transports: ['polling', 'websocket'],  // Try polling first for Render compatibility
-            upgrade: true,  // Allow upgrade to websocket if available
+            path: '/socket.io/',
+            transports: prefersDirectWebSocket ? ['websocket'] : ['websocket', 'polling'],
+            upgrade: !prefersDirectWebSocket,
             rememberUpgrade: true,
             timeout: 20000,
             forceNew: false

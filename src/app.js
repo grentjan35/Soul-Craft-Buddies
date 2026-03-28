@@ -31,6 +31,13 @@ async function createApp(config) {
     })
   );
 
+  app.use('/api', (req, res) => {
+    res.status(404).json({
+      error: 'Not Found',
+      path: req.path,
+    });
+  });
+
   return app;
 }
 
