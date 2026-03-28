@@ -686,9 +686,74 @@
         let frameInterval = 1000 / fpsCap;
 
         // Token management for secure asset access
+        let assetSessionTokenPromise = null;
+
+        async function getAssetSessionToken(forceRefresh = false) {
+            if (!assetSessionTokenPromise || forceRefresh) {
+                assetSessionTokenPromise = fetch('/api/asset_session', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                }).then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to get asset session: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    if (!data.token) {
+                        throw new Error('Asset session token missing from response');
+                    }
+
+                    return data.token;
+                }).catch((error) => {
+                    assetSessionTokenPromise = null;
+                    throw error;
+                });
+            }
+
+            return assetSessionTokenPromise;
+        }
+
+        async function fetchWithAssetSession(url, options = {}) {
+            const originalHeaders = options.headers || {};
+            let sessionToken = await getAssetSessionToken();
+            let response = await fetch(url, {
+                ...options,
+                headers: {
+                    ...originalHeaders,
+                    'X-Asset-Session': sessionToken
+                }
+            });
+
+            if (response.status === 401) {
+                sessionToken = await getAssetSessionToken(true);
+                response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        ...originalHeaders,
+                        'X-Asset-Session': sessionToken
+                    }
+                });
+            }
+
+            return response;
+        }
+
+        async function fetchProtectedBlob(url, mimeType) {
+            const response = await fetchWithAssetSession(url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch protected asset: ${response.status}`);
+            }
+
+            const bytes = await response.arrayBuffer();
+            return new Blob([bytes], { type: mimeType });
+        }
+
         async function getCharacterToken(characterName) {
             try {
-                const response = await fetch('/api/request_character_token', {
+                const response = await fetchWithAssetSession('/api/request_character_token', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -710,7 +775,7 @@
 
         async function getEnvironmentToken() {
             try {
-                const response = await fetch('/api/request_environment_token', {
+                const response = await fetchWithAssetSession('/api/request_environment_token', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -984,16 +1049,33 @@
             
             // Load background video using tokenized endpoint for security
             const video = document.createElement('video');
+            let homescreenVideoUrl = null;
+
+            function revokeHomescreenVideoUrl() {
+                if (homescreenVideoUrl) {
+                    URL.revokeObjectURL(homescreenVideoUrl);
+                    homescreenVideoUrl = null;
+                }
+            }
             
             // Get environment token and load video
             async function loadVideo() {
                 try {
                     const environmentToken = await getEnvironmentToken();
-                    video.src = `/api/homescreen_video/${environmentToken}`;
+                    const videoBlob = await fetchProtectedBlob(`/api/homescreen_video/${environmentToken}`, 'video/mp4');
+                    revokeHomescreenVideoUrl();
+                    homescreenVideoUrl = URL.createObjectURL(videoBlob);
+                    video.src = homescreenVideoUrl;
+                    video.preload = 'auto';
                     video.loop = true;
                     video.muted = true;
                     video.playsInline = true;
                     video.autoplay = true;
+                    video.addEventListener('loadeddata', () => {
+                        // Keep the already-loaded media playable, but kill the blob URL itself
+                        // so opening it directly becomes much less useful.
+                        revokeHomescreenVideoUrl();
+                    }, { once: true });
                     video.play().catch(e => console.log('Video autoplay failed:', e));
                 } catch (error) {
                     console.error('Failed to load homescreen video:', error);
@@ -1001,6 +1083,10 @@
             }
             
             loadVideo();
+
+            window.addEventListener('beforeunload', () => {
+                revokeHomescreenVideoUrl();
+            });
             
             // Create texture from video
             const texture = menuGL.createTexture();
@@ -1486,7 +1572,7 @@
                 return sessionAssetCache.get(assetPath);
             }
 
-            const response = await fetch('/api/request_asset', {
+            const response = await fetchWithAssetSession('/api/request_asset', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ path: assetPath })
@@ -1495,11 +1581,16 @@
             if (data.error) throw new Error(data.error);
 
             const { token, chunk_ids, total_size } = data;
+            const assetSessionToken = await getAssetSessionToken();
             
             // Load chunks in parallel with concurrency limit
             const chunkPromises = chunk_ids.map(chunk_id => 
                 withConcurrencyLimit(async () => {
-                    const chunkRes = await fetchWithRetry(`/api/asset_chunk/${token}/${chunk_id}`);
+                    const chunkRes = await fetchWithRetry(`/api/asset_chunk/${token}/${chunk_id}`, {
+                        headers: {
+                            'X-Asset-Session': assetSessionToken
+                        }
+                    });
                     const chunkData = await chunkRes.arrayBuffer();
                     return { chunk_id, data: chunkData };
                 })
@@ -1554,11 +1645,7 @@
                 // Load all assets in parallel using tokenized endpoint for security
                 const loadPromises = assetNames.map(async (name, index) => {
                     const assetUrl = `/api/character_assets/${characterToken}/${assignedCharacter}/${name}`;
-                    const response = await fetch(assetUrl);
-                    if (!response.ok) {
-                        throw new Error(`Failed to fetch asset ${name}: ${response.status}`);
-                    }
-                    const blob = await response.blob();
+                    const blob = await fetchProtectedBlob(assetUrl, 'image/png');
                     const asset = await createImageBitmap(blob);
                     characterAssets[name] = asset;
                     
@@ -1645,11 +1732,7 @@
                 // Load all assets in parallel using tokenized endpoint
                 const loadPromises = assetNames.map(async (name) => {
                     const assetUrl = `/api/character_assets/${characterToken}/${characterName}/${name}`;
-                    const response = await fetch(assetUrl);
-                    if (!response.ok) {
-                        throw new Error(`Failed to fetch asset ${name} for ${characterName}: ${response.status}`);
-                    }
-                    const blob = await response.blob();
+                    const blob = await fetchProtectedBlob(assetUrl, 'image/png');
                     const asset = await createImageBitmap(blob);
                     assets[name] = asset;
                     return asset;
@@ -1716,22 +1799,14 @@
                 // Load tileset image using tokenized endpoint for security
                 if (!tilesetImage) {
                     const environmentToken = await getEnvironmentToken();
-                    const tilesetResponse = await fetch(`/api/tileset/${environmentToken}`);
-                    if (!tilesetResponse.ok) {
-                        throw new Error(`Failed to fetch tileset: ${tilesetResponse.status}`);
-                    }
-                    const tilesetBlob = await tilesetResponse.blob();
+                    const tilesetBlob = await fetchProtectedBlob(`/api/tileset/${environmentToken}`, 'image/png');
                     tilesetImage = await createImageBitmap(tilesetBlob);
                 }
 
                 // Load background image using tokenized endpoint for security
                 if (!backgroundImage) {
                     const environmentToken = await getEnvironmentToken();
-                    const backgroundResponse = await fetch(`/api/background/${environmentToken}`);
-                    if (!backgroundResponse.ok) {
-                        throw new Error(`Failed to fetch background: ${backgroundResponse.status}`);
-                    }
-                    const backgroundBlob = await backgroundResponse.blob();
+                    const backgroundBlob = await fetchProtectedBlob(`/api/background/${environmentToken}`, 'image/png');
                     backgroundImage = await createImageBitmap(backgroundBlob);
                 }
 

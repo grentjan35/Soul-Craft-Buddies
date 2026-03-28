@@ -168,6 +168,7 @@
         const collisionCanvas = document.getElementById('collisionCanvas');
         const collisionCtx = collisionCanvas.getContext('2d');
         let tilesetImage = null;
+        let assetSessionTokenPromise = null;
 
         // Initialize map data
         function initMapData() {
@@ -180,8 +181,59 @@
             }
         }
 
+        async function getAssetSessionToken(forceRefresh = false) {
+            if (!assetSessionTokenPromise || forceRefresh) {
+                assetSessionTokenPromise = fetch('/api/asset_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                }).then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to get asset session: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    if (!data.token) {
+                        throw new Error('Asset session token missing from response');
+                    }
+
+                    return data.token;
+                }).catch((error) => {
+                    assetSessionTokenPromise = null;
+                    throw error;
+                });
+            }
+
+            return assetSessionTokenPromise;
+        }
+
+        async function fetchWithAssetSession(url, options = {}) {
+            const originalHeaders = options.headers || {};
+            let sessionToken = await getAssetSessionToken();
+            let response = await fetch(url, {
+                ...options,
+                headers: {
+                    ...originalHeaders,
+                    'X-Asset-Session': sessionToken
+                }
+            });
+
+            if (response.status === 401) {
+                sessionToken = await getAssetSessionToken(true);
+                response = await fetch(url, {
+                    ...options,
+                    headers: {
+                        ...originalHeaders,
+                        'X-Asset-Session': sessionToken
+                    }
+                });
+            }
+
+            return response;
+        }
+
         async function requestEnvironmentToken() {
-            const response = await fetch('/api/request_environment_token', {
+            const response = await fetchWithAssetSession('/api/request_environment_token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -202,13 +254,14 @@
         async function loadTileset() {
             try {
                 const environmentToken = await requestEnvironmentToken();
-                const response = await fetch(`/api/tileset/${environmentToken}`);
+                const response = await fetchWithAssetSession(`/api/tileset/${environmentToken}`);
 
                 if (!response.ok) {
                     throw new Error(`Failed to fetch tileset: ${response.status}`);
                 }
 
-                const blob = await response.blob();
+                const bytes = await response.arrayBuffer();
+                const blob = new Blob([bytes], { type: 'image/png' });
                 tilesetImage = await createImageBitmap(blob);
                 
                 initPalette();

@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -45,6 +46,77 @@ function webPathToAssetsRelativePath(webPath) {
 }
 
 /**
+ * Verifies the browser asset session header.
+ * Why: A token in the URL alone is easy to reuse in a new tab.
+ * Requiring a matching header forces assets through the app's JS fetch flow.
+ * @param {{secretKey: string, req: import('express').Request}} input
+ * @returns {{ok: true, sessionId: string} | {ok: false, status: number, reason: string}}
+ */
+function verifyAssetSession(input) {
+  const headerToken = String(input.req.get('x-asset-session') ?? '').trim();
+  if (!headerToken) {
+    return { ok: false, status: 403, reason: 'Access Denied' };
+  }
+
+  const verified = verifyToken({ secretKey: input.secretKey, token: headerToken });
+  if (!verified.ok) {
+    return {
+      ok: false,
+      status: verified.reason === 'Token expired' ? 401 : 403,
+      reason: 'Access Denied',
+    };
+  }
+
+  const payload = verified.payload;
+  if (payload.type !== 'asset_session' || typeof payload.sid !== 'string' || !payload.sid) {
+    return { ok: false, status: 403, reason: 'Access Denied' };
+  }
+
+  return { ok: true, sessionId: payload.sid };
+}
+
+/**
+ * Ensures an asset token was minted for the active asset session.
+ * @param {{payload: any, assetSessionId: string}} input
+ * @returns {boolean}
+ */
+function tokenMatchesAssetSession(input) {
+  return typeof input.payload?.asset_sid === 'string' && input.payload.asset_sid === input.assetSessionId;
+}
+
+/**
+ * Sends binary data with anti-preview headers so raw clicks are less useful.
+ * @param {{res: import('express').Response, fullPath: string, downloadName: string}} input
+ */
+function sendProtectedBinaryFile(input) {
+  let stat;
+  try {
+    stat = fs.statSync(input.fullPath);
+  } catch {
+    input.res.status(404).send('Not Found');
+    return;
+  }
+
+  input.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  input.res.setHeader('Pragma', 'no-cache');
+  input.res.setHeader('Expires', '0');
+  input.res.setHeader('Content-Type', 'application/octet-stream');
+  input.res.setHeader('X-Content-Type-Options', 'nosniff');
+  input.res.setHeader('Content-Disposition', `attachment; filename="${path.basename(input.downloadName)}"`);
+  input.res.setHeader('Content-Length', stat.size);
+
+  const stream = fs.createReadStream(input.fullPath);
+  stream.on('error', () => {
+    if (!input.res.headersSent) {
+      input.res.status(500).send('Server error');
+      return;
+    }
+    input.res.destroy();
+  });
+  stream.pipe(input.res);
+}
+
+/**
  * Creates the secure asset routes.
  * @param {{secretKey: string, projectRoot: string, staticDir: string, chunkDir: string, manifestPath: string}} deps
  * @returns {import('express').Router}
@@ -55,7 +127,27 @@ function createAssetsRouter(deps) {
   const manifestResult = loadManifest({ manifestPath: deps.manifestPath });
   const manifest = manifestResult.ok ? manifestResult.manifest : {};
 
+  router.post('/api/asset_session', (_req, res) => {
+    const token = signToken({
+      secretKey: deps.secretKey,
+      payload: {
+        type: 'asset_session',
+        sid: crypto.randomBytes(24).toString('hex'),
+      },
+      expiresInSeconds: 86_400,
+    });
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ token });
+  });
+
   router.post('/api/request_asset', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
     const assetPath = String(req.body?.path ?? '');
     if (!assetPath) {
       res.status(400).json({ error: 'No path provided' });
@@ -86,7 +178,12 @@ function createAssetsRouter(deps) {
     const assetInfo = manifest[assetPath];
     const token = signToken({
       secretKey: deps.secretKey,
-      payload: { path: assetPath, chunk_ids: assetInfo.chunk_ids, iat_ms: Date.now() },
+      payload: {
+        path: assetPath,
+        chunk_ids: assetInfo.chunk_ids,
+        iat_ms: Date.now(),
+        asset_sid: assetSession.sessionId,
+      },
       expiresInSeconds: 300,
     });
 
@@ -98,6 +195,12 @@ function createAssetsRouter(deps) {
   });
 
   router.post('/api/request_character_token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
     const character = String(req.body?.character ?? '');
     if (!character) {
       res.status(400).json({ error: 'Character name is required' });
@@ -112,17 +215,23 @@ function createAssetsRouter(deps) {
 
     const token = signToken({
       secretKey: deps.secretKey,
-      payload: { character },
+      payload: { character, asset_sid: assetSession.sessionId },
       expiresInSeconds: 60,
     });
 
     res.json({ token });
   });
 
-  router.post('/api/request_environment_token', (_req, res) => {
+  router.post('/api/request_environment_token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
     const token = signToken({
       secretKey: deps.secretKey,
-      payload: { type: 'environment' },
+      payload: { type: 'environment', asset_sid: assetSession.sessionId },
       expiresInSeconds: 60,
     });
 
@@ -130,6 +239,12 @@ function createAssetsRouter(deps) {
   });
 
   router.get('/api/asset/:token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send(assetSession.reason);
+      return;
+    }
+
     const token = String(req.params.token ?? '');
     const verified = verifyToken({ secretKey: deps.secretKey, token });
     if (!verified.ok) {
@@ -138,6 +253,11 @@ function createAssetsRouter(deps) {
     }
 
     const payload = verified.payload;
+    if (!tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })) {
+      res.status(403).send('Access Denied');
+      return;
+    }
+
     const assetPath = typeof payload.path === 'string' ? payload.path : '';
     if (!assetPath) {
       res.status(403).send('Invalid token');
@@ -156,10 +276,20 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.sendFile(resolved.fullPath);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: resolved.fullPath,
+      downloadName: path.basename(resolved.fullPath),
+    });
   });
 
   router.get('/api/asset_chunk/:token/:chunkId', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send(assetSession.reason);
+      return;
+    }
+
     const token = String(req.params.token ?? '');
     const chunkId = String(req.params.chunkId ?? '');
 
@@ -170,6 +300,10 @@ function createAssetsRouter(deps) {
     }
 
     const payload = verified.payload;
+    if (!tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })) {
+      res.status(403).send('Access Denied');
+      return;
+    }
 
     // Enforce Python-like short window for chunk download usage.
     // Python uses max_age=30 seconds for chunk token.
@@ -191,19 +325,31 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
-    const stream = fs.createReadStream(chunkPath);
-    stream.on('error', () => res.status(500).send('Server error'));
-    stream.pipe(res);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: chunkPath,
+      downloadName: `${chunkId}.bin`,
+    });
   });
 
   router.get('/api/tileset/:token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const token = String(req.params.token ?? '');
     const verified = verifyToken({ secretKey: deps.secretKey, token });
     if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    if (
+      verified.payload.type !== 'environment' ||
+      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
+    ) {
       res.status(403).send('<h1>Access Denied</h1>');
       return;
     }
@@ -214,16 +360,31 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(tilesetPath);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: tilesetPath,
+      downloadName: 'tileset.png',
+    });
   });
 
   router.get('/api/background/:token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const token = String(req.params.token ?? '');
     const verified = verifyToken({ secretKey: deps.secretKey, token });
     if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    if (
+      verified.payload.type !== 'environment' ||
+      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
+    ) {
       res.status(403).send('<h1>Access Denied</h1>');
       return;
     }
@@ -234,16 +395,31 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(bgPath);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: bgPath,
+      downloadName: 'background.png',
+    });
   });
 
   router.get('/api/homescreen_video/:token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const token = String(req.params.token ?? '');
     const verified = verifyToken({ secretKey: deps.secretKey, token });
     if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    if (
+      verified.payload.type !== 'environment' ||
+      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
+    ) {
       res.status(403).send('<h1>Access Denied</h1>');
       return;
     }
@@ -254,13 +430,20 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(videoPath);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: videoPath,
+      downloadName: 'homescreen.mp4',
+    });
   });
 
   router.get('/api/character_assets/:token/:character/:asset', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const token = String(req.params.token ?? '');
     const character = String(req.params.character ?? '');
     const asset = String(req.params.asset ?? '');
@@ -272,7 +455,10 @@ function createAssetsRouter(deps) {
     }
 
     const payload = verified.payload;
-    if (payload.character !== character) {
+    if (
+      payload.character !== character ||
+      !tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })
+    ) {
       res.status(403).send('<h1>Access Denied</h1>');
       return;
     }
@@ -283,10 +469,11 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(assetPath);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: assetPath,
+      downloadName: `${character}_${asset}.png`,
+    });
   });
 
   router.get('/api/character_metadata/:character', (req, res) => {
