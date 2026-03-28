@@ -1,0 +1,3619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Platformer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            width: 100vw; 
+            height: 100vh; 
+            overflow: hidden; 
+            font-family: 'EB Garamond', serif;
+            background-color: #000; /* Ensure body is black immediately */
+        }
+        canvas { 
+            display: block; 
+            width: 100%; 
+            height: 100%; 
+        }
+        
+        #gameCanvas {
+            display: none;
+        }
+        #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
+        
+        /* Start Screen Styling */
+        #start-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000000; /* Pure black fallback */
+            display: flex; justify-content: center; align-items: center;
+            z-index: 2000; overflow: hidden;
+        }
+
+        #menu-bg-canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 0;
+        }
+
+        .ui-container {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* Subtle glow only on UI itself */
+            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+        }
+
+        .start-title {
+            font-size: 4.5rem;
+            color: #444; /* Very dark grey, barely visible */
+            margin-bottom: 60px;
+            letter-spacing: 25px;
+            text-shadow: 0 0 30px rgba(255,255,255,0.05); /* Very faint glow */
+            transition: color 1s ease;
+        }
+
+        /* When the player hovers over the container, the title "wakes up" slightly */
+        #start-screen:hover .start-title {
+            color: #888;
+        }
+
+        .start-input {
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid #111;
+            color: #444;
+            padding: 10px;
+            width: 200px;
+            text-align: center;
+            margin-bottom: 30px;
+            transition: border-color 0.5s;
+        }
+
+        .start-input:focus {
+            border-bottom-color: #333;
+            color: #888;
+            outline: none;
+        }
+
+
+        .play-btn {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #1a1a1a; /* Almost invisible border */
+            color: #333; /* Dark text */
+            padding: 20px 100px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            letter-spacing: 10px;
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .play-btn:hover {
+            background: #000;
+            border-color: #444;
+            color: #fff;
+            box-shadow: 0 0 40px rgba(255,255,255,0.02);
+            letter-spacing: 15px; /* Text expands slightly on hover */
+        }
+        
+        /* Hide loading screen by default now! */
+        #loading-screen {
+            display: none; 
+        }
+
+        /* Sleek Dark Loading Screen */
+        #loading-screen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: #000; /* Solid black matches the SOULCRAFT theme */
+            display: none; /* Hidden by default until PLAY is clicked */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+
+        /* Remove pixelate filter from loading screen - no filter applied for clean look */
+        
+        .loading-container {
+            text-align: center;
+            /* Removed scaling - normal size loading UI */
+        }
+        
+        .loading-title {
+            font-size: 1.5rem; /* Smaller, cleaner font size */
+            color: #ffffff;
+            letter-spacing: 8px;
+            margin-bottom: 15px;
+        }
+        
+        
+        .loading-progress-container {
+            width: 300px; /* Wider bar */
+            height: 20px;   /* Much thicker bar */
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            margin: 0 auto;
+            overflow: hidden;
+            border-radius: 10px; /* Rounded corners for modern look */
+        }
+        
+        .loading-progress-fill {
+            width: 0%;
+            height: 100%;
+            background: #fff; /* Solid white for a crisp pixel look */
+            transition: width 0.18s ease-out;
+        }
+        
+        
+        .loading-meta {
+            margin-top: 12px;
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            width: 300px;
+            color: rgba(255, 255, 255, 0.72);
+            font-size: 0.85rem;
+            letter-spacing: 2px;
+        }
+
+        .loading-stage {
+            text-align: left;
+        }
+
+        .loading-percent {
+            min-width: 48px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .loading-complete {
+            animation: shake 0.5s ease-in-out, glow 1s ease-in-out infinite alternate;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+            20%, 40%, 60%, 80% { transform: translateX(2px); }
+        }
+        
+        @keyframes glow {
+            from { text-shadow: 0 0 10px rgba(255, 255, 255, 0.3); }
+            to { text-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 0 30px rgba(255, 255, 255, 0.4); }
+        }
+        
+        .pixel-border {
+            border: 2px solid #ffffff;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+        }
+
+        /* Chat Input Styling */
+        #chat-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            font-family: 'EB Garamond', serif;
+            width: 300px;
+            display: none; /* ADD THIS LINE to hide it on initial load */
+        }
+
+        #chat-box {
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            margin-bottom: 8px;
+            overflow: hidden;
+            display: none; /* Hidden by default, shown when chat is active */
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #chat-box.collapsed {
+            height: auto;
+        }
+
+        #chat-box.expanded {
+            height: 150px;
+        }
+
+        #chat-header {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 6px 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #ffffff;
+            font-family: 'EB Garamond', serif;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            flex-shrink: 0; /* Prevent header from shrinking */
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        #chat-header:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        #chat-toggle {
+            background: none;
+            border: none;
+            color: #ffffff;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 2px;
+            transition: all 0.2s ease;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        #chat-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #chat-messages {
+            font-family: 'EB Garamond', serif;
+            font-size: 14px;
+            color: #ffffff;
+            height: 120px;
+            overflow-y: auto;
+            padding: 8px;
+            display: block;
+            flex: 1; /* Allow messages container to grow */
+            overflow-y: auto; /* Only this container should scroll */
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        #chat-box.collapsed #chat-messages {
+            display: none;
+        }
+
+        .chat-message {
+            margin-bottom: 4px;
+            padding: 2px 4px;
+            border-radius: 2px;
+            background: rgba(255, 255, 255, 0.05);
+            word-wrap: break-word;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            font-size: 14px;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .chat-message .player-id {
+            color: #88ccff;
+            font-weight: bold;
+            display: inline-block;
+            margin-right: 6px;
+        }
+
+        .chat-message .message-text {
+            color: #ffffff;
+        }
+
+        #chat-input {
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            color: #ffffff;
+            padding: 8px 12px;
+            font-size: 16px;
+            font-family: 'EB Garamond', serif;
+            width: 100%;
+            box-sizing: border-box;
+            transition: all 0.2s ease;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        #chat-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(0, 0, 0, 0.85);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+        }
+
+        #chat-input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+            font-style: italic;
+        }
+
+        /* Scrollbar styling for chat box */
+        #chat-box::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #chat-box::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        #chat-box::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        #chat-box::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Mobile Controls Styling */
+        #mobile-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            height: 150px;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+        #joystick-container {
+            position: absolute;
+            bottom: 0;
+            left: 20px;
+            width: 120px;
+            height: 120px;
+            pointer-events: auto;
+        }
+
+        #joystick-base {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #joystick-thumb {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.6);
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            transition: none;
+            transform: translate(-50%, -50%);
+            left: 50%;
+            top: 50%;
+        }
+
+        #joystick-thumb.active {
+            background: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+
+        #jump-button {
+            position: absolute;
+            bottom: 20px;
+            right: 340px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(0, 150, 255, 0.6);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+            color: white;
+            font-family: 'EB Garamond', serif;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            user-select: none;
+            -webkit-user-select: none;
+            transition: all 0.1s ease;
+        }
+
+        #jump-button:active {
+            background: rgba(0, 200, 255, 0.8);
+            transform: scale(0.95);
+        }
+
+        /* Responsive scaling for different screen sizes */
+        @media (max-width: 768px) {
+            #joystick-container {
+                width: 100px;
+                height: 100px;
+            }
+            
+            #joystick-thumb {
+                width: 40px;
+                height: 40px;
+            }
+            
+            #jump-button {
+                width: 60px;
+                height: 60px;
+                font-size: 14px;
+                right: 250px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #mobile-controls {
+                height: 120px;
+            }
+            
+            #joystick-container {
+                width: 80px;
+                height: 80px;
+                left: 10px;
+            }
+            
+            #joystick-thumb {
+                width: 35px;
+                height: 35px;
+            }
+            
+            #jump-button {
+                width: 50px;
+                height: 50px;
+                right: 10px;
+                font-size: 12px;
+            }
+        }
+    </style>
+    
+    <!-- SVG Pixelate Filter -->
+    <svg style="position: absolute; width: 0; height: 0;">
+        <filter id="pixelate-filter" x="0%" y="0%" width="100%" height="100%">
+            <feFlood x="0" y="0" height="3" width="3" flood-color="#000000"/>
+            <feComposite width="3" height="3"/>
+            <feTile result="a"/>
+            <feComposite in="SourceGraphic" in2="a" operator="in"/>
+            <feMorphology operator="dilate" radius="1"/>
+        </filter>
+    </svg>
+</head>
+<body>
+    <div id="start-screen">
+    <canvas id="menu-bg-canvas"></canvas>
+    
+    <div class="ui-container" id="ui-wrapper">
+        <div class="start-title">SOULCRAFT</div>
+        <input type="text" id="player-name-input" class="start-input" placeholder="ENTER NAME" maxlength="12">
+        <button id="play-btn" class="play-btn">PLAY</button>
+    </div>
+</div>
+
+    <div id="loading-screen" class="pixelated-loading">
+        <div class="loading-container">
+            <div class="loading-title">LOADING</div>
+            <div class="loading-progress-container">
+                <div id="loading-bar-fill" class="loading-progress-fill"></div>
+            </div>
+            <div class="loading-meta">
+                <div id="loading-stage-text" class="loading-stage">Initializing...</div>
+                <div id="loading-percent-text" class="loading-percent">0%</div>
+            </div>
+        </div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <canvas id="glCanvas" style="display: none;"></canvas>
+    
+    <!-- Chat Input -->
+    <div id="chat-container">
+        <div id="chat-box">
+            <div id="chat-header">
+                <span>Chat</span>
+                <button id="chat-toggle" title="Toggle Chat">▼</button>
+            </div>
+            <div id="chat-messages"></div>
+        </div>
+        <input type="text" id="chat-input" placeholder="Press Enter to chat..." maxlength="50">
+    </div>
+
+    <!-- Mobile Controls -->
+    <div id="mobile-controls" style="display: none;">
+        <!-- Joystick Container -->
+        <div id="joystick-container">
+            <div id="joystick-base">
+                <div id="joystick-thumb"></div>
+            </div>
+        </div>
+        
+        <!-- Jump Button -->
+        <div id="jump-button">JUMP</div>
+    </div>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        attribute vec2 a_texCoord;
+        varying vec2 v_texCoord;
+        void main() {
+            gl_Position = vec4(a_position, 0, 1);
+            v_texCoord = a_texCoord;
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        precision lowp float; // Changed to lowp for better mobile/low-end performance
+        uniform sampler2D u_image;
+        uniform vec2 u_resolution;
+        uniform vec2 u_lightPos;
+        uniform float u_time;
+        varying vec2 v_texCoord;
+
+        void main() {
+            // Pre-calculate pixelated coordinates
+            const float pixelSize = 3.0;
+            vec2 p = floor(v_texCoord * u_resolution / pixelSize) * pixelSize;
+            vec2 texCoord = p / u_resolution;
+
+            // Add stronger temporal jitter to prevent TAA stabilization
+            vec2 jitter = vec2(
+                sin(u_time * 7.0) * 0.001,
+                cos(u_time * 11.0) * 0.001
+            );
+            texCoord += jitter;
+
+            // More aggressive UV shrinking to avoid edge pixels where halos live
+            vec2 texSize = u_resolution;
+            vec2 shrink = 1.0 / texSize * 4.0; // Shrink by 4 pixels inward
+            texCoord = texCoord * (1.0 - shrink) + shrink * 0.5;
+
+            // Clamp UVs after shrinking to prevent sampling outside texture bounds
+            texCoord = clamp(texCoord, 0.0, 1.0);
+
+            vec4 color = texture2D(u_image, texCoord);
+            
+            // MODIFIED: Only discard if it's actually transparent background, 
+            // not just because it's a bright text pixel.
+            if (color.a < 0.1) discard;
+            
+            // More aggressive alpha cutoff to eliminate fringe pixels
+            if (color.a < 0.5) discard; // Increased from 0.1 to 0.5
+            
+            // Premultiply alpha to prevent white edge bleeding
+            color.rgb *= color.a;
+
+            // Optimized lighting calculation
+            float dist = distance(p, u_lightPos);
+            
+            // Single smoothstep for light and glow
+            float light = smoothstep(350.0, 0.0, dist);
+            float pulse = sin(u_time * 2.5) * 0.08 + 0.92;
+            
+            // Darker ambient lighting for environment
+            vec3 ambient = vec3(0.08, 0.08, 0.12); // Darkened from (0.2, 0.2, 0.3)
+            vec3 lightColor = vec3(1.0, 0.95, 0.85);
+            
+            // Enhanced glow that maintains brightness
+            float glow = max(0.0, 1.0 - dist / 100.0) * 0.8; // Increased from 0.5 to 0.8
+            vec3 finalLight = ambient + (lightColor * light * pulse) + glow;
+
+            vec3 finalColor = color.rgb * finalLight;
+
+            // Create visibility based on distance from player's halo/glow
+            vec2 playerScreenPos = u_lightPos / u_resolution; // Convert player position to screen coordinates (0-1)
+            float visibilityDist = distance(v_texCoord, playerScreenPos);
+            
+            // Visibility zones based on distance from player
+            // Add a minimum visibility to prevent complete blackout on low-end PCs
+            const float MIN_VISIBILITY = 0.05;
+            
+            float visibility;
+            if (visibilityDist < 0.1) {
+                visibility = 1.0; // Full visibility when very close to halo
+            } else if (visibilityDist < 0.25) {
+                visibility = 1.0 - smoothstep(0.1, 0.25, visibilityDist); // Gradual fade near halo
+            } else if (visibilityDist < 0.4) {
+                visibility = 0.1; // Almost no visibility when a bit away from halo
+            } else {
+                visibility = 0.0; // No visibility when farther away from halo
+            }
+            
+            // Ensure minimum visibility to prevent pitch-black screens
+            visibility = max(visibility, MIN_VISIBILITY);
+            
+            finalColor *= visibility;
+
+            gl_FragColor = vec4(finalColor, color.a);
+        }
+    </script>
+
+    <script>
+        // AutoConnect FALSE prevents the socket from firing until we're ready!
+        // Configure for Render environment with better transport options
+        const socket = io({ 
+            autoConnect: false,
+            transports: ['polling', 'websocket'],  // Try polling first for Render compatibility
+            upgrade: true,  // Allow upgrade to websocket if available
+            rememberUpgrade: true,
+            timeout: 20000,
+            forceNew: false
+        });
+        let myPlayerName = "Player";
+
+        // Frame Rate Configuration
+        let fpsCap = 120; // Default for high-end
+        let isLowEnd = false;
+        let frameCount = 0;
+        let lastPerformanceCheck = performance.now();
+        const PERFORMANCE_CHECK_INTERVAL = 2000; // Check every 2 seconds
+
+        // Performance settings
+        let showPerformanceInfo = false; // Toggle for FPS display
+
+        // Timing variables for the loop
+        let lastFrameTime = performance.now();
+        let frameInterval = 1000 / fpsCap;
+
+        // Token management for secure asset access
+        async function getCharacterToken(characterName) {
+            try {
+                const response = await fetch('/api/request_character_token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ character: characterName })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to get character token: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return data.token;
+            } catch (error) {
+                console.error('Error getting character token:', error);
+                throw error;
+            }
+        }
+
+        async function getEnvironmentToken() {
+            try {
+                const response = await fetch('/api/request_environment_token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to get environment token: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return data.token;
+            } catch (error) {
+                console.error('Error getting environment token:', error);
+                throw error;
+            }
+        }
+
+        // Mobile Controls Setup
+        function isMobileDevice() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                   ('ontouchstart' in window) ||
+                   (navigator.maxTouchPoints > 0);
+        }
+
+        const isMobile = isMobileDevice();
+        let mobileControls = null;
+        let joystickThumb = null;
+        let jumpButton = null;
+        let joystickActive = false;
+        let joystickOrigin = { x: 0, y: 0 };
+
+        // Initialize mobile controls if on mobile device
+        function initializeMobileControls() {
+            if (!isMobile) return;
+            
+            mobileControls = document.getElementById('mobile-controls');
+            joystickThumb = document.getElementById('joystick-thumb');
+            jumpButton = document.getElementById('jump-button');
+            
+            // Show mobile controls
+            mobileControls.style.display = 'block';
+            
+            // Setup joystick touch events
+            const joystickContainer = document.getElementById('joystick-container');
+            
+            joystickContainer.addEventListener('touchstart', handleJoystickStart, { passive: false });
+            joystickContainer.addEventListener('touchmove', handleJoystickMove, { passive: false });
+            joystickContainer.addEventListener('touchend', handleJoystickEnd, { passive: false });
+            
+            // Setup jump button touch events
+            jumpButton.addEventListener('touchstart', handleJumpStart, { passive: false });
+            jumpButton.addEventListener('touchend', handleJumpEnd, { passive: false });
+            
+            // Prevent default touch behaviors on game canvas
+            const canvas = document.getElementById('gameCanvas');
+            canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        }
+
+        function handleJoystickStart(e) {
+            e.preventDefault();
+            if (chatActive) return;
+            
+            joystickActive = true;
+            joystickThumb.classList.add('active');
+            
+            const touch = e.touches[0];
+            const rect = e.currentTarget.getBoundingClientRect();
+            joystickOrigin.x = rect.left + rect.width / 2;
+            joystickOrigin.y = rect.top + rect.height / 2;
+            
+            updateJoystickPosition(touch.clientX, touch.clientY);
+        }
+
+        function handleJoystickMove(e) {
+            e.preventDefault();
+            if (!joystickActive || chatActive) return;
+            
+            const touch = e.touches[0];
+            updateJoystickPosition(touch.clientX, touch.clientY);
+        }
+
+        function handleJoystickEnd(e) {
+            e.preventDefault();
+            if (!joystickActive) return;
+            
+            joystickActive = false;
+            joystickThumb.classList.remove('active');
+            
+            // Reset joystick thumb position
+            joystickThumb.style.left = '50%';
+            joystickThumb.style.top = '50%';
+            
+            // Reset movement inputs
+            inputs.left = false;
+            inputs.right = false;
+            socket.emit('input', inputs);
+        }
+
+        function updateJoystickPosition(touchX, touchY) {
+            const deltaX = touchX - joystickOrigin.x;
+            const deltaY = touchY - joystickOrigin.y;
+            
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            const maxDistance = 40; // Maximum joystick radius
+            
+            let normalizedX = deltaX;
+            let normalizedY = deltaY;
+            
+            if (distance > maxDistance) {
+                normalizedX = (deltaX / distance) * maxDistance;
+                normalizedY = (deltaY / distance) * maxDistance;
+            }
+            
+            // Update thumb position
+            joystickThumb.style.left = `${50 + (normalizedX / maxDistance) * 40}%`;
+            joystickThumb.style.top = `${50 + (normalizedY / maxDistance) * 40}%`;
+            
+            // Update movement inputs based on horizontal position
+            const threshold = 0.3; // Dead zone in center
+            const normalizedHorizontal = normalizedX / maxDistance;
+            
+            inputs.left = normalizedHorizontal < -threshold;
+            inputs.right = normalizedHorizontal > threshold;
+            
+            socket.emit('input', inputs);
+        }
+
+        let jumpButtonPressed = false;
+        
+        function handleJumpStart(e) {
+            e.preventDefault();
+            if (chatActive || jumpButtonPressed) return;
+            
+            jumpButtonPressed = true;
+            socket.emit('jump');
+        }
+
+        function handleJumpEnd(e) {
+            e.preventDefault();
+            jumpButtonPressed = false;
+        }
+
+        // WebGL Menu Background System
+        const menuCanvas = document.getElementById('menu-bg-canvas');
+        const menuGL = menuCanvas.getContext('webgl');
+
+        const vsSource = `
+            attribute vec2 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            void main() {
+                gl_Position = vec4(a_position, 0, 1);
+                v_texCoord = a_texCoord;
+            }
+        `;
+
+        const fsSource = `
+            precision mediump float;
+            uniform sampler2D u_image;
+            uniform vec2 u_resolution;
+            uniform vec2 u_mouse;
+            uniform vec2 u_videoResolution; // Add video resolution uniform
+            varying vec2 v_texCoord;
+
+            void main() {
+                // Calculate aspect ratio correction
+                float videoAspect = u_videoResolution.x / u_videoResolution.y;
+                float screenAspect = u_resolution.x / u_resolution.y;
+                
+                // Calculate corrected texture coordinates to maintain aspect ratio
+                vec2 coord = v_texCoord;
+                if (videoAspect > screenAspect) {
+                    // Video is wider than screen - letterbox
+                    float scale = screenAspect / videoAspect;
+                    coord.y = (coord.y - 0.5) / scale + 0.5;
+                } else {
+                    // Video is taller than screen - pillarbox
+                    float scale = videoAspect / screenAspect;
+                    coord.x = (coord.x - 0.5) / scale + 0.5;
+                }
+                
+                // 1. WebGL Pixelate (Keep it crunchy)
+                float pixelSize = 5.0; 
+                vec2 d = vec2(pixelSize) / u_resolution;
+                coord = d * floor(coord / d);
+                
+                // 2. Parallax (Background still slides behind the darkness)
+                vec2 offset = u_mouse * 0.04; 
+                vec4 color = texture2D(u_image, coord + offset);
+
+                // 3. INTENSE CENTER VIGNETTE
+                // Measure distance from the exact center
+                float dist = distance(v_texCoord, vec2(0.5));
+                
+                // Tighten the glow: 
+                // 0.45 = where the darkness starts being absolute
+                // 0.12 = core of the light
+                float vignette = smoothstep(0.45, 0.12, dist);
+                
+                // Apply brightness multiplier (0.4) to image inside the glow 
+                // to keep it moody, while the outside goes to 0.0 (pure black)
+                gl_FragColor = vec4(color.rgb * vignette * 0.4, 1.0);
+            }
+        `;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function initGL() {
+            if (!menuGL) {
+                console.error('WebGL not supported');
+                return;
+            }
+            
+            // Create shaders
+            const vertexShader = createShader(menuGL, menuGL.VERTEX_SHADER, vsSource);
+            const fragmentShader = createShader(menuGL, menuGL.FRAGMENT_SHADER, fsSource);
+            
+            // Create program
+            const program = menuGL.createProgram();
+            menuGL.attachShader(program, vertexShader);
+            menuGL.attachShader(program, fragmentShader);
+            menuGL.linkProgram(program);
+            
+            if (!menuGL.getProgramParameter(program, menuGL.LINK_STATUS)) {
+                console.error('Program linking error:', menuGL.getProgramInfoLog(program));
+                return;
+            }
+            
+            menuGL.useProgram(program);
+            
+            // Set up geometry
+            const positions = new Float32Array([
+                -1, -1,  1, -1,  -1, 1,
+                -1, 1,   1, -1,   1, 1
+            ]);
+            
+            const texCoords = new Float32Array([
+                0, 1,  1, 1,  0, 0,
+                0, 0,  1, 1,  1, 0
+            ]);
+            
+            // Position buffer
+            const positionBuffer = menuGL.createBuffer();
+            menuGL.bindBuffer(menuGL.ARRAY_BUFFER, positionBuffer);
+            menuGL.bufferData(menuGL.ARRAY_BUFFER, positions, menuGL.STATIC_DRAW);
+            
+            const positionLocation = menuGL.getAttribLocation(program, 'a_position');
+            menuGL.enableVertexAttribArray(positionLocation);
+            menuGL.vertexAttribPointer(positionLocation, 2, menuGL.FLOAT, false, 0, 0);
+            
+            // Texture coordinate buffer
+            const texCoordBuffer = menuGL.createBuffer();
+            menuGL.bindBuffer(menuGL.ARRAY_BUFFER, texCoordBuffer);
+            menuGL.bufferData(menuGL.ARRAY_BUFFER, texCoords, menuGL.STATIC_DRAW);
+            
+            const texCoordLocation = menuGL.getAttribLocation(program, 'a_texCoord');
+            menuGL.enableVertexAttribArray(texCoordLocation);
+            menuGL.vertexAttribPointer(texCoordLocation, 2, menuGL.FLOAT, false, 0, 0);
+            
+            // Load background video using tokenized endpoint for security
+            const video = document.createElement('video');
+            
+            // Get environment token and load video
+            async function loadVideo() {
+                try {
+                    const environmentToken = await getEnvironmentToken();
+                    video.src = `/api/homescreen_video/${environmentToken}`;
+                    video.loop = true;
+                    video.muted = true;
+                    video.playsInline = true;
+                    video.autoplay = true;
+                    video.play().catch(e => console.log('Video autoplay failed:', e));
+                } catch (error) {
+                    console.error('Failed to load homescreen video:', error);
+                }
+            }
+            
+            loadVideo();
+            
+            // Create texture from video
+            const texture = menuGL.createTexture();
+            menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
+            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_S, menuGL.CLAMP_TO_EDGE);
+            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_T, menuGL.CLAMP_TO_EDGE);
+            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MIN_FILTER, menuGL.LINEAR);
+            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MAG_FILTER, menuGL.LINEAR);
+            
+            // Update texture with video frames
+            function updateVideoTexture() {
+                if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+                    menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
+                    menuGL.texImage2D(menuGL.TEXTURE_2D, 0, menuGL.RGBA, menuGL.RGBA, menuGL.UNSIGNED_BYTE, video);
+                }
+                requestAnimationFrame(updateVideoTexture);
+            }
+            
+            // Start video texture updates
+            updateVideoTexture();
+            
+            // Get uniform locations
+            const resolutionLocation = menuGL.getUniformLocation(program, 'u_resolution');
+            const mouseLocation = menuGL.getUniformLocation(program, 'u_mouse');
+            const videoResolutionLocation = menuGL.getUniformLocation(program, 'u_videoResolution');
+            
+            // Video resolution tracking
+            let videoResolution = { width: 1920, height: 1080 }; // Default fallback
+            
+            // Get actual video dimensions when metadata is loaded
+            video.addEventListener('loadedmetadata', () => {
+                videoResolution.width = video.videoWidth;
+                videoResolution.height = video.videoHeight;
+                console.log('Video resolution:', videoResolution);
+            });
+            
+            // Mouse tracking
+            let mouseX = 0, mouseY = 0;
+            window.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth - 0.5);
+                mouseY = (e.clientY / window.innerHeight - 0.5);
+            });
+            
+            function render() {
+                // Resize canvas if needed
+                if (menuCanvas.width !== window.innerWidth || menuCanvas.height !== window.innerHeight) {
+                    menuCanvas.width = window.innerWidth;
+                    menuCanvas.height = window.innerHeight;
+                    menuGL.viewport(0, 0, menuCanvas.width, menuCanvas.height);
+                }
+                
+                // Set uniforms
+                menuGL.uniform2f(resolutionLocation, menuCanvas.width, menuCanvas.height);
+                menuGL.uniform2f(mouseLocation, mouseX, mouseY);
+                menuGL.uniform2f(videoResolutionLocation, videoResolution.width, videoResolution.height);
+                
+                // Clear and draw
+                menuGL.clearColor(0.02, 0.02, 0.03, 1.0);
+                menuGL.clear(menuGL.COLOR_BUFFER_BIT);
+                menuGL.drawArrays(menuGL.TRIANGLES, 0, 6);
+                
+                requestAnimationFrame(render);
+            }
+            
+            // Start render loop
+            render();
+        }
+
+        // Start Screen Logic
+        document.addEventListener('DOMContentLoaded', () => {
+            const startScreen = document.getElementById('start-screen');
+            const loadingScreen = document.getElementById('loading-screen');
+            const nameInput = document.getElementById('player-name-input');
+            const playBtn = document.getElementById('play-btn');
+            const ui = document.getElementById('ui-wrapper');
+            
+            let targetX = 0, targetY = 0;
+            let currX = 0, currY = 0;
+
+            window.addEventListener('mousemove', (e) => {
+                targetX = (e.clientX / window.innerWidth - 0.5);
+                targetY = (e.clientY / window.innerHeight - 0.5);
+            });
+
+            function animateUI() {
+                currX += (targetX - currX) * 0.05;
+                currY += (targetY - currY) * 0.05;
+
+                if (ui) {
+                    ui.style.transform = `translate(${currX * 30}px, ${currY * 30}px)`;
+                }
+
+                requestAnimationFrame(animateUI);
+            }
+            animateUI();
+            
+            // Initialize WebGL
+            initGL();
+
+            function startGame() {
+                const name = nameInput.value.trim();
+                if (!name) {
+                    // Flash red if empty
+                    nameInput.style.borderColor = '#ff4444';
+                    setTimeout(() => nameInput.style.borderColor = '#333', 500);
+                    return;
+                }
+                
+                myPlayerName = name;
+                
+                // Fade out start screen, show loading screen
+                startScreen.style.opacity = '0';
+                setTimeout(() => {
+                    startScreen.style.display = 'none';
+                    loadingScreen.style.display = 'flex'; // Show loading screen
+                    
+                    // Start the smooth loading animation loop
+                    startSmoothLoading();
+                    
+                    // Now we actually connect to the game server!
+                    socket.io.opts.query = { name: myPlayerName };
+                    socket.connect();
+                }, 300);
+            }
+
+            playBtn.addEventListener('click', startGame);
+            nameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') startGame();
+            });
+            
+            // Auto focus the input when page loads
+            setTimeout(() => nameInput.focus(), 100);
+        });
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // WebGL Setup
+        const glCanvas = document.getElementById('glCanvas');
+        const gl = glCanvas.getContext('webgl');
+        let program;
+        let positionBuffer, texCoordBuffer;
+        let texture;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        function initWebGL() {
+            if (!gl) return;
+            const vsSource = document.getElementById('vertex-shader').text;
+            const fsSource = document.getElementById('fragment-shader').text;
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+            
+            program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+
+            texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 0]), gl.STATIC_DRAW);
+
+            texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        }
+
+        function resizeCanvas() {
+            // Restore original behavior: 1:1 pixel mapping
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            if (glCanvas) {
+                glCanvas.width = canvas.width;
+                glCanvas.height = canvas.height;
+                if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+            }
+        }
+        initWebGL();
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        
+        // Initialize mobile controls
+        initializeMobileControls();
+
+        const PLAYER_MAX_SIZE = 60;
+        const TILE_SIZE = 32;
+        const GRAVITY = 48.0; // Same as server: 0.8 * 60
+        const FAIRY_SIZE = 2; // 2x2 pixels
+
+        // Player hitbox dimensions (narrow width, full height)
+        const PLAYER_HITBOX_WIDTH = 30;
+        const PLAYER_HITBOX_HEIGHT = 60;
+
+        const PLAYER_MAX_HEALTH = 100;
+
+        // Character Sprite System
+        const characterAssets = {};
+        const playerCharacterAssets = {}; // Cache assets for multiple characters
+        const characterMetadataCache = {}; // Cache metadata for multiple characters
+        const loadingCharacters = new Set(); // Track characters currently being loaded
+        const failedCharacters = new Set(); // Track characters that failed to load
+        let characterMetadata = null;
+        let assignedCharacter = null;
+        let allAssetsLoaded = false;
+        let loadingProgress = 0;
+        let loadingStage = 'Initializing...';
+        let loadingStartTime = Date.now();
+        const MIN_VISIBLE_DURATION = 200; // Just 200ms minimum to prevent flickering
+        const totalExpectedAssets = 5; // idle, run, death, jump, attack
+
+        // Loading UI state
+        let visualProgress = 0;
+        let actualProgress = 0;
+        let loadingAnimationId = null;
+        let gameReadyToStart = false;
+        let loadingCompleteTriggered = false;
+
+        /**
+         * Checks if assets and the loading UI have both completed.
+         */
+        function checkIfCanStart() {
+            if (loadingCompleteTriggered) return;
+            if (allAssetsLoaded && gameReadyToStart) {
+                loadingCompleteTriggered = true;
+                finishLoading();
+            }
+        }
+
+        /**
+         * Called when assets are actually 100% done loading.
+         */
+        function markAssetsAsReady() {
+            allAssetsLoaded = true;
+            updateLoadingBar(100);
+            checkIfCanStart();
+        }
+
+        /**
+         * Handles the actual game transition - hiding loading screen and showing game.
+         * This is only called when both visual and actual loading are complete.
+         */
+        async function finishLoading() {
+            const loadingScreen = document.getElementById('loading-screen');
+            const canvas = document.getElementById('gameCanvas');
+            const chatContainer = document.getElementById('chat-container');
+            
+            // Add shake effect to loading container
+            const loadingContainer = document.querySelector('.loading-container');
+            if (loadingContainer) {
+                loadingContainer.classList.add('loading-complete');
+            }
+            
+            // Wait for shake effect
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Fade out loading screen
+            if (loadingScreen) {
+                loadingScreen.style.transition = 'opacity 0.5s ease-out';
+                loadingScreen.style.opacity = '0';
+                
+                await new Promise(resolve => setTimeout(resolve, 500));
+                loadingScreen.style.display = 'none';
+            }
+            
+            // Show game canvas
+            if (canvas) {
+                canvas.style.display = 'block';
+            }
+            
+            // Show chat container
+            if (chatContainer) {
+                chatContainer.style.display = 'block';
+            }
+            
+            // Emit player_ready to server
+            socket.emit('player_ready');
+            
+            console.log('Game started - loading completed');
+        }
+
+        /**
+         * Renders the loading UI from actual progress only.
+         * No fake crawl beyond real progress.
+         * @param {number} progress - The actual progress percentage (0-100)
+         */
+        function updateLoadingBar(progress) {
+            actualProgress = Math.min(100, Math.max(0, progress));
+            if (!loadingAnimationId) {
+                runLoadingAnimation();
+            }
+        }
+
+        /**
+         * Updates the loading stage and percent labels.
+         */
+        function renderLoadingText() {
+            const stageText = document.getElementById('loading-stage-text');
+            const percentText = document.getElementById('loading-percent-text');
+
+            if (stageText) {
+                stageText.textContent = loadingStage;
+            }
+            if (percentText) {
+                percentText.textContent = `${Math.round(visualProgress)}%`;
+            }
+        }
+
+        /**
+         * Animates the loading bar toward the real progress only.
+         */
+        function runLoadingAnimation() {
+            const fill = document.getElementById('loading-bar-fill');
+            if (!fill) {
+                loadingAnimationId = null;
+                return;
+            }
+
+            const delta = actualProgress - visualProgress;
+            if (Math.abs(delta) <= 0.1) {
+                visualProgress = actualProgress;
+            } else {
+                visualProgress += Math.max(0.8, Math.abs(delta) * 0.22) * Math.sign(delta);
+            }
+
+            visualProgress = Math.max(0, Math.min(100, visualProgress));
+            fill.style.width = `${visualProgress}%`;
+            renderLoadingText();
+
+            if (visualProgress >= 100 && actualProgress >= 100) {
+                loadingAnimationId = null;
+                gameReadyToStart = true;
+                checkIfCanStart();
+                return;
+            }
+
+            loadingAnimationId = requestAnimationFrame(runLoadingAnimation);
+        }
+
+        /**
+         * Starts the loading animation loop.
+         */
+        function startSmoothLoading() {
+            visualProgress = 0;
+            actualProgress = 0;
+            allAssetsLoaded = false;
+            gameReadyToStart = false;
+            loadingCompleteTriggered = false;
+            if (loadingAnimationId) {
+                cancelAnimationFrame(loadingAnimationId);
+            }
+            const fill = document.getElementById('loading-bar-fill');
+            if (fill) {
+                fill.style.width = '0%';
+            }
+            renderLoadingText();
+            loadingAnimationId = requestAnimationFrame(runLoadingAnimation);
+        }
+
+        // Client-side caching system
+        const sessionAssetCache = new Map();
+        const tileCache = new Map();
+
+        // Concurrency control for parallel requests
+        const CONCURRENCY_LIMIT = 6;
+        let activeRequests = 0;
+        const requestQueue = [];
+
+        socket.on('connect', () => {
+            console.log('Connected to server successfully!');
+            // Wait for character assignment before loading assets
+            if (!allAssetsLoaded) {
+                // Assets will be loaded after character_assigned event
+            } else {
+                socket.emit('player_ready');
+            }
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('Disconnected from server:', reason);
+            if (reason === 'io server disconnect') {
+                // Server disconnected, reconnect manually
+                socket.connect();
+            }
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            // Show user-friendly error message
+            const errorMsg = document.createElement('div');
+            errorMsg.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(255, 0, 0, 0.8);
+                color: white;
+                padding: 15px;
+                border-radius: 5px;
+                z-index: 10000;
+                font-family: Arial, sans-serif;
+            `;
+            errorMsg.textContent = 'Connection failed. Retrying...';
+            document.body.appendChild(errorMsg);
+            setTimeout(() => errorMsg.remove(), 5000);
+        });
+
+        socket.on('character_assigned', (data) => {
+            assignedCharacter = data.character;
+            console.log(`Assigned character: ${assignedCharacter}`);
+            loadCharacterAssets();
+        });
+
+        async function fetchWithRetry(url, options = {}, maxRetries = 3) {
+            let lastError;
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response;
+                } catch (error) {
+                    lastError = error;
+                    if (attempt < maxRetries - 1) {
+                        const delay = Math.pow(2, attempt) * 100; // 100ms, 200ms, 400ms
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+            throw lastError;
+        }
+
+        async function withConcurrencyLimit(fn) {
+            return new Promise((resolve, reject) => {
+                const run = async () => {
+                    activeRequests++;
+                    try {
+                        const result = await fn();
+                        activeRequests--;
+                        processQueue();
+                        resolve(result);
+                    } catch (error) {
+                        activeRequests--;
+                        processQueue();
+                        reject(error);
+                    }
+                };
+
+                if (activeRequests < CONCURRENCY_LIMIT) {
+                    run();
+                } else {
+                    requestQueue.push(run);
+                }
+            });
+        }
+
+        function processQueue() {
+            while (requestQueue.length > 0 && activeRequests < CONCURRENCY_LIMIT) {
+                const next = requestQueue.shift();
+                next();
+            }
+        }
+
+        async function fetchSecureAsset(assetPath) {
+            // Check session cache first
+            if (sessionAssetCache.has(assetPath)) {
+                return sessionAssetCache.get(assetPath);
+            }
+
+            const response = await fetch('/api/request_asset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path: assetPath })
+            });
+            const data = await response.json();
+            if (data.error) throw new Error(data.error);
+
+            const { token, chunk_ids, total_size } = data;
+            
+            // Load chunks in parallel with concurrency limit
+            const chunkPromises = chunk_ids.map(chunk_id => 
+                withConcurrencyLimit(async () => {
+                    const chunkRes = await fetchWithRetry(`/api/asset_chunk/${token}/${chunk_id}`);
+                    const chunkData = await chunkRes.arrayBuffer();
+                    return { chunk_id, data: chunkData };
+                })
+            );
+
+            const chunks = await Promise.all(chunkPromises);
+            
+            // Combine chunks into single buffer
+            const combinedBuffer = new Uint8Array(total_size);
+            let offset = 0;
+            for (const chunk of chunks) {
+                combinedBuffer.set(new Uint8Array(chunk.data), offset);
+                offset += chunk.data.byteLength;
+            }
+
+            // Create canvas from combined buffer
+            const img = await createImageBitmap(new Blob([combinedBuffer]));
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = img.width;
+            tempCanvas.height = img.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(img, 0, 0);
+
+            // Cache the result
+            sessionAssetCache.set(assetPath, tempCanvas);
+
+            return tempCanvas;
+        }
+
+        async function loadCharacterAssets() {
+            try {
+                if (!assignedCharacter) {
+                    console.error('No character assigned yet');
+                    return;
+                }
+                
+                loadingStage = `Loading ${assignedCharacter} assets...`;
+                updateLoadingScreen();
+
+                const metaRes = await fetch(`/api/character_metadata/${assignedCharacter}`);
+                characterMetadata = await metaRes.json();
+                characterMetadataCache[assignedCharacter] = characterMetadata;
+                
+                loadingStage = 'Fetching character textures...';
+                updateLoadingScreen();
+
+                const assetNames = Object.keys(characterMetadata);
+                
+                // Get token for character asset access
+                const characterToken = await getCharacterToken(assignedCharacter);
+                
+                // Load all assets in parallel using tokenized endpoint for security
+                const loadPromises = assetNames.map(async (name, index) => {
+                    const assetUrl = `/api/character_assets/${characterToken}/${assignedCharacter}/${name}`;
+                    const response = await fetch(assetUrl);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch asset ${name}: ${response.status}`);
+                    }
+                    const blob = await response.blob();
+                    const asset = await createImageBitmap(blob);
+                    characterAssets[name] = asset;
+                    
+                    // Calculate progress based on both character assets and additional loading stages
+                    const characterProgress = ((index + 1) / assetNames.length) * 70; // 70% for character assets
+                    loadingProgress = characterProgress;
+                    loadingStage = `Loading ${name.replace('_', ' ')}...`;
+                    updateLoadingScreen();
+                    return asset;
+                });
+                
+                await Promise.all(loadPromises);
+                
+                // Store assets in the multi-character cache
+                playerCharacterAssets[assignedCharacter] = {...characterAssets};
+                
+                // Load map and other assets
+                loadingStage = 'Loading game world...';
+                loadingProgress = 80;
+                updateLoadingScreen();
+                
+                await loadMap();
+                
+                loadingStage = 'Finalizing...';
+                loadingProgress = 95;
+                updateLoadingScreen();
+                
+                loadingProgress = 100;
+                loadingStage = 'Ready!';
+                updateLoadingScreen();
+                
+                // Only add a small delay if loading was extremely fast (under 0.5s)
+                // This prevents flickering on fast computers without forcing long waits
+                const elapsed = Date.now() - loadingStartTime;
+                if (elapsed < 500) {
+                    await new Promise(resolve => setTimeout(resolve, 200)); // Just 200ms minimum, not 2 seconds
+                }
+                
+                // Mark assets as ready - this will trigger checkIfCanStart()
+                // The game will only start when the visual bar also reaches 100%
+                markAssetsAsReady();
+                
+            } catch (error) {
+                console.error('Error loading character assets:', error);
+                loadingStage = 'Error loading assets';
+                updateLoadingScreen();
+            }
+        }
+
+        async function loadCharacterAssetsFor(characterName) {
+            try {
+                // Check if assets are already loaded for this character
+                if (playerCharacterAssets[characterName]) {
+                    return;
+                }
+                
+                // Check if character is already being loaded
+                if (loadingCharacters.has(characterName)) {
+                    return;
+                }
+                
+                // Check if character failed to load previously
+                if (failedCharacters.has(characterName)) {
+                    return;
+                }
+                
+                // Mark character as loading
+                loadingCharacters.add(characterName);
+                console.log(`Loading assets for character: ${characterName}`);
+                
+                const metaRes = await fetch(`/api/character_metadata/${characterName}`);
+                if (!metaRes.ok) {
+                    throw new Error(`Failed to fetch metadata for ${characterName}: ${metaRes.status}`);
+                }
+                const metadata = await metaRes.json();
+                characterMetadataCache[characterName] = metadata;
+
+                const assetNames = Object.keys(metadata);
+                const assets = {};
+                
+                // Get token for this character's assets
+                const characterToken = await getCharacterToken(characterName);
+                
+                // Load all assets in parallel using tokenized endpoint
+                const loadPromises = assetNames.map(async (name) => {
+                    const assetUrl = `/api/character_assets/${characterToken}/${characterName}/${name}`;
+                    const response = await fetch(assetUrl);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch asset ${name} for ${characterName}: ${response.status}`);
+                    }
+                    const blob = await response.blob();
+                    const asset = await createImageBitmap(blob);
+                    assets[name] = asset;
+                    return asset;
+                });
+                
+                await Promise.all(loadPromises);
+                
+                // Store assets in the multi-character cache
+                playerCharacterAssets[characterName] = assets;
+                loadingCharacters.delete(characterName);
+                console.log(`Assets loaded successfully for character: ${characterName}`);
+            } catch (error) {
+                console.error(`Error loading assets for character ${characterName}:`, error);
+                loadingCharacters.delete(characterName);
+                failedCharacters.add(characterName);
+            }
+        }
+
+        function updateLoadingScreen() {
+            updateLoadingBar(loadingProgress);
+            renderLoadingText();
+        }
+
+        function hideLoadingScreen() {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen) {
+                loadingScreen.style.display = 'none';
+            }
+        }
+
+        // Initialize loading screen
+        updateLoadingScreen();
+        
+        let PLATFORMS = [];
+        let currentMap = null;
+        let tilesetImage = null;
+        let backgroundImage = null;
+        let mapBounds = { minX: 0, maxX: 800, minY: 0, maxY: 600 };
+        let spawnPoints = [];
+        
+        // Load map from server
+        async function loadMap() {
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const mapName = urlParams.get('map') || 'default';
+                
+                console.log(`Loading map: ${mapName}`);
+                
+                const response = await fetch(`/api/current_map?map=${encodeURIComponent(mapName)}`);
+                const mapData = await response.json();
+                
+                if (mapData.error) {
+                    console.error('Map error:', mapData.error);
+                    // Fallback to default platform
+                    PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
+                    spawnPoints = [{x: 100, y: 500, id: 0}];
+                    currentMap = null;
+                    return;
+                }
+                
+                currentMap = mapData;
+                console.log('Map data loaded:', mapData);
+
+                // Load tileset image using tokenized endpoint for security
+                if (!tilesetImage) {
+                    const environmentToken = await getEnvironmentToken();
+                    const tilesetResponse = await fetch(`/api/tileset/${environmentToken}`);
+                    if (!tilesetResponse.ok) {
+                        throw new Error(`Failed to fetch tileset: ${tilesetResponse.status}`);
+                    }
+                    const tilesetBlob = await tilesetResponse.blob();
+                    tilesetImage = await createImageBitmap(tilesetBlob);
+                }
+
+                // Load background image using tokenized endpoint for security
+                if (!backgroundImage) {
+                    const environmentToken = await getEnvironmentToken();
+                    const backgroundResponse = await fetch(`/api/background/${environmentToken}`);
+                    if (!backgroundResponse.ok) {
+                        throw new Error(`Failed to fetch background: ${backgroundResponse.status}`);
+                    }
+                    const backgroundBlob = await backgroundResponse.blob();
+                    backgroundImage = await createImageBitmap(backgroundBlob);
+                }
+
+                // Load spawn points from map
+                spawnPoints = mapData.spawnPoints || [];
+                console.log(`Loaded ${spawnPoints.length} spawn points:`, spawnPoints);
+                
+                // Convert tile map to platforms
+                convertMapToPlatforms();
+                
+                console.log(`Map "${mapData.name}" loaded successfully with ${spawnPoints.length} spawn points`);
+            } catch (error) {
+                console.error('Error loading map:', error);
+                // Fallback to default platform
+                PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
+                spawnPoints = [{x: 100, y: 500, id: 0}];
+                currentMap = null;
+            }
+        }
+        
+        // Pre-render map to an offscreen canvas for performance
+        let mapCanvas = null;
+        let mapCtx = null;
+
+        async function preRenderMap() {
+            if (!currentMap || !tilesetImage) return;
+
+            const mapWidth = currentMap.width;
+            const mapHeight = currentMap.height;
+            
+            mapCanvas = document.createElement('canvas');
+            mapCanvas.width = mapWidth * TILE_SIZE;
+            mapCanvas.height = mapHeight * TILE_SIZE;
+            mapCtx = mapCanvas.getContext('2d');
+
+            const tiles = currentMap.tiles;
+            const tilesetWidth = tilesetImage.width / 4;
+            const tilesetHeight = tilesetImage.height / 3;
+
+            for (let y = 0; y < mapHeight; y++) {
+                for (let x = 0; x < mapWidth; x++) {
+                    const tileIndex = tiles[y][x];
+                    if (tileIndex >= 0) {
+                        const col = tileIndex % 4;
+                        const row = Math.floor(tileIndex / 4);
+                        mapCtx.drawImage(
+                            tilesetImage,
+                            col * tilesetWidth, row * tilesetHeight, tilesetWidth, tilesetHeight,
+                            x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
+                        );
+                    }
+                }
+            }
+
+            if (backgroundImage) {
+                mapCtx.drawImage(
+                    backgroundImage,
+                    0, 0,
+                    mapWidth * TILE_SIZE,
+                    mapHeight * TILE_SIZE
+                );
+            }
+            console.log('Map pre-rendered');
+        }
+
+        // Convert tile map to platform rectangles using full tile boxes
+        function convertMapToPlatforms() {
+            PLATFORMS = [];
+            
+            if (!currentMap || !currentMap.tiles) {
+                PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
+                return;
+            }
+            
+            const tiles = currentMap.tiles;
+            const mapWidth = currentMap.width;
+            const mapHeight = currentMap.height;
+            
+            // Set map bounds
+            mapBounds = {
+                minX: 0,
+                maxX: mapWidth * TILE_SIZE,
+                minY: 0,
+                maxY: mapHeight * TILE_SIZE
+            };
+            
+            // Use full tile boxes for all tiles
+            for (let y = 0; y < mapHeight; y++) {
+                for (let x = 0; x < mapWidth; x++) {
+                    const tileType = tiles[y][x];
+                    if (tileType >= 0) {
+                        PLATFORMS.push({
+                            x: x * TILE_SIZE,
+                            y: y * TILE_SIZE,
+                            w: TILE_SIZE,
+                            h: TILE_SIZE,
+                            tileType: tileType
+                        });
+                    }
+                }
+            }
+            preRenderMap();
+        }
+        
+        // Load map on startup
+        loadMap();
+
+        let inputs = { left: false, right: false, up: false };
+        
+        // Debug mode for collision visualization
+        let debugMode = false;
+        
+        // Camera system
+        let cameraX = 0;
+        let cameraY = 0;
+        const cameraZoom = 1.573;
+        let targetCameraX = 0;
+        let targetCameraY = 0;
+        const cameraLerpFactor = 0.08;
+        
+        // Server authoritative snapshots are kept separate from rendered positions.
+        const playerState = {};
+        const authoritativePlayerState = {};
+        const playerSnapshots = {};
+        const MAX_SNAPSHOT_AGE_MS = 1000;
+        const MIN_INTERPOLATION_DELAY_MS = 50;
+        const MAX_INTERPOLATION_DELAY_MS = 200;
+        const PACKET_HISTORY_LIMIT = 20;
+        let renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+        const packetReceiveTimes = [];
+        let serverClockOffsetMs = 0;
+        // Store rendered dimensions for each player (aspect-ratio-preserving)
+        const playerRenderDimensions = {};
+        // Store animation frames for each player to prevent sync issues
+        const playerAnimFrames = {};
+        // Store dying players for death animation and fade-out
+        const dyingPlayers = {};
+        // Store fairy data from server
+        let fairies = [];
+        
+        // Chat system
+        const chatMessages = {}; // Store chat messages per player
+        const CHAT_MESSAGE_DURATION = 4000; // 4 seconds
+        const CHAT_FADE_DURATION = 1000; // 1 second fade
+        const MAX_CHAT_LENGTH = 50;
+        
+        // Dust particle system
+        window.dustParticles = [];
+        const MAX_DUST_PARTICLES = 50;
+        let lastOnGroundState = {};
+        
+        // Fireball system
+        let fireballs = {};
+        let authoritativeFireballs = {};
+        let explosions = {};
+        let mousePosition = { x: 0, y: 0 };
+        const FIREBALL_SIZE = 25;
+        const EXPLOSION_RADIUS = 40;
+        const EXPLOSION_DURATION = 0.5;
+        
+
+        // Keyboard input handling
+        window.addEventListener('keydown', (e) => {
+            // Disable movement keys when chat is active
+            if (chatActive) {
+                console.log('Movement blocked - chat is active');
+                return;
+            }
+            
+            if (e.key === 'ArrowLeft' || e.key === 'a') {
+                inputs.left = true;
+            }
+            if (e.key === 'ArrowRight' || e.key === 'd') {
+                inputs.right = true;
+            }
+            if (e.key === 'ArrowUp' || e.key === 'w') {
+                e.preventDefault();
+                socket.emit('jump');
+            }
+            
+            // Manual respawn with 'R' key
+            if (e.key === 'r' || e.key === 'R') {
+                // Check if current player is in dying state
+                const myPlayer = getPlayerState(socket.id);
+                if (myPlayer) {
+                    // Check server state for is_dying status
+                    if (dyingPlayers[socket.id]) {
+                        socket.emit('respawn_request');
+                        console.log('Manual respawn requested');
+                    }
+                }
+            }
+            
+            socket.emit('input', inputs);
+        });
+
+        window.addEventListener('keyup', (e) => {
+            // Disable movement keys when chat is active
+            if (chatActive) {
+                return;
+            }
+            
+            if (e.key === 'ArrowLeft' || e.key === 'a') inputs.left = false;
+            if (e.key === 'ArrowRight' || e.key === 'd') inputs.right = false;
+            socket.emit('input', inputs);
+        });
+
+        // Chat input handling
+        const chatInput = document.getElementById('chat-input');
+        const chatBox = document.getElementById('chat-box');
+        const chatMessagesContainer = document.getElementById('chat-messages');
+        const chatToggle = document.getElementById('chat-toggle');
+        let chatActive = false;
+        let chatJustClosed = false; // Prevent immediate reopening
+        let chatExpanded = true; // Track chat expansion state
+        const chatHistory = []; // Store chat history
+        const MAX_CHAT_HISTORY = 50; // Maximum messages to keep in history
+
+        // Add message to chat box
+        function addMessageToChatBox(sid, name, message) {
+            const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+            const messageElement = document.createElement('div');
+            messageElement.className = 'chat-message';
+            messageElement.id = messageId;
+            messageElement.innerHTML = `
+                <span class="player-id">${name}:</span>
+                <span class="message-text">${message}</span>
+            `;
+            
+            chatMessagesContainer.appendChild(messageElement);
+            
+            // Add to history
+            chatHistory.push({ sid, message, element: messageElement });
+            
+            // Limit history size
+            if (chatHistory.length > MAX_CHAT_HISTORY) {
+                const oldMessage = chatHistory.shift();
+                if (oldMessage.element && oldMessage.element.parentNode) {
+                    oldMessage.element.remove();
+                }
+            }
+            
+            // Scroll to bottom if chat is expanded
+            if (chatExpanded) {
+                chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+            }
+        }
+
+        // Toggle chat expansion
+        function toggleChatExpansion() {
+            chatExpanded = !chatExpanded;
+            if (chatExpanded) {
+                chatBox.classList.remove('collapsed');
+                chatBox.classList.add('expanded');
+                chatToggle.textContent = '▼';
+                chatToggle.title = 'Collapse Chat';
+                // Scroll to bottom when expanding
+                chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+            } else {
+                chatBox.classList.remove('expanded');
+                chatBox.classList.add('collapsed');
+                chatToggle.textContent = '▶';
+                chatToggle.title = 'Expand Chat';
+            }
+        }
+
+        // Add toggle button event listener
+        chatToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleChatExpansion();
+        });
+
+        // Add header click to toggle as well
+        document.getElementById('chat-header').addEventListener('click', () => {
+            toggleChatExpansion();
+        });
+
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const message = chatInput.value.trim();
+                console.log('Enter pressed in chat, message length:', message.length);
+                if (message.length > 0) {
+                    // Send chat message to server
+                    socket.emit('chat_message', { message: message });
+                    chatInput.value = '';
+                    console.log('Message sent, chat should close');
+                } else {
+                    console.log('Empty message, chat should stay visible');
+                }
+                // Always unfocus chat after Enter (whether message was sent or not)
+                chatInput.blur();
+                chatActive = false;
+                chatJustClosed = true; // Set flag to prevent immediate reopening
+                // Keep chat box visible - don't hide it
+                console.log('Chat unfocused, chatActive:', chatActive);
+                
+                // Clear the flag after a short delay
+                setTimeout(() => {
+                    chatJustClosed = false;
+                }, 100);
+            } else if (e.key === 'Escape') {
+                chatInput.value = '';
+                chatInput.blur();
+                chatActive = false;
+                chatJustClosed = true; // Set flag to prevent immediate reopening
+                // Keep chat box visible on escape too
+                setTimeout(() => {
+                    chatJustClosed = false;
+                }, 100);
+            }
+        });
+
+        chatInput.addEventListener('focus', () => {
+            chatActive = true;
+            chatBox.style.display = 'block';
+            // Set initial expanded state
+            if (chatExpanded) {
+                chatBox.classList.add('expanded');
+                chatToggle.textContent = '▼';
+            } else {
+                chatBox.classList.add('collapsed');
+                chatToggle.textContent = '▶';
+            }
+            // Load chat history when opening chat
+            if (chatHistory.length === 0) {
+                // Request recent chat history from server (optional enhancement)
+            }
+        });
+
+        chatInput.addEventListener('blur', () => {
+            chatActive = false;
+            // Keep chat box visible after blur - don't hide it automatically
+            console.log('Chat input blurred, keeping chat box visible');
+        });
+
+        // Global enter key to focus chat input
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !chatActive && !chatJustClosed && document.activeElement !== chatInput && document.activeElement.tagName !== 'INPUT') {
+                // Don't activate chat if player is using movement keys
+                if (!inputs.left && !inputs.right && !inputs.up) {
+                    e.preventDefault();
+                    chatInput.focus();
+                }
+            }
+        });
+
+        // Mouse event handlers for fireball shooting
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0 && !chatActive && allAssetsLoaded) { // Left click
+                // Update mouse position to current click position
+                const rect = canvas.getBoundingClientRect();
+                const currentMouseX = (e.clientX - rect.left) / cameraZoom + cameraX;
+                const currentMouseY = (e.clientY - rect.top) / cameraZoom + cameraY;
+                
+                // Calculate angle from player to click position
+                const myPlayer = getPlayerPosition(socket.id);
+                if (myPlayer) {
+                    const dx = currentMouseX - myPlayer.x;
+                    const dy = currentMouseY - myPlayer.y;
+                    const angle = Math.atan2(dy, dx);
+                    
+                    socket.emit('projectile_fire', { angle: angle });
+                }
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mousePosition.x = (e.clientX - rect.left) / cameraZoom + cameraX;
+            mousePosition.y = (e.clientY - rect.top) / cameraZoom + cameraY;
+        });
+
+
+        // State synchronization - server authoritative
+        socket.on('state', (serverState) => {
+            // FIX: Guard against processing state before assets are ready
+            if (!allAssetsLoaded || !characterMetadata) return;
+            
+            const { ts, seq, players: serverPlayers, fairies: serverFairies, fireballs: serverFireballs, explosions: serverExplosions } = serverState;
+            const receivedAt = performance.now();
+
+            recordPacketReceiveTime(receivedAt);
+            updateAdaptiveInterpolationDelay();
+            updateServerClockOffset(ts);
+
+            // Store latest state for each player and load their character assets if needed
+            for (const [sid, pos] of Object.entries(serverPlayers)) {
+                // Load character assets for this player if not already loaded
+                if (pos.character && !playerCharacterAssets[pos.character]) {
+                    loadCharacterAssetsFor(pos.character);
+                }
+                
+                // The error happened here because characterMetadata[pos.character] was undefined
+                const meta = characterMetadataCache[pos.character] || characterMetadata;
+                if (!meta) continue;
+                
+                const previousState = authoritativePlayerState[sid];
+                const nextState = {
+                    x: pos.x,
+                    y: pos.y,
+                    vy: pos.vy,
+                    action: pos.action,
+                    direction: pos.direction,
+                    on_ground: pos.on_ground,
+                    character: pos.character,
+                    name: pos.name,
+                    health: pos.health || PLAYER_MAX_HEALTH
+                };
+                authoritativePlayerState[sid] = nextState;
+                appendSnapshot(playerSnapshots, sid, {
+                    ts: receivedAt,
+                    x: pos.x,
+                    y: pos.y,
+                    vy: pos.vy,
+                    action: pos.action,
+                    direction: pos.direction,
+                    on_ground: pos.on_ground,
+                    character: pos.character,
+                    name: pos.name,
+                    health: pos.health || PLAYER_MAX_HEALTH
+                });
+                if (!playerState[sid]) {
+                    playerState[sid] = { ...nextState };
+                }
+                
+                // Create dust particles for jumps, landings, walking, and falling impacts
+                const currentState = authoritativePlayerState[sid];
+                
+                if (currentState && previousState) {
+                    // Check for jump (was on ground, now in air with upward velocity)
+                    if (previousState.on_ground && !currentState.on_ground && currentState.vy < -50) {
+                        createDustParticles(currentState.x, currentState.y + 20, 'jump');
+                    }
+                    // Check for landing (was in air, now on ground)
+                    else if (!previousState.on_ground && currentState.on_ground && currentState.vy > 0) {
+                        // Determine impact strength based on velocity
+                        const impactSpeed = Math.abs(currentState.vy);
+                        if (impactSpeed > 200) {
+                            // Hard fall - create more dust
+                            createDustParticles(currentState.x, currentState.y + 20, 'land');
+                        } else if (impactSpeed > 50) {
+                            // Regular landing - smaller dust cloud
+                            createDustParticles(currentState.x, currentState.y + 20, 'land');
+                        }
+                    }
+                    // Check for walking dust (on ground and moving horizontally)
+                    else if (currentState.on_ground && previousState.on_ground && 
+                             (currentState.action === 'run' || currentState.action === 'idle')) {
+                        // Create walking dust occasionally based on movement
+                        const isMoving = Math.abs(currentState.x - previousState.x) > 1;
+                        if (isMoving && Math.random() < 0.1) { // 10% chance per frame when moving
+                            createDustParticles(currentState.x, currentState.y + 20, 'walk');
+                        }
+                    }
+                }
+                
+                // Store current state for next comparison
+                lastOnGroundState[sid] = {
+                    on_ground: currentState.on_ground,
+                    vy: currentState.vy,
+                    x: currentState.x,
+                    action: currentState.action
+                };
+            }
+            
+            // Update fairy data from server
+            if (serverFairies) {
+                fairies = serverFairies;
+            }
+            
+            // Update fireball data from server
+            if (serverFireballs) {
+                for (const [id, fb] of Object.entries(serverFireballs)) {
+                    authoritativeFireballs[id] = {
+                        id: id,
+                        owner_sid: fb.owner_sid ?? authoritativeFireballs[id]?.owner_sid ?? null,
+                        x: fb.x,
+                        y: fb.y,
+                        vx: fb.vx,
+                        vy: fb.vy,
+                        start_x: typeof fb.start_x === 'number' ? fb.start_x : fb.x,
+                        start_y: typeof fb.start_y === 'number' ? fb.start_y : fb.y,
+                        initial_vx: typeof fb.initial_vx === 'number' ? fb.initial_vx : fb.vx,
+                        initial_vy: typeof fb.initial_vy === 'number' ? fb.initial_vy : fb.vy,
+                        spawn_time_ms: typeof fb.spawn_time_ms === 'number' ? fb.spawn_time_ms : ts
+                    };
+
+                    if (!fireballs[id]) {
+                        fireballs[id] = {
+                            id: id,
+                            owner_sid: authoritativeFireballs[id].owner_sid,
+                            x: fb.x,
+                            y: fb.y,
+                            vx: fb.vx,
+                            vy: fb.vy,
+                            trail: []
+                        };
+                    } else {
+                        fireballs[id].owner_sid = authoritativeFireballs[id].owner_sid;
+                    }
+                }
+                
+                // Remove fireballs that are no longer in server state
+                for (const id in fireballs) {
+                    if (!serverFireballs[id]) {
+                        if (!authoritativeFireballs[id]?.destroy_time_ms) {
+                            delete fireballs[id];
+                            delete authoritativeFireballs[id];
+                        }
+                    }
+                }
+            }
+            
+            // Update explosion data from server
+            if (serverExplosions) {
+                for (const [id, ex] of Object.entries(serverExplosions)) {
+                    if (!explosions[id]) {
+                        explosions[id] = {
+                            id: id,
+                            x: ex.x,
+                            y: ex.y,
+                            spawnTime: Date.now() - (ex.age * 1000)
+                        };
+                    }
+                }
+                
+                // Remove explosions that are no longer in server state
+                for (const id in explosions) {
+                    if (!serverExplosions[id]) {
+                        delete explosions[id];
+                    }
+                }
+            }
+            
+            // Clean up disconnected players
+            for (const sid in playerState) {
+                if (!serverPlayers[sid]) {
+                    delete playerState[sid];
+                    delete authoritativePlayerState[sid];
+                    delete playerSnapshots[sid];
+                }
+            }
+        });
+
+        // Handle map loaded event from server
+        socket.on('map_loaded', (mapData) => {
+            console.log('Map loaded from server:', mapData.name);
+            currentMap = mapData;
+            convertMapToPlatforms();
+        });
+
+        // Handle player died event from server
+        socket.on('player_died', (data) => {
+            const { sid, killer_sid } = data;
+            console.log(`Player ${sid} killed by ${killer_sid}`);
+            
+            // Show death message
+            const deathMessage = {
+                sid: sid,
+                killer_sid: killer_sid,
+                startTime: Date.now(),
+                duration: 3000
+            };
+            
+            if (!window.deathMessages) {
+                window.deathMessages = [];
+            }
+            window.deathMessages.push(deathMessage);
+        });
+
+        // Handle player dying event from server
+        socket.on('player_dying', (data) => {
+            const { sid, x, y, vy, on_ground, character, direction, timestamp } = data;
+            dyingPlayers[sid] = {
+                x: x,
+                y: y,
+                vy: vy,
+                on_ground: on_ground,
+                landed: on_ground,
+                character: character,
+                direction: direction,
+                deathStartTime: Date.now(),
+                deathFrame: 0,
+                opacity: 1.0
+            };
+            console.log(`Player ${sid} is dying at (${x}, ${y}), vy: ${vy}, on_ground: ${on_ground}`);
+
+            // Load character assets for this dying player if not already loaded
+            if (character && !playerCharacterAssets[character]) {
+                loadCharacterAssetsFor(character);
+            }
+        });
+
+        // Handle player respawned event from server
+        socket.on('player_respawned', (data) => {
+            const { sid } = data;
+            // Remove player from dyingPlayers so they can be rendered immediately
+            if (dyingPlayers[sid]) {
+                delete dyingPlayers[sid];
+                console.log(`Player ${sid} respawned, removed from dyingPlayers`);
+            }
+        });
+
+        // Handle initial dead bodies for new players
+        socket.on('initial_dead_bodies', (bodies) => {
+            console.log("Received initial dead bodies:", bodies);
+            for (const sid in bodies) {
+                const body = bodies[sid];
+                const elapsedSinceDeath = (Date.now() / 1000) - body.timestamp;
+                
+                // Only add if it hasn't expired yet (11 seconds total)
+                if (elapsedSinceDeath < 11) {
+                    dyingPlayers[sid] = {
+                        x: body.x,
+                        y: body.y,
+                        vy: body.vy,
+                        on_ground: body.on_ground,
+                        landed: body.on_ground,
+                        character: body.character,
+                        direction: body.direction,
+                        deathStartTime: Date.now() - (elapsedSinceDeath * 1000),
+                        deathFrame: 0,
+                        opacity: 1.0
+                    };
+                    
+                    // Load character assets for this dead body
+                    if (body.character && !playerCharacterAssets[body.character]) {
+                        loadCharacterAssetsFor(body.character);
+                    }
+                }
+            }
+        });
+
+        // Handle chat messages from server
+        socket.on('chat_message', (data) => {
+            const { sid, name, message, timestamp } = data;
+            
+            // Add to floating messages above player head
+            chatMessages[sid] = {
+                text: message,
+                startTime: timestamp || Date.now(),
+                opacity: 1.0,
+                scale: 1.0
+            };
+            
+            // Add to chat box
+            addMessageToChatBox(sid, name, message);
+            
+            console.log(`Received chat message from ${name} (${sid}): ${message}`);
+        });
+
+        // Handle projectile created event from server
+        socket.on('projectile_created', (data) => {
+            const { id, owner_sid, x, y, vx, vy } = data;
+            authoritativeFireballs[id] = {
+                id: id,
+                owner_sid: owner_sid,
+                x: x,
+                y: y,
+                vx: vx,
+                vy: vy,
+                start_x: typeof data.start_x === 'number' ? data.start_x : x,
+                start_y: typeof data.start_y === 'number' ? data.start_y : y,
+                initial_vx: typeof data.initial_vx === 'number' ? data.initial_vx : vx,
+                initial_vy: typeof data.initial_vy === 'number' ? data.initial_vy : vy,
+                spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now()
+            };
+            fireballs[id] = {
+                id: id,
+                owner_sid: owner_sid,
+                x: x,
+                y: y,
+                vx: vx,
+                vy: vy,
+                trail: []
+            };
+        });
+
+        // Handle projectile destroyed event from server
+        socket.on('projectile_destroyed', (data) => {
+            const { id, destroy_time_ms, x, y } = data;
+            if (authoritativeFireballs[id]) {
+                authoritativeFireballs[id].destroy_time_ms = typeof destroy_time_ms === 'number' ? destroy_time_ms : Date.now();
+                if (typeof x === 'number') {
+                    authoritativeFireballs[id].impact_x = x;
+                }
+                if (typeof y === 'number') {
+                    authoritativeFireballs[id].impact_y = y;
+                }
+            } else if (fireballs[id]) {
+                delete fireballs[id];
+            }
+        });
+
+        // Handle explosion created event from server
+        socket.on('explosion_created', (data) => {
+            const { id, x, y, spawn_time_ms } = data;
+            explosions[id] = {
+                id: id,
+                x: x,
+                y: y,
+                spawnTime: Date.now(),
+                spawn_time_ms: typeof spawn_time_ms === 'number' ? spawn_time_ms : null,
+                destroy_time_ms: null
+            };
+        });
+
+        // Handle explosion destroyed event from server
+        socket.on('explosion_destroyed', (data) => {
+            const { id, destroy_time_ms } = data;
+            if (explosions[id]) {
+                explosions[id].destroy_time_ms = typeof destroy_time_ms === 'number' ? destroy_time_ms : Date.now();
+            }
+        });
+
+        // Handle player hit event from server
+        socket.on('player_hit', (data) => {
+            const { sid, damage, health, is_dying } = data;
+            console.log(`Player ${sid} hit for ${damage} damage, health: ${health}`);
+            
+            // Update player health if we have state for them
+            if (authoritativePlayerState[sid]) {
+                authoritativePlayerState[sid].health = health;
+            }
+            if (playerState[sid]) {
+                playerState[sid].health = health;
+            }
+        });
+
+        // Load map and notify server when ready
+        async function loadAndNotifyMap() {
+            await loadMap();
+            
+            // Notify server of loaded map
+            if (currentMap) {
+                socket.emit('load_map', { name: currentMap.name });
+            }
+        }
+
+        // Load map on startup and notify server
+        loadAndNotifyMap();
+
+        function lerp(start, end, t) {
+            return start + (end - start) * t;
+        }
+
+        function cubicHermite(p0, m0, p1, m1, t) {
+            const t2 = t * t;
+            const t3 = t2 * t;
+            return (
+                (2 * t3 - 3 * t2 + 1) * p0 +
+                (t3 - 2 * t2 + t) * m0 +
+                (-2 * t3 + 3 * t2) * p1 +
+                (t3 - t2) * m1
+            );
+        }
+
+        function recordPacketReceiveTime(receivedAt) {
+            packetReceiveTimes.push(receivedAt);
+            if (packetReceiveTimes.length > PACKET_HISTORY_LIMIT) {
+                packetReceiveTimes.shift();
+            }
+        }
+
+        function updateServerClockOffset(serverTs) {
+            if (typeof serverTs !== 'number') return;
+            const measuredOffset = Date.now() - serverTs;
+            if (serverClockOffsetMs === 0) {
+                serverClockOffsetMs = measuredOffset;
+                return;
+            }
+
+            serverClockOffsetMs = lerp(serverClockOffsetMs, measuredOffset, 0.15);
+        }
+
+        function updateAdaptiveInterpolationDelay() {
+            if (packetReceiveTimes.length < 3) {
+                renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+                return;
+            }
+
+            const intervals = [];
+            for (let i = 1; i < packetReceiveTimes.length; i++) {
+                intervals.push(packetReceiveTimes[i] - packetReceiveTimes[i - 1]);
+            }
+
+            const meanInterval = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+            const variance =
+                intervals.reduce((sum, value) => sum + Math.pow(value - meanInterval, 2), 0) / intervals.length;
+            const jitterMs = Math.sqrt(variance);
+            const targetDelay = Math.max(MIN_INTERPOLATION_DELAY_MS, meanInterval) + jitterMs * 2.5;
+
+            renderDelayMs = Math.max(
+                MIN_INTERPOLATION_DELAY_MS,
+                Math.min(MAX_INTERPOLATION_DELAY_MS, lerp(renderDelayMs, targetDelay, 0.2))
+            );
+        }
+
+        function appendSnapshot(store, id, snapshot) {
+            if (!store[id]) {
+                store[id] = [];
+            }
+
+            const snapshots = store[id];
+            const lastSnapshot = snapshots[snapshots.length - 1];
+            if (lastSnapshot && lastSnapshot.ts === snapshot.ts) {
+                snapshots[snapshots.length - 1] = snapshot;
+            } else {
+                snapshots.push(snapshot);
+            }
+
+            const minTs = snapshot.ts - MAX_SNAPSHOT_AGE_MS;
+            while (snapshots.length > 2 && snapshots[1].ts < minTs) {
+                snapshots.shift();
+            }
+        }
+
+        function sampleSnapshots(snapshots, renderTs, options = {}) {
+            if (!snapshots || snapshots.length === 0) {
+                return null;
+            }
+
+            if (snapshots.length === 1 || renderTs <= snapshots[0].ts) {
+                return snapshots[0];
+            }
+
+            for (let i = 0; i < snapshots.length - 1; i++) {
+                const from = snapshots[i];
+                const to = snapshots[i + 1];
+                if (renderTs <= to.ts) {
+                    const span = Math.max(1, to.ts - from.ts);
+                    const t = Math.max(0, Math.min(1, (renderTs - from.ts) / span));
+                    const spanSeconds = span / 1000;
+                    let x = lerp(from.x, to.x, t);
+                    let y = lerp(from.y, to.y, t);
+
+                    if (options.useBallisticPosition && typeof from.vx === 'number' && typeof to.vx === 'number') {
+                        const dtSeconds = t * spanSeconds;
+                        x = from.x + from.vx * dtSeconds;
+                    } else if (options.useHermitePosition && typeof from.vx === 'number' && typeof to.vx === 'number') {
+                        x = cubicHermite(from.x, from.vx * spanSeconds, to.x, to.vx * spanSeconds, t);
+                    }
+
+                    if (options.useBallisticPosition && typeof from.vy === 'number' && typeof to.vy === 'number') {
+                        const acceleration = (to.vy - from.vy) / spanSeconds;
+                        const dtSeconds = t * spanSeconds;
+                        y = from.y + from.vy * dtSeconds + 0.5 * acceleration * dtSeconds * dtSeconds;
+                    } else if (options.useHermitePosition && typeof from.vy === 'number' && typeof to.vy === 'number') {
+                        y = cubicHermite(from.y, from.vy * spanSeconds, to.y, to.vy * spanSeconds, t);
+                    }
+
+                    return {
+                        x,
+                        y,
+                        vy: typeof from.vy === 'number' && typeof to.vy === 'number' ? lerp(from.vy, to.vy, t) : to.vy,
+                        vx: typeof from.vx === 'number' && typeof to.vx === 'number' ? lerp(from.vx, to.vx, t) : to.vx,
+                        action: t < 0.5 ? from.action : to.action,
+                        direction: t < 0.5 ? from.direction : to.direction,
+                        on_ground: t < 0.5 ? from.on_ground : to.on_ground,
+                        character: t < 0.5 ? from.character : to.character,
+                        name: t < 0.5 ? from.name : to.name,
+                        health: t < 0.5 ? from.health : to.health
+                    };
+                }
+            }
+
+            return snapshots[snapshots.length - 1];
+        }
+
+        function updateInterpolatedPlayerStates(renderNowTs) {
+            const renderTs = renderNowTs - renderDelayMs;
+
+            for (const sid in authoritativePlayerState) {
+                const sampled = sampleSnapshots(playerSnapshots[sid], renderTs);
+                if (!sampled) continue;
+
+                playerState[sid] = {
+                    ...authoritativePlayerState[sid],
+                    x: sampled.x,
+                    y: sampled.y,
+                    vy: typeof sampled.vy === 'number' ? sampled.vy : authoritativePlayerState[sid].vy,
+                    action: sampled.action ?? authoritativePlayerState[sid].action,
+                    direction: sampled.direction ?? authoritativePlayerState[sid].direction,
+                    on_ground: typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativePlayerState[sid].on_ground,
+                    character: sampled.character ?? authoritativePlayerState[sid].character,
+                    name: sampled.name ?? authoritativePlayerState[sid].name,
+                    health: sampled.health ?? authoritativePlayerState[sid].health
+                };
+            }
+        }
+
+        function sampleFireballAtServerTime(fireball, renderServerTimeMs) {
+            if (!fireball || typeof fireball.spawn_time_ms !== 'number') {
+                return null;
+            }
+
+            const tickMs = 1000 / 60;
+            const dtSeconds = 1 / 60;
+            const gravityPerSecond = GRAVITY * 60;
+            const elapsedMs = Math.max(0, renderServerTimeMs - fireball.spawn_time_ms);
+            const stepFloat = elapsedMs / tickMs;
+            const wholeSteps = Math.floor(stepFloat);
+            const alpha = stepFloat - wholeSteps;
+
+            const xAtStep = fireball.start_x + fireball.initial_vx * dtSeconds * wholeSteps;
+            const yAtStep =
+                fireball.start_y +
+                wholeSteps * dtSeconds * fireball.initial_vy +
+                gravityPerSecond * dtSeconds * dtSeconds * ((wholeSteps * (wholeSteps + 1)) / 2);
+            const nextVy = fireball.initial_vy + gravityPerSecond * dtSeconds * (wholeSteps + 1);
+            const nextX = xAtStep + fireball.initial_vx * dtSeconds;
+            const nextY = yAtStep + nextVy * dtSeconds;
+            const currentVy = fireball.initial_vy + gravityPerSecond * dtSeconds * wholeSteps;
+
+            return {
+                x: lerp(xAtStep, nextX, alpha),
+                y: lerp(yAtStep, nextY, alpha),
+                vx: fireball.initial_vx,
+                vy: lerp(currentVy, nextVy, alpha)
+            };
+        }
+
+        function updateInterpolatedFireballs(renderNowTs) {
+            const renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs;
+            for (const id in authoritativeFireballs) {
+                const fireballMeta = authoritativeFireballs[id];
+                const cappedRenderTimeMs =
+                    typeof fireballMeta.destroy_time_ms === 'number'
+                        ? Math.min(renderServerTimeMs, fireballMeta.destroy_time_ms)
+                        : renderServerTimeMs;
+                const sampled = sampleFireballAtServerTime(fireballMeta, cappedRenderTimeMs);
+                if (!sampled) continue;
+
+                if (typeof fireballMeta.destroy_time_ms === 'number' && renderServerTimeMs > fireballMeta.destroy_time_ms) {
+                    delete fireballs[id];
+                    delete authoritativeFireballs[id];
+                    continue;
+                }
+
+                if (!fireballs[id]) {
+                    fireballs[id] = {
+                        id: id,
+                        owner_sid: fireballMeta.owner_sid,
+                        x: sampled.x,
+                        y: sampled.y,
+                        vx: sampled.vx ?? fireballMeta.vx,
+                        vy: sampled.vy ?? fireballMeta.vy,
+                        trail: []
+                    };
+                }
+
+                fireballs[id].owner_sid = fireballMeta.owner_sid;
+                fireballs[id].x = sampled.x;
+                fireballs[id].y = sampled.y;
+                fireballs[id].vx = sampled.vx ?? fireballMeta.vx;
+                fireballs[id].vy = sampled.vy ?? fireballMeta.vy;
+                fireballs[id].trail.push({ x: fireballs[id].x, y: fireballs[id].y, time: renderNowTs });
+                if (fireballs[id].trail.length > 10) {
+                    fireballs[id].trail.shift();
+                }
+            }
+        }
+
+        function updateInterpolatedRenderState(renderNowTs) {
+            updateInterpolatedPlayerStates(renderNowTs);
+            updateInterpolatedFireballs(renderNowTs);
+        }
+
+        function drawHealthBar(ctx, playerX, playerY, health, cameraX, cameraY) {
+            if (health >= PLAYER_MAX_HEALTH) return;
+            
+            const barWidth = 50;
+            const barHeight = 6;
+            const barX = playerX - barWidth / 2;
+            const barY = playerY - 70; // Moved up to be above the name
+            
+            // Background (red)
+            ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
+            ctx.fillRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
+            
+            // Health (green)
+            const healthPercent = health / PLAYER_MAX_HEALTH;
+            ctx.fillStyle = "rgba(0, 255, 0, 0.9)";
+            ctx.fillRect(barX - cameraX, barY - cameraY, barWidth * healthPercent, barHeight);
+            
+            // Border
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
+        }
+
+        function getPlayerState(playerId) {
+            return playerState[playerId] || null;
+        }
+        
+        function getPlayerPosition(playerId) {
+            const state = playerState[playerId];
+            return state ? { x: state.x, y: state.y } : null;
+        }
+
+        function calculateRenderDimensions(frameW, frameH) {
+            // Calculate scale to fit within PLAYER_MAX_SIZE while preserving aspect ratio
+            const scaleX = PLAYER_MAX_SIZE / frameW;
+            const scaleY = PLAYER_MAX_SIZE / frameH;
+            const scale = Math.min(scaleX, scaleY);
+            return {
+                width: Math.round(frameW * scale),
+                height: Math.round(frameH * scale)
+            };
+        }
+
+        // Dust particle system functions
+        function createDustParticles(x, y, type) {
+            // Remove old particles if we're at the limit
+            while (window.dustParticles.length >= MAX_DUST_PARTICLES) {
+                window.dustParticles.shift();
+            }
+
+            let particleCount, baseSize, lifetime, spread, color;
+            
+            switch(type) {
+                case 'jump':
+                    particleCount = 4;
+                    baseSize = 2;
+                    lifetime = 0.3;
+                    spread = 15;
+                    color = 'rgba(194, 178, 128, ';
+                    break;
+                case 'walk':
+                    particleCount = 2;
+                    baseSize = 1.5;
+                    lifetime = 0.2;
+                    spread = 8;
+                    color = 'rgba(180, 160, 120, ';
+                    break;
+                case 'land':
+                default:
+                    particleCount = 8;
+                    baseSize = 3;
+                    lifetime = 0.5;
+                    spread = 25;
+                    color = 'rgba(160, 144, 104, ';
+                    break;
+            }
+
+            for (let i = 0; i < particleCount; i++) {
+                const angle = (Math.PI * 2 * i) / particleCount + (Math.random() - 0.5) * 0.5;
+                const velocity = spread * (0.5 + Math.random() * 0.5);
+                
+                let vx, vy;
+                switch(type) {
+                    case 'jump':
+                        vx = Math.cos(angle) * velocity;
+                        vy = Math.abs(Math.sin(angle)) * velocity * 0.5;
+                        break;
+                    case 'walk':
+                        // Walking dust mostly spreads horizontally and slightly upward
+                        vx = (Math.random() - 0.5) * spread;
+                        vy = -Math.random() * spread * 0.3;
+                        break;
+                    case 'land':
+                    default:
+                        vx = Math.cos(angle) * velocity;
+                        vy = -Math.abs(Math.sin(angle)) * velocity * 0.8;
+                        break;
+                }
+                
+                window.dustParticles.push({
+                    x: x + (Math.random() - 0.5) * 5, // Slight horizontal randomness
+                    y: y,
+                    vx: vx,
+                    vy: vy,
+                    size: baseSize + Math.random() * 2,
+                    alpha: 0.7,
+                    lifetime: lifetime,
+                    age: 0,
+                    color: color
+                });
+            }
+        }
+
+        function updateDustParticles(dt) {
+            for (let i = window.dustParticles.length - 1; i >= 0; i--) {
+                const particle = window.dustParticles[i];
+                
+                // Update particle physics
+                particle.x += particle.vx * dt;
+                particle.y += particle.vy * dt;
+                particle.vy += 50 * dt; // Light gravity
+                particle.age += dt;
+                
+                // Fade out
+                particle.alpha = Math.max(0, 0.7 * (1 - particle.age / particle.lifetime));
+                
+                // Remove dead particles
+                if (particle.age >= particle.lifetime) {
+                    window.dustParticles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawDustParticles() {
+            ctx.save();
+            for (const particle of window.dustParticles) {
+                ctx.fillStyle = particle.color + particle.alpha + ')';
+                // Replaced ctx.arc with ctx.fillRect. 
+                // Rectangles render 10x faster on CPU canvas than path circles.
+                ctx.fillRect(
+                    particle.x - cameraX - particle.size/2, 
+                    particle.y - cameraY - particle.size/2, 
+                    particle.size, 
+                    particle.size
+                );
+            }
+            ctx.restore();
+        }
+
+
+        function drawFireballs() {
+            ctx.save();
+            for (const id in fireballs) {
+                const fireball = fireballs[id];
+                
+                // Draw particle trail
+                if (fireball.trail && fireball.trail.length > 0) {
+                    const now = Date.now();
+                    for (let i = 0; i < fireball.trail.length; i++) {
+                        const trailPoint = fireball.trail[i];
+                        const age = (now - trailPoint.time) / 1000;
+                        if (age < 0.3) { // Trail lasts 0.3 seconds
+                            const alpha = 1 - (age / 0.3);
+                            const size = FIREBALL_SIZE * (1 - age * 0.5);
+                            
+                            ctx.globalAlpha = alpha * 0.5;
+                            ctx.fillStyle = `rgba(255, 100, 0, ${alpha})`;
+                            ctx.fillRect(
+                                trailPoint.x - cameraX - size / 2,
+                                trailPoint.y - cameraY - size / 2,
+                                size,
+                                size
+                            );
+                        }
+                    }
+                }
+                
+                // Draw fireball as orange/red square
+                const halfSize = FIREBALL_SIZE / 2;
+                ctx.globalAlpha = 1.0;
+                ctx.fillStyle = '#ff6600';
+                ctx.fillRect(
+                    fireball.x - cameraX - halfSize,
+                    fireball.y - cameraY - halfSize,
+                    FIREBALL_SIZE,
+                    FIREBALL_SIZE
+                );
+                
+                // Add inner glow
+                ctx.fillStyle = '#ffcc00';
+                ctx.fillRect(
+                    fireball.x - cameraX - halfSize * 0.5,
+                    fireball.y - cameraY - halfSize * 0.5,
+                    FIREBALL_SIZE * 0.5,
+                    FIREBALL_SIZE * 0.5
+                );
+            }
+            ctx.restore();
+        }
+
+        function drawExplosions() {
+            const now = Date.now();
+            const renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs;
+            ctx.save();
+            for (const id in explosions) {
+                const explosion = explosions[id];
+                if (typeof explosion.destroy_time_ms === 'number' && renderServerTimeMs > explosion.destroy_time_ms) {
+                    delete explosions[id];
+                    continue;
+                }
+
+                let age = (now - explosion.spawnTime) / 1000;
+                if (typeof explosion.spawn_time_ms === 'number') {
+                    age = (renderServerTimeMs - explosion.spawn_time_ms) / 1000;
+                }
+                
+                if (age >= 0 && age < EXPLOSION_DURATION) {
+                    const progress = age / EXPLOSION_DURATION;
+                    const alpha = 1 - progress;
+                    const radius = EXPLOSION_RADIUS * (0.5 + progress);
+                    
+                    // Draw explosion as expanding circle
+                    ctx.globalAlpha = alpha;
+                    
+                    // Outer ring
+                    ctx.fillStyle = `rgba(255, 100, 0, ${alpha * 0.8})`;
+                    ctx.beginPath();
+                    ctx.arc(
+                        explosion.x - cameraX,
+                        explosion.y - cameraY,
+                        radius,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Inner core
+                    ctx.fillStyle = `rgba(255, 200, 0, ${alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(
+                        explosion.x - cameraX,
+                        explosion.y - cameraY,
+                        radius * 0.6,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Bright center
+                    ctx.fillStyle = `rgba(255, 255, 200, ${alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(
+                        explosion.x - cameraX,
+                        explosion.y - cameraY,
+                        radius * 0.3,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                } else if (age >= EXPLOSION_DURATION && !explosion.destroy_time_ms) {
+                    delete explosions[id];
+                }
+            }
+            ctx.restore();
+        }
+
+        function drawChatMessages() {
+            // Chat rendering is now handled in the post-pixelation section
+            // to keep text sharp and clear
+        }
+
+        function draw() {
+            const currentTime = performance.now();
+            const deltaTime = currentTime - lastFrameTime;
+
+            // 1. Performance Detection
+            frameCount++;
+            if (currentTime - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
+                const actualFps = (frameCount * 1000) / (currentTime - lastPerformanceCheck);
+                
+                // If we consistently drop below 55 FPS on a 60Hz/120Hz target, 
+                // cap it to 30 to stabilize the physics and prevent stuttering.
+                if (actualFps < 50 && !isLowEnd) {
+                    isLowEnd = true;
+                    fpsCap = 30; // Cap low-end to 30 FPS
+                    frameInterval = 1000 / fpsCap;
+                    console.log("Low-end device detected. Capping to 30 FPS.");
+                } else if (actualFps > 58 && isLowEnd) {
+                    // Optional: Recovery if performance improves
+                    isLowEnd = false;
+                    fpsCap = 120;
+                    frameInterval = 1000 / fpsCap;
+                }
+                
+                frameCount = 0;
+                lastPerformanceCheck = currentTime;
+            }
+
+            // 2. Frame Rate Limiter
+            if (deltaTime < frameInterval) {
+                requestAnimationFrame(draw);
+                return;
+            }
+
+            // Update last frame time (with adjustment for drift)
+            lastFrameTime = currentTime - (deltaTime % frameInterval);
+
+            // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
+            if (ctx && canvas) {
+                updateInterpolatedRenderState(currentTime);
+
+                // Clear main canvas
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                // Apply camera zoom transformation
+                ctx.save();
+                ctx.scale(cameraZoom, cameraZoom);
+
+                // Calculate target camera position (where camera should be)
+                // Update camera to follow local player (including dying players)
+                let localPlayerPos = getPlayerPosition(socket.id);
+                let localDims = playerRenderDimensions[socket.id] || { width: PLAYER_MAX_SIZE, height: PLAYER_MAX_SIZE };
+                
+                // Check if player is in dying state (not in normal player states)
+                if (dyingPlayers[socket.id]) {
+                    // Player is dying - use dying player position for camera
+                    const dying = dyingPlayers[socket.id];
+                    localPlayerPos = {
+                        x: dying.x,
+                        y: dying.y
+                    };
+                    // Use default dimensions for dying players
+                    localDims = { width: PLAYER_MAX_SIZE, height: PLAYER_MAX_SIZE };
+                }
+                
+                // Only update camera if we have a valid position (alive or dying)
+                if (localPlayerPos) {
+                    targetCameraX = localPlayerPos.x - canvas.width / (2 * cameraZoom) + localDims.width / 2;
+                    targetCameraY = localPlayerPos.y - canvas.height / (2 * cameraZoom) + localDims.height / 2;
+
+                    // Clamp target camera to map bounds
+                    targetCameraX = Math.max(0, Math.min(targetCameraX, mapBounds.maxX - canvas.width / cameraZoom));
+                    targetCameraY = Math.max(0, Math.min(targetCameraY, mapBounds.maxY - canvas.height / cameraZoom));
+                }
+
+                // Apply smooth camera lag using lerp
+                cameraX += (targetCameraX - cameraX) * cameraLerpFactor;
+                cameraY += (targetCameraY - cameraY) * cameraLerpFactor;
+
+                // Draw tiles if map is loaded
+                if (mapCanvas) {
+                    const mapWidth = currentMap.width;
+                    const mapHeight = currentMap.height;
+                    
+                    // Only draw the visible portion of the pre-rendered map canvas
+                    const visibleW = canvas.width / cameraZoom;
+                    const visibleH = canvas.height / cameraZoom;
+                    
+                    ctx.drawImage(
+                        mapCanvas,
+                        cameraX, cameraY, visibleW, visibleH,
+                        0, 0, visibleW, visibleH
+                    );
+
+                    // Debug mode: Show collision boxes and platforms
+                    if (debugMode) {
+                        const tiles = currentMap.tiles;
+                        const startTileX = Math.max(0, Math.floor(cameraX / TILE_SIZE));
+                        const endTileX = Math.min(mapWidth, Math.ceil((cameraX + canvas.width / cameraZoom) / TILE_SIZE));
+                        const startTileY = Math.max(0, Math.floor(cameraY / TILE_SIZE));
+                        const endTileY = Math.min(mapHeight, Math.ceil((cameraY + canvas.height / cameraZoom) / TILE_SIZE));
+
+                        // Draw collision boxes for each tile
+                        const tileCollisions = currentMap.tileCollisions || {};
+                        let totalCollisionBoxes = 0;
+                        for (let y = startTileY; y < endTileY; y++) {
+                            for (let x = startTileX; x < endTileX; x++) {
+                                const tileIndex = tiles[y][x];
+                                if (tileIndex >= 0) {
+                                    const collisionBoxes = tileCollisions[tileIndex] || [{x: 0, y: 0, w: TILE_SIZE, h: TILE_SIZE}];
+                                    totalCollisionBoxes += collisionBoxes.length;
+                                    for (const box of collisionBoxes) {
+                                        ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                                        ctx.strokeStyle = '#00ff00';
+                                        ctx.lineWidth = 2;
+                                        ctx.fillRect(
+                                            x * TILE_SIZE + box.x - cameraX,
+                                            y * TILE_SIZE + box.y - cameraY,
+                                            box.w,
+                                            box.h
+                                        );
+                                        ctx.strokeRect(
+                                            x * TILE_SIZE + box.x - cameraX,
+                                            y * TILE_SIZE + box.y - cameraY,
+                                            box.w,
+                                            box.h
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Draw platforms (server collision boxes)
+                        ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
+                        ctx.strokeStyle = '#0066ff';
+                        ctx.lineWidth = 2;
+                        PLATFORMS.forEach(p => {
+                            ctx.fillRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
+                            ctx.strokeRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
+                        });
+                        
+                        // Draw debug info
+                        ctx.fillStyle = '#fff';
+                        ctx.font = '14px monospace';
+                        ctx.strokeStyle = '#000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeText(`Debug Mode: ON`, 10, 20);
+                        ctx.fillText(`Debug Mode: ON`, 10, 20);
+                        ctx.strokeText(`Platforms: ${PLATFORMS.length}`, 10, 40);
+                        ctx.fillText(`Platforms: ${PLATFORMS.length}`, 10, 40);
+                        ctx.strokeText(`Collision Boxes: ${totalCollisionBoxes}`, 10, 60);
+                        ctx.fillText(`Collision Boxes: ${totalCollisionBoxes}`, 10, 60);
+                        ctx.strokeText(`Green: Tile Collision Boxes (AABB)`, 10, 80);
+                        ctx.fillText(`Green: Tile Collision Boxes (AABB)`, 10, 80);
+                        ctx.strokeText(`Blue: Server Platforms (AABB)`, 10, 100);
+                        ctx.fillText(`Blue: Server Platforms (AABB)`, 10, 100);
+                        ctx.strokeText(`Yellow: Player Hitboxes (AABB)`, 10, 120);
+                        ctx.fillText(`Yellow: Player Hitboxes (AABB)`, 10, 120);
+                        ctx.strokeText(`Collision Type: Rectangle-based (NOT pixel-perfect)`, 10, 140);
+                        ctx.fillText(`Collision Type: Rectangle-based (NOT pixel-perfect)`, 10, 140);
+                    }
+                    
+                } else if (PLATFORMS.length > 0) {
+                    // Fallback: Draw Platforms with camera offset
+                    ctx.fillStyle = '#777';
+                    PLATFORMS.forEach(p => {
+                        ctx.fillRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
+                    });
+                }
+
+                // Draw Players with server authoritative positions and camera offset
+                for (const sid in playerState) {
+                    // Skip rendering dying players (they are rendered separately with death animation)
+                    if (dyingPlayers[sid]) {
+                        continue;
+                    }
+                    
+                    const state = playerState[sid];
+                    if (state) {
+                        const pos = { x: state.x, y: state.y }; // Get position from state
+                        const action = state.action || 'idle';
+                        const direction = state.direction || 'right';
+                        const playerCharacter = state.character || 'spartan';
+                        
+                        // Get assets for this player's specific character
+                        const playerAssets = playerCharacterAssets[playerCharacter];
+                        const playerMetadata = characterMetadataCache[playerCharacter];
+                        
+                        // Only render if assets are loaded or if loading has failed
+                        if (playerAssets && playerAssets[action] && playerMetadata && playerMetadata[action]) {
+                            const meta = playerMetadata[action];
+                            const [cols, rows] = meta.grid.split('x').map(Number);
+                            const frameCount = meta.frames;
+                            
+                            // Initialize or update per-player animation frame
+                            if (!playerAnimFrames[sid]) {
+                                playerAnimFrames[sid] = { frame: 0, action: 'idle', lastUpdate: Date.now() };
+                            }
+                            
+                            // Reset frame if action changed
+                            if (playerAnimFrames[sid].action !== action) {
+                                playerAnimFrames[sid].action = action;
+                                playerAnimFrames[sid].frame = 0;
+                                playerAnimFrames[sid].lastUpdate = Date.now();
+                            }
+                            
+                            // Increment frame for this player based on time (not every render frame)
+                            const animSpeed = 0.25;
+                            const now = Date.now();
+                            const timeSinceLastUpdate = now - playerAnimFrames[sid].lastUpdate;
+                            const frameDuration = 16 / animSpeed; // Time per frame in ms
+                            
+                            if (timeSinceLastUpdate >= frameDuration) {
+                                playerAnimFrames[sid].frame = (playerAnimFrames[sid].frame + 1) % frameCount;
+                                playerAnimFrames[sid].lastUpdate = now;
+                            }
+                            
+                            const frameIdx = playerAnimFrames[sid].frame;
+                            
+                            const frameX = (frameIdx % cols) * (playerAssets[action].width / cols);
+                            const frameY = Math.floor(frameIdx / cols) * (playerAssets[action].height / rows);
+                            const frameW = playerAssets[action].width / cols;
+                            const frameH = playerAssets[action].height / rows;
+
+                            // Calculate aspect-ratio-preserving render dimensions
+                            const renderDims = calculateRenderDimensions(frameW, frameH);
+                            
+                            // Send dimensions to server if they changed
+                            const prevDims = playerRenderDimensions[sid];
+                            if (!prevDims || prevDims.width !== renderDims.width || prevDims.height !== renderDims.height) {
+                                socket.emit('update_dimensions', { width: renderDims.width, height: renderDims.height });
+                            }
+                            
+                            playerRenderDimensions[sid] = renderDims;
+
+                            ctx.save();
+                            if (direction === 'left') {
+                                ctx.translate(pos.x - cameraX, pos.y - cameraY);
+                                ctx.scale(-1, 1);
+                                ctx.drawImage(playerAssets[action], frameX, frameY, frameW, frameH, -renderDims.width / 2, -renderDims.height / 2, renderDims.width, renderDims.height);
+                            } else {
+                                ctx.drawImage(playerAssets[action], frameX, frameY, frameW, frameH, pos.x - cameraX - renderDims.width / 2, pos.y - cameraY - renderDims.height / 2, renderDims.width, renderDims.height);
+                            }
+                            ctx.restore();
+                        } else if (failedCharacters.has(playerCharacter)) {
+                            // Only show red square if assets have failed to load
+                            const fallbackDims = { width: PLAYER_MAX_SIZE, height: PLAYER_MAX_SIZE };
+                            playerRenderDimensions[sid] = fallbackDims;
+                            ctx.fillStyle = sid === socket.id ? '#4CAF50' : '#F44336';
+                            ctx.fillRect(pos.x - cameraX - fallbackDims.width / 2, pos.y - cameraY - fallbackDims.height / 2, fallbackDims.width, fallbackDims.height);
+                        }
+                        // If assets are still loading, don't render anything (player will appear when assets are ready)
+
+
+                        // Debug mode: Draw player hitbox AFTER character
+                        if (debugMode) {
+                            const renderDims = playerRenderDimensions[sid] || { width: PLAYER_MAX_SIZE, height: PLAYER_MAX_SIZE };
+
+                            // Hitbox is centered on player position with narrow width
+                            const hitboxHalfWidth = PLAYER_HITBOX_WIDTH / 2;
+                            const hitboxHalfHeight = PLAYER_HITBOX_HEIGHT / 2;
+
+                            ctx.fillStyle = 'rgba(255, 255, 0, 0.5)';
+                            ctx.strokeStyle = '#ffff00';
+                            ctx.lineWidth = 3;
+                            ctx.fillRect(
+                                pos.x - cameraX - hitboxHalfWidth,
+                                pos.y - cameraY - hitboxHalfHeight,
+                                PLAYER_HITBOX_WIDTH,
+                                PLAYER_HITBOX_HEIGHT
+                            );
+                            ctx.strokeRect(
+                                pos.x - cameraX - hitboxHalfWidth,
+                                pos.y - cameraY - hitboxHalfHeight,
+                                PLAYER_HITBOX_WIDTH,
+                                PLAYER_HITBOX_HEIGHT
+                            );
+                        }
+
+                        // Draw health bar if damaged
+                        const latestState = playerState[sid];
+                        if (latestState) {
+                            const health = latestState.health || PLAYER_MAX_HEALTH;
+                            drawHealthBar(ctx, pos.x, pos.y, health, cameraX, cameraY);
+                        }
+                    }
+                }
+
+                // Draw fairies
+                if (fairies && fairies.length > 0) {
+                    fairies.forEach(fairy => {
+                        const fairyX = fairy.x - cameraX;
+                        const fairyY = fairy.y - cameraY;
+                        
+                        // Only draw if fairy is visible on screen
+                        if (fairyX > -50 && fairyX < canvas.width / cameraZoom + 50 &&
+                            fairyY > -50 && fairyY < canvas.height / cameraZoom + 50) {
+                            
+                            // Draw 2x2 pixel fairy
+                            const color = fairy.color;
+                            ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                            
+                            // Apply camera zoom to fairy size
+                            const fairySize = FAIRY_SIZE * cameraZoom;
+                            
+                            // Draw the fairy as a small 2x2 square
+                            ctx.fillRect(
+                                fairyX * cameraZoom - fairySize / 2,
+                                fairyY * cameraZoom - fairySize / 2,
+                                fairySize,
+                                fairySize
+                            );
+                            
+                            // Add a subtle glow effect
+                            ctx.save();
+                            ctx.globalAlpha = 0.3;
+                            ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                            ctx.fillRect(
+                                fairyX * cameraZoom - fairySize,
+                                fairyY * cameraZoom - fairySize,
+                                fairySize * 2,
+                                fairySize * 2
+                            );
+                            ctx.restore();
+                        }
+                    });
+                }
+
+                // Draw dying players with death animation and fade-out
+                const now = Date.now();
+                const deathAnimDuration = 10000; // 10 seconds hold on last frame before fade
+                const fadeDuration = 1000; // 1 second fade out
+
+                // Draw floating damage numbers
+                if (window.floatingDamageNumbers) {
+                    window.floatingDamageNumbers = window.floatingDamageNumbers.filter(dn => {
+                        const elapsed = now - dn.startTime;
+                        if (elapsed > dn.duration) return false;
+                        
+                        const progress = elapsed / dn.duration;
+                        const alpha = 1 - progress;
+                        const yOffset = -progress * 50;
+                        
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.fillStyle = "#ff4444";
+                        ctx.font = "bold 20px Arial";
+                        ctx.strokeStyle = "#000";
+                        ctx.lineWidth = 2;
+                        ctx.strokeText(`-${dn.damage}`, dn.x - cameraX, dn.y + yOffset - cameraY);
+                        ctx.fillText(`-${dn.damage}`, dn.x - cameraX, dn.y + yOffset - cameraY);
+                        ctx.restore();
+                        
+                        return true;
+                    });
+                }
+
+                // Draw death messages
+                if (window.deathMessages) {
+                    window.deathMessages = window.deathMessages.filter(dm => {
+                        const elapsed = now - dm.startTime;
+                        if (elapsed > dm.duration) return false;
+                        
+                        const progress = elapsed / dm.duration;
+                        const alpha = 1 - progress;
+                        
+                        ctx.save();
+                        ctx.globalAlpha = alpha;
+                        ctx.fillStyle = "#ff0000";
+                        ctx.font = "bold 24px Arial";
+                        ctx.strokeStyle = "#000";
+                        ctx.lineWidth = 3;
+                        ctx.textAlign = "center";
+                        ctx.strokeText(`Player ${dm.sid.substring(0, 4)} killed!`, canvas.width / 2, 100);
+                        ctx.fillText(`Player ${dm.sid.substring(0, 4)} killed!`, canvas.width / 2, 100);
+                        ctx.restore();
+                        
+                        return true;
+                    });
+                }
+
+                // Calculate delta time for physics (in seconds)
+                if (!window.lastFrameTime) window.lastFrameTime = now;
+                const dt = Math.min((now - window.lastFrameTime) / 1000, 0.1); // Cap at 0.1s to prevent physics explosions
+                window.lastFrameTime = now;
+
+                // Update dust particles
+                updateDustParticles(dt);
+
+                for (const sid in dyingPlayers) {
+                    const dying = dyingPlayers[sid];
+
+                    // Apply gravity if player was in the air when dying
+                    if (!dying.on_ground && !dying.landed) {
+                        // Apply gravity
+                        dying.vy += GRAVITY * dt * 60; // Scale to 60fps like server
+                        dying.y += dying.vy * dt;
+
+                        // Check for ground collision
+                        const hitboxHalfWidth = PLAYER_HITBOX_WIDTH / 2;
+                        const hitboxHalfHeight = PLAYER_HITBOX_HEIGHT / 2;
+                        const hitboxX = dying.x - hitboxHalfWidth;
+                        const hitboxY = dying.y - hitboxHalfHeight;
+
+                        // Check collision with platforms
+                        for (const plat of PLATFORMS) {
+                            if (hitboxX < plat.x + plat.w &&
+                                hitboxX + PLAYER_HITBOX_WIDTH > plat.x &&
+                                hitboxY < plat.y + plat.h &&
+                                hitboxY + PLAYER_HITBOX_HEIGHT > plat.y) {
+
+                                // Check if this is a ground collision (player falling onto platform)
+                                if (dying.vy > 0 && hitboxY + PLAYER_HITBOX_HEIGHT <= plat.y + dying.vy * dt + 1) {
+                                    // Landed on platform
+                                    dying.y = plat.y - hitboxHalfHeight;
+                                    dying.vy = 0;
+                                    dying.landed = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    const playerAssets = playerCharacterAssets[dying.character];
+                    const playerMetadata = characterMetadataCache[dying.character];
+
+                    if (playerAssets && playerAssets.death && playerMetadata && playerMetadata.death) {
+                        const meta = playerMetadata.death;
+                        const [cols, rows] = meta.grid.split('x').map(Number);
+                        const frameCount = meta.frames;
+
+                        // Calculate elapsed time since death
+                        const elapsed = now - dying.deathStartTime;
+
+                        // Determine current frame for death animation
+                        const animSpeed = 0.25;
+                        const frameDuration = 16 / animSpeed;
+                        const framesElapsed = Math.floor(elapsed / frameDuration);
+
+                        // Hold on last frame when animation completes
+                        dying.deathFrame = Math.min(framesElapsed, frameCount - 1);
+
+                        // Calculate opacity for fade-out
+                        if (elapsed > deathAnimDuration) {
+                            const fadeElapsed = elapsed - deathAnimDuration;
+                            dying.opacity = Math.max(0, 1.0 - (fadeElapsed / fadeDuration));
+                        } else {
+                            dying.opacity = 1.0;
+                        }
+
+                        // Remove player if fully faded
+                        if (dying.opacity <= 0) {
+                            delete dyingPlayers[sid];
+                            continue;
+                        }
+
+                        // Render dying player with death animation
+                        const frameIdx = dying.deathFrame;
+                        const frameX = (frameIdx % cols) * (playerAssets.death.width / cols);
+                        const frameY = Math.floor(frameIdx / cols) * (playerAssets.death.height / rows);
+                        const frameW = playerAssets.death.width / cols;
+                        const frameH = playerAssets.death.height / rows;
+                        const renderDims = calculateRenderDimensions(frameW, frameH);
+
+                        ctx.save();
+                        ctx.globalAlpha = dying.opacity;
+
+                        if (dying.direction === 'left') {
+                            ctx.translate(dying.x - cameraX, dying.y - cameraY);
+                            ctx.scale(-1, 1);
+                            ctx.drawImage(playerAssets.death, frameX, frameY, frameW, frameH, -renderDims.width / 2, -renderDims.height / 2, renderDims.width, renderDims.height);
+                        } else {
+                            ctx.drawImage(playerAssets.death, frameX, frameY, frameW, frameH, dying.x - cameraX - renderDims.width / 2, dying.y - cameraY - renderDims.height / 2, renderDims.width, renderDims.height);
+                        }
+
+                        ctx.restore();
+                    }
+                }
+
+                // Draw dust particles
+                drawDustParticles();
+
+                // Draw fireballs with particle trails
+                drawFireballs();
+
+                // Draw explosions
+                drawExplosions();
+
+
+                // --- DRAW PLAYER NAMES BEFORE WEBGL ---
+                // Draw names here so they are affected by to shader
+                for (const sid in playerState) {
+                    // Skip rendering dying players (they are rendered separately with death animation)
+                    if (dyingPlayers[sid]) {
+                        continue;
+                    }
+                    
+                    const state = playerState[sid];
+                    if (!state) continue;
+                    
+                    const pos = { x: state.x, y: state.y };
+                    const displayName = state.name || `P${sid.substring(0, 4)}`;
+                    const renderDims = playerRenderDimensions[sid] || { width: 60, height: 60 };
+                    
+                    // Position exactly where it was before to avoid shifting
+                    const nameY = pos.y - cameraY - renderDims.height / 2 - 10;
+                    const nameX = pos.x - cameraX;
+
+                    ctx.save();
+                    ctx.font = 'bold 16px "EB Garamond", serif';
+                    ctx.textAlign = 'center';
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+                    ctx.shadowBlur = 2;
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(displayName, nameX, nameY);
+                    ctx.restore();
+                }
+                // --- END PLAYER NAMES ---
+
+                // --- DRAW CHAT MESSAGES BEFORE WEBGL ---
+                // Draw chat messages here so they are affected by the shader
+                for (const sid in chatMessages) {
+                    const pos = getPlayerPosition(sid);
+                    if (!pos) continue;
+
+                    const chatMsg = chatMessages[sid];
+                    const elapsed = now - chatMsg.startTime;
+                    
+                    // Only draw if within duration
+                    if (elapsed < CHAT_MESSAGE_DURATION + CHAT_FADE_DURATION) {
+                        let opacity = 1.0;
+                        let scale = 1.0;
+                        
+                        if (elapsed > CHAT_MESSAGE_DURATION) {
+                            // Fade out phase
+                            const fadeProgress = (elapsed - CHAT_MESSAGE_DURATION) / CHAT_FADE_DURATION;
+                            opacity = Math.max(0, 1.0 - fadeProgress);
+                            scale = Math.max(0.5, 1.0 - fadeProgress * 0.5); // Scale down to 0.5
+                        }
+                        
+                        // Remove expired messages
+                        if (opacity <= 0) {
+                            delete chatMessages[sid];
+                            continue;
+                        }
+
+                        ctx.save();
+                        ctx.globalAlpha = opacity;
+                        ctx.scale(scale, scale);
+                        ctx.font = 'bold 18px "EB Garamond", serif';
+                        ctx.textAlign = 'center';
+                        
+                        // Match the position exactly so it doesn't shift
+                        // 70 pixels above the player head to clear the name tag
+                        const textX = (pos.x - cameraX) / scale;
+                        const textY = (pos.y - cameraY - 70) / scale; 
+
+                        // Black outline for clarity
+                        ctx.strokeStyle = '#000000';
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(chatMsg.text, textX, textY);
+                        
+                        // White fill
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillText(chatMsg.text, textX, textY);
+                        ctx.restore();
+                    } else {
+                        // Remove expired messages
+                        delete chatMessages[sid];
+                    }
+                }
+                // --- END CHAT MESSAGES ---
+
+                ctx.restore();
+
+                // WebGL Post-processing
+                if (gl && program) {
+                    gl.useProgram(program);
+
+                    // Update texture with 2D canvas content
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+
+                    // Set uniforms
+                    const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+                    gl.uniform2f(resolutionLocation, glCanvas.width, glCanvas.height);
+
+                    const timeLocation = gl.getUniformLocation(program, "u_time");
+                    gl.uniform1f(timeLocation, performance.now() / 1000);
+
+                    const lightPosLocation = gl.getUniformLocation(program, "u_lightPos");
+                    const localPlayerPos = getPlayerPosition(socket.id);
+                    if (localPlayerPos) {
+                        // Convert game coordinates to screen coordinates
+                        // Apply camera transformation and zoom, then center on the player
+                        const screenX = (localPlayerPos.x - cameraX) * cameraZoom;
+                        const screenY = (localPlayerPos.y - cameraY) * cameraZoom;
+                        
+                        // Ensure light stays centered on player regardless of position
+                        // The coordinates should be relative to the canvas, not flipped
+                        const finalX = screenX;
+                        const finalY = screenY;
+                        
+                        gl.uniform2f(lightPosLocation, finalX, finalY);
+                    } else {
+                        // When player position is unavailable (e.g., low-end PC frame drops),
+                        // center the light on screen to maintain visibility instead of going black
+                        const centerX = glCanvas.width / 2;
+                        const centerY = glCanvas.height / 2;
+                        gl.uniform2f(lightPosLocation, centerX, centerY);
+                    }
+
+                    // Bind buffers
+                    const positionLocation = gl.getAttribLocation(program, "a_position");
+                    gl.enableVertexAttribArray(positionLocation);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+                    const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+                    gl.enableVertexAttribArray(texCoordLocation);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+                    // Draw to WebGL canvas
+                    gl.clearColor(0, 0, 0, 1);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+                    // Copy WebGL result back to main canvas
+                    ctx.save();
+                    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
+                    ctx.globalCompositeOperation = 'copy';
+                    ctx.drawImage(glCanvas, 0, 0);
+                    ctx.restore();
+                }
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "idle": { "frames": 9, "grid": "3x3" },
+  "attack": { "frames": 9, "grid": "3x3" },
+  "run": { "frames": 9, "grid": "3x3" },
+  "death": { "frames": 7, "grid": "3x3" },
+  "jump": { "frames": 1, "grid": "1x1" }
+}

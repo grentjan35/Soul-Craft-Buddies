@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Level Editor - Platformer Buddies</title>
+    <style>
+        body { margin: 0; padding: 20px; font-family: sans-serif; background: #1a1a2e; color: #fff; }
+        .container { max-width: 1800px; margin: 0 auto; }
+        h1 { margin-bottom: 20px; }
+        .controls { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 14px; color: #aaa; }
+        input, button { padding: 8px 12px; border: none; border-radius: 4px; font-size: 14px; }
+        input[type="number"], input[type="text"] { background: #333; color: #fff; border: 1px solid #555; }
+        button { cursor: pointer; background: #4CAF50; color: #fff; }
+        button:hover { background: #45a049; }
+        button.danger { background: #f44336; }
+        button.danger:hover { background: #da190b; }
+        .editor-container { display: flex; gap: 20px; height: calc(100vh - 200px); }
+        .tile-palette { flex-shrink: 0; background: #2a2a3e; padding: 15px; border-radius: 8px; }
+        .tile-palette h3 { margin-top: 0; margin-bottom: 10px; }
+        .palette-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+        .palette-tile { width: 48px; height: 48px; border: 2px solid #555; cursor: pointer; background: #333; image-rendering: pixelated; }
+        .palette-tile:hover { border-color: #4CAF50; }
+        .palette-tile.selected { border-color: #4CAF50; box-shadow: 0 0 10px #4CAF50; }
+        .canvas-container { flex-grow: 1; background: #2a2a3e; padding: 15px; border-radius: 8px; overflow: auto; min-height: 600px; }
+        #editorCanvas { border: 2px solid #555; cursor: crosshair; image-rendering: pixelated; }
+        .map-list { margin-top: 20px; background: #2a2a3e; padding: 15px; border-radius: 8px; }
+        .map-list h3 { margin-top: 0; }
+        .map-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #333; margin: 5px 0; border-radius: 4px; }
+        .map-item button { padding: 4px 8px; font-size: 12px; }
+        .status { margin-top: 10px; padding: 10px; border-radius: 4px; }
+        .status.success { background: #4CAF50; }
+        .status.error { background: #f44336; }
+        .info { margin-top: 15px; font-size: 12px; color: #888; }
+        .collisions-panel { display: none; background: #2a2a3e; padding: 15px; border-radius: 8px; }
+        .collisions-panel.active { display: block; }
+        .tile-grid-large { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+        .tile-large { width: 128px; height: 128px; border: 3px solid #555; cursor: pointer; background: #333; image-rendering: pixelated; }
+        .tile-large:hover { border-color: #4CAF50; }
+        .tile-large.selected { border-color: #4CAF50; box-shadow: 0 0 15px #4CAF50; }
+        .collision-workspace { background: #1a1a2e; padding: 20px; border-radius: 8px; margin-top: 15px; }
+        .collision-canvas-container { position: relative; display: inline-block; }
+        #collisionCanvas { border: 2px solid #555; cursor: crosshair; image-rendering: pixelated; }
+        .collision-box-list { margin-top: 15px; max-height: 200px; overflow-y: auto; }
+        .collision-box-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #333; margin: 5px 0; border-radius: 4px; }
+        .collision-box-item button { padding: 4px 8px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Level Editor</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>Map Name</label>
+                <input type="text" id="mapName" value="level1" placeholder="Enter map name">
+            </div>
+            <div class="control-group">
+                <label>Width (tiles)</label>
+                <input type="number" id="mapWidth" value="25" min="10" max="100">
+            </div>
+            <div class="control-group">
+                <label>Height (tiles)</label>
+                <input type="number" id="mapHeight" value="18" min="10" max="100">
+            </div>
+            <button onclick="resizeMap()">Resize Map</button>
+            <button onclick="saveMap()">Save Map</button>
+            <button onclick="loadMap()">Load Map</button>
+            <button onclick="clearMap()" class="danger">Clear Map</button>
+            <button onclick="playMap()">▶ Play in Game</button>
+            <button onclick="toggleCollisionsTab()">🎯 Collisions</button>
+            <div class="control-group">
+                <label>Tool</label>
+                <select id="toolMode" onchange="setToolMode(this.value)" style="padding: 8px 12px; border: none; border-radius: 4px; font-size: 14px; background: #333; color: #fff; border: 1px solid #555;">
+                    <option value="tile">🎨 Tile Paint</option>
+                    <option value="spawn">🚩 Spawn Point</option>
+                </select>
+            </div>
+            <div class="control-group" style="margin-left: auto;">
+                <label>Zoom: <span id="zoomLevel">100%</span></label>
+                <div style="display: flex; gap: 5px;">
+                    <button onclick="zoomOut()">-</button>
+                    <button onclick="resetView()">Reset View</button>
+                    <button onclick="zoomIn()">+</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="editor-container">
+            <div class="tile-palette">
+                <h3>Tile Palette</h3>
+                <div class="palette-grid" id="paletteGrid"></div>
+                <div class="info">
+                    <p>Selected: <span id="selectedTileInfo">0</span></p>
+                    <p>Left click: Paint tile / Place spawn</p>
+                    <p>Right click: Erase tile / Remove spawn</p>
+                    <p>Shift+drag or Middle click: Pan</p>
+                    <p>Ctrl+scroll: Zoom</p>
+                </div>
+            </div>
+            
+            <div class="canvas-container">
+                <canvas id="editorCanvas"></canvas>
+            </div>
+        </div>
+
+        <div class="collisions-panel" id="collisionsPanel">
+            <h3>Tile Collision Editor</h3>
+            <p style="color: #aaa; font-size: 14px; margin-bottom: 15px;">Click on a tile to edit its collision boxes. By default, all tiles have full collision.</p>
+            
+            <div class="tile-grid-large" id="tileGridLarge"></div>
+            
+            <div class="collision-workspace" id="collisionWorkspace" style="display: none;">
+                <h4 id="selectedTileTitle">Editing Tile 0</h4>
+                <div class="collision-canvas-container">
+                    <canvas id="collisionCanvas" width="128" height="128"></canvas>
+                </div>
+                <div style="margin-top: 15px;">
+                    <button onclick="clearCollisionBoxes()">Clear All Boxes</button>
+                    <button onclick="saveCollisions()" style="margin-left: 10px;">💾 Save Obstacles</button>
+                </div>
+                <div class="collision-box-list" id="collisionBoxList"></div>
+                <div class="info">
+                    <p>Left click and drag: Draw collision box</p>
+                    <p>Right click: Delete collision box</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="map-list">
+            <h3>Saved Maps</h3>
+            <div id="mapList"></div>
+        </div>
+
+        <div id="status" class="status" style="display: none;"></div>
+    </div>
+
+    <script>
+        const TILE_SIZE = 32;
+        const TILESET_COLS = 4;
+        const TILESET_ROWS = 3;
+        const TOTAL_TILES = TILESET_COLS * TILESET_ROWS;
+        
+        let selectedTile = 0;
+        let mapData = [];
+        let mapWidth = 25;
+        let mapHeight = 18;
+        let isPainting = false;
+        let paintMode = 'paint';
+        let toolMode = 'tile';
+        let spawnPoints = [];
+        let tileCollisions = {};
+        let selectedCollisionTile = null;
+        let isDrawingCollision = false;
+        let collisionStart = null;
+        
+        // View controls for panning and zooming
+        let viewOffset = { x: 0, y: 0 };
+        let zoomLevel = 1;
+        const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+        let isPanning = false;
+        let panStart = { x: 0, y: 0 };
+        
+        const canvas = document.getElementById('editorCanvas');
+        const ctx = canvas.getContext('2d');
+        const collisionCanvas = document.getElementById('collisionCanvas');
+        const collisionCtx = collisionCanvas.getContext('2d');
+        let tilesetImage = null;
+
+        // Initialize map data
+        function initMapData() {
+            mapData = [];
+            for (let y = 0; y < mapHeight; y++) {
+                mapData[y] = [];
+                for (let x = 0; x < mapWidth; x++) {
+                    mapData[y][x] = -1; // -1 means empty
+                }
+            }
+        }
+
+        async function requestEnvironmentToken() {
+            const response = await fetch('/api/request_environment_token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to request environment token: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.token) {
+                throw new Error('Environment token missing from response');
+            }
+
+            return data.token;
+        }
+
+        // Load tileset image
+        async function loadTileset() {
+            try {
+                const environmentToken = await requestEnvironmentToken();
+                const response = await fetch(`/api/tileset/${environmentToken}`);
+
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch tileset: ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                tilesetImage = await createImageBitmap(blob);
+                
+                initPalette();
+                initMapData();
+                resizeCanvas();
+                draw();
+            } catch (error) {
+                console.error('Error loading tileset:', error);
+                showStatus(`Error loading tileset: ${error.message}`, 'error');
+            }
+        }
+
+        // Initialize tile palette
+        function initPalette() {
+            const paletteGrid = document.getElementById('paletteGrid');
+            paletteGrid.innerHTML = '';
+            
+            for (let i = 0; i < TOTAL_TILES; i++) {
+                const tile = document.createElement('div');
+                tile.className = 'palette-tile';
+                tile.dataset.tileIndex = i;
+                
+                if (tilesetImage) {
+                    const col = i % TILESET_COLS;
+                    const row = Math.floor(i / TILESET_COLS);
+                    const tileWidth = tilesetImage.width / TILESET_COLS;
+                    const tileHeight = tilesetImage.height / TILESET_ROWS;
+                    
+                    // Draw tile on canvas with proper scaling to fit 48x48
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = 48;
+                    tempCanvas.height = 48;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // Calculate scale to fit tile within 48x48 while maintaining aspect ratio
+                    const scaleX = 48 / tileWidth;
+                    const scaleY = 48 / tileHeight;
+                    const scale = Math.min(scaleX, scaleY);
+                    const scaledWidth = tileWidth * scale;
+                    const scaledHeight = tileHeight * scale;
+                    const offsetX = (48 - scaledWidth) / 2;
+                    const offsetY = (48 - scaledHeight) / 2;
+                    
+                    tempCtx.drawImage(
+                        tilesetImage,
+                        col * tileWidth, row * tileHeight, tileWidth, tileHeight,
+                        offsetX, offsetY, scaledWidth, scaledHeight
+                    );
+                    tile.style.backgroundImage = `url(${tempCanvas.toDataURL()})`;
+                    tile.style.backgroundSize = 'cover';
+                }
+                
+                tile.addEventListener('click', () => selectTile(i));
+                paletteGrid.appendChild(tile);
+            }
+            
+            // Select first tile
+            selectTile(0);
+        }
+
+        // Select a tile from palette
+        function selectTile(index) {
+            selectedTile = index;
+            document.querySelectorAll('.palette-tile').forEach(t => t.classList.remove('selected'));
+            document.querySelector(`.palette-tile[data-tile-index="${index}"]`).classList.add('selected');
+            document.getElementById('selectedTileInfo').textContent = index;
+        }
+
+        // Resize canvas to fit map
+        function resizeCanvas() {
+            canvas.width = mapWidth * TILE_SIZE;
+            canvas.height = mapHeight * TILE_SIZE;
+            draw();
+        }
+
+        // Draw the editor
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.save();
+            ctx.translate(viewOffset.x, viewOffset.y);
+            ctx.scale(zoomLevel, zoomLevel);
+            
+            // Draw grid
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 1 / zoomLevel;
+            for (let x = 0; x <= mapWidth; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * TILE_SIZE, 0);
+                ctx.lineTo(x * TILE_SIZE, mapHeight * TILE_SIZE);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= mapHeight; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * TILE_SIZE);
+                ctx.lineTo(mapWidth * TILE_SIZE, y * TILE_SIZE);
+                ctx.stroke();
+            }
+            
+            // Draw tiles
+            if (tilesetImage) {
+                const tileWidth = tilesetImage.width / TILESET_COLS;
+                const tileHeight = tilesetImage.height / TILESET_ROWS;
+                
+                for (let y = 0; y < mapHeight; y++) {
+                    for (let x = 0; x < mapWidth; x++) {
+                        const tileIndex = mapData[y][x];
+                        if (tileIndex >= 0) {
+                            const col = tileIndex % TILESET_COLS;
+                            const row = Math.floor(tileIndex / TILESET_COLS);
+                            ctx.drawImage(
+                                tilesetImage,
+                                col * tileWidth, row * tileHeight, tileWidth, tileHeight,
+                                x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
+                            );
+                        }
+                    }
+                }
+            }
+            
+            // Draw spawn points
+            spawnPoints.forEach((spawn, index) => {
+                const x = spawn.x;
+                const y = spawn.y;
+                
+                // Draw spawn point marker (green flag)
+                ctx.fillStyle = '#4CAF50';
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x + 20, y + 10);
+                ctx.lineTo(x, y + 20);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Draw flag pole
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x, y + 30);
+                ctx.stroke();
+                
+                // Draw spawn point number
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px sans-serif';
+                ctx.fillText(`S${index + 1}`, x + 5, y - 5);
+            });
+            
+            ctx.restore();
+        }
+
+        // Get tile position from mouse event
+        function getTilePosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            // Convert screen coordinates to world coordinates accounting for zoom and offset
+            const worldX = (mouseX - viewOffset.x) / zoomLevel;
+            const worldY = (mouseY - viewOffset.y) / zoomLevel;
+            
+            const x = Math.floor(worldX / TILE_SIZE);
+            const y = Math.floor(worldY / TILE_SIZE);
+            return { x, y };
+        }
+
+        // Paint tile at position
+        function paintTile(x, y) {
+            if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
+                mapData[y][x] = paintMode === 'paint' ? selectedTile : -1;
+                draw();
+            }
+        }
+
+        // Add spawn point at position
+        function addSpawnPoint(x, y) {
+            const spawnId = spawnPoints.length;
+            spawnPoints.push({ x: x * TILE_SIZE, y: y * TILE_SIZE, id: spawnId });
+            draw();
+        }
+
+        // Remove spawn point near position
+        function removeSpawnPoint(x, y) {
+            const worldX = x * TILE_SIZE;
+            const worldY = y * TILE_SIZE;
+            const threshold = 30; // pixels
+            
+            const index = spawnPoints.findIndex(spawn => {
+                const dx = spawn.x - worldX;
+                const dy = spawn.y - worldY;
+                return Math.sqrt(dx * dx + dy * dy) < threshold;
+            });
+            
+            if (index !== -1) {
+                spawnPoints.splice(index, 1);
+                draw();
+            }
+        }
+
+        // Canvas event handlers
+        canvas.addEventListener('mousedown', (e) => {
+            // Check for panning (middle mouse or space+left click)
+            if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+                isPanning = true;
+                panStart = { x: e.clientX - viewOffset.x, y: e.clientY - viewOffset.y };
+                canvas.style.cursor = 'grabbing';
+                e.preventDefault();
+                return;
+            }
+            
+            const pos = getTilePosition(e);
+            
+            // Handle spawn point mode
+            if (toolMode === 'spawn') {
+                if (e.button === 0) { // Left click - add spawn point
+                    addSpawnPoint(pos.x, pos.y);
+                } else if (e.button === 2) { // Right click - remove spawn point
+                    removeSpawnPoint(pos.x, pos.y);
+                }
+                return;
+            }
+            
+            // Painting mode
+            paintMode = e.button === 2 ? 'erase' : 'paint';
+            isPainting = true;
+            paintTile(pos.x, pos.y);
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            // Handle panning
+            if (isPanning) {
+                viewOffset.x = e.clientX - panStart.x;
+                viewOffset.y = e.clientY - panStart.y;
+                draw();
+                return;
+            }
+            
+            // Handle painting (only in tile mode)
+            if (isPainting && toolMode === 'tile') {
+                const pos = getTilePosition(e);
+                paintTile(pos.x, pos.y);
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isPainting = false;
+            isPanning = false;
+            canvas.style.cursor = 'crosshair';
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isPainting = false;
+            isPanning = false;
+            canvas.style.cursor = 'crosshair';
+        });
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Zoom with mouse wheel
+        canvas.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                const delta = e.deltaY > 0 ? -1 : 1;
+                const currentIndex = ZOOM_LEVELS.indexOf(zoomLevel);
+                const newIndex = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, currentIndex + delta));
+                
+                if (newIndex !== currentIndex) {
+                    const oldZoom = zoomLevel;
+                    zoomLevel = ZOOM_LEVELS[newIndex];
+                    
+                    // Zoom toward mouse position
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+                    
+                    viewOffset.x = mouseX - (mouseX - viewOffset.x) * (zoomLevel / oldZoom);
+                    viewOffset.y = mouseY - (mouseY - viewOffset.y) * (zoomLevel / oldZoom);
+                    
+                    updateZoomDisplay();
+                    draw();
+                }
+            }
+        });
+
+        // Resize map
+        function resizeMap() {
+            const newWidth = parseInt(document.getElementById('mapWidth').value);
+            const newHeight = parseInt(document.getElementById('mapHeight').value);
+            
+            if (newWidth < 10 || newWidth > 100 || newHeight < 10 || newHeight > 100) {
+                showStatus('Map size must be between 10 and 100 tiles', 'error');
+                return;
+            }
+            
+            // Preserve existing data
+            const newMapData = [];
+            for (let y = 0; y < newHeight; y++) {
+                newMapData[y] = [];
+                for (let x = 0; x < newWidth; x++) {
+                    if (y < mapHeight && x < mapWidth) {
+                        newMapData[y][x] = mapData[y][x];
+                    } else {
+                        newMapData[y][x] = -1;
+                    }
+                }
+            }
+            
+            mapWidth = newWidth;
+            mapHeight = newHeight;
+            mapData = newMapData;
+            
+            resizeCanvas();
+            showStatus('Map resized successfully', 'success');
+        }
+
+        // Set tool mode
+        function setToolMode(mode) {
+            toolMode = mode;
+            showStatus(`Tool: ${mode === 'tile' ? 'Tile Paint' : 'Spawn Point'}`, 'success');
+        }
+
+        // Save map
+        async function saveMap() {
+            const mapName = document.getElementById('mapName').value.trim();
+            
+            if (!mapName) {
+                showStatus('Please enter a map name', 'error');
+                return;
+            }
+            
+            // Validate map has at least one tile or spawn point
+            const hasTiles = mapData.some(row => row.some(tile => tile >= 0));
+            if (!hasTiles && spawnPoints.length === 0) {
+                showStatus('Map must have at least one tile or spawn point', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/save_map', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: mapName,
+                        width: mapWidth,
+                        height: mapHeight,
+                        tiles: mapData,
+                        spawnPoints: spawnPoints,
+                        tileCollisions: tileCollisions
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showStatus(`Map "${mapName}" saved successfully`, 'success');
+                    loadMapList();
+                } else {
+                    showStatus(result.error || 'Error saving map', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving map:', error);
+                showStatus('Error saving map', 'error');
+            }
+        }
+
+        // Load map
+        async function loadMap() {
+            const mapName = document.getElementById('mapName').value.trim();
+            
+            if (!mapName) {
+                showStatus('Please enter a map name', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/load_map/${encodeURIComponent(mapName)}`);
+                const result = await response.json();
+                
+                if (response.ok) {
+                    mapWidth = result.width;
+                    mapHeight = result.height;
+                    mapData = result.tiles;
+                    spawnPoints = result.spawnPoints || [];
+                    tileCollisions = result.tileCollisions || {};
+                    
+                    document.getElementById('mapWidth').value = mapWidth;
+                    document.getElementById('mapHeight').value = mapHeight;
+                    
+                    resizeCanvas();
+                    showStatus(`Map "${mapName}" loaded successfully`, 'success');
+                } else {
+                    showStatus(result.error || 'Error loading map', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading map:', error);
+                showStatus('Error loading map', 'error');
+            }
+        }
+
+        // Clear map
+        function clearMap() {
+            if (confirm('Are you sure you want to clear the map?')) {
+                initMapData();
+                draw();
+                showStatus('Map cleared', 'success');
+            }
+        }
+
+        // Play map in game
+        function playMap() {
+            const mapName = document.getElementById('mapName').value.trim();
+            window.open(`/?map=${encodeURIComponent(mapName)}`, '_blank');
+        }
+
+        // Load map list
+        async function loadMapList() {
+            try {
+                const response = await fetch('/api/list_maps');
+                const maps = await response.json();
+                
+                const mapListDiv = document.getElementById('mapList');
+                mapListDiv.innerHTML = '';
+                
+                if (maps.length === 0) {
+                    mapListDiv.innerHTML = '<p>No maps saved yet</p>';
+                    return;
+                }
+                
+                maps.forEach(mapName => {
+                    const mapItem = document.createElement('div');
+                    mapItem.className = 'map-item';
+                    mapItem.innerHTML = `
+                        <span>${mapName}</span>
+                        <div>
+                            <button onclick="loadMapByName('${mapName}')">Load</button>
+                            <button onclick="deleteMap('${mapName}')" class="danger">Delete</button>
+                        </div>
+                    `;
+                    mapListDiv.appendChild(mapItem);
+                });
+            } catch (error) {
+                console.error('Error loading map list:', error);
+            }
+        }
+
+        // Load map by name
+        function loadMapByName(mapName) {
+            document.getElementById('mapName').value = mapName;
+            loadMap();
+        }
+
+        // Delete map
+        async function deleteMap(mapName) {
+            if (confirm(`Are you sure you want to delete "${mapName}"?`)) {
+                try {
+                    const response = await fetch(`/api/delete_map/${encodeURIComponent(mapName)}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    if (response.ok) {
+                        showStatus(`Map "${mapName}" deleted`, 'success');
+                        loadMapList();
+                    } else {
+                        showStatus('Error deleting map', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error deleting map:', error);
+                    showStatus('Error deleting map', 'error');
+                }
+            }
+        }
+
+        // Zoom controls
+        function zoomIn() {
+            const currentIndex = ZOOM_LEVELS.indexOf(zoomLevel);
+            const newIndex = Math.min(ZOOM_LEVELS.length - 1, currentIndex + 1);
+            if (newIndex !== currentIndex) {
+                zoomLevel = ZOOM_LEVELS[newIndex];
+                updateZoomDisplay();
+                draw();
+            }
+        }
+
+        function zoomOut() {
+            const currentIndex = ZOOM_LEVELS.indexOf(zoomLevel);
+            const newIndex = Math.max(0, currentIndex - 1);
+            if (newIndex !== currentIndex) {
+                zoomLevel = ZOOM_LEVELS[newIndex];
+                updateZoomDisplay();
+                draw();
+            }
+        }
+
+        function resetView() {
+            zoomLevel = 1;
+            viewOffset = { x: 0, y: 0 };
+            updateZoomDisplay();
+            draw();
+        }
+
+        function updateZoomDisplay() {
+            document.getElementById('zoomLevel').textContent = `${Math.round(zoomLevel * 100)}%`;
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 3000);
+        }
+
+        // Initialize
+        loadTileset();
+        loadMapList();
+        updateZoomDisplay();
+        initCollisionsPanel();
+
+        // Collisions panel functions
+        function toggleCollisionsTab() {
+            const panel = document.getElementById('collisionsPanel');
+            const isActive = panel.classList.contains('active');
+            
+            if (isActive) {
+                panel.classList.remove('active');
+                document.querySelector('.editor-container').style.display = 'flex';
+            } else {
+                panel.classList.add('active');
+                document.querySelector('.editor-container').style.display = 'none';
+                initCollisionsPanel();
+            }
+        }
+
+        function initCollisionsPanel() {
+            const grid = document.getElementById('tileGridLarge');
+            grid.innerHTML = '';
+            
+            for (let i = 0; i < TOTAL_TILES; i++) {
+                const tile = document.createElement('div');
+                tile.className = 'tile-large';
+                tile.dataset.tileIndex = i;
+                
+                if (tilesetImage) {
+                    const col = i % TILESET_COLS;
+                    const row = Math.floor(i / TILESET_COLS);
+                    const tileWidth = tilesetImage.width / TILESET_COLS;
+                    const tileHeight = tilesetImage.height / TILESET_ROWS;
+                    
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = 128;
+                    tempCanvas.height = 128;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    tempCtx.imageSmoothingEnabled = false;
+                    tempCtx.drawImage(
+                        tilesetImage,
+                        col * tileWidth, row * tileHeight, tileWidth, tileHeight,
+                        0, 0, 128, 128
+                    );
+                    tile.style.backgroundImage = `url(${tempCanvas.toDataURL()})`;
+                    tile.style.backgroundSize = 'cover';
+                }
+                
+                tile.addEventListener('click', () => selectCollisionTile(i));
+                grid.appendChild(tile);
+            }
+        }
+
+        function selectCollisionTile(tileIndex) {
+            selectedCollisionTile = tileIndex;
+            
+            document.querySelectorAll('.tile-large').forEach(t => t.classList.remove('selected'));
+            document.querySelector(`.tile-large[data-tile-index="${tileIndex}"]`).classList.add('selected');
+            
+            document.getElementById('selectedTileTitle').textContent = `Editing Tile ${tileIndex}`;
+            document.getElementById('collisionWorkspace').style.display = 'block';
+            
+            // Initialize collision boxes for this tile if not exists
+            if (!tileCollisions[tileIndex]) {
+                tileCollisions[tileIndex] = [{x: 0, y: 0, w: 32, h: 32}];
+            }
+            
+            drawCollisionCanvas();
+            updateCollisionBoxList();
+        }
+
+        function drawCollisionCanvas() {
+            collisionCtx.clearRect(0, 0, 128, 128);
+            
+            // Draw tile image
+            if (tilesetImage && selectedCollisionTile !== null) {
+                const col = selectedCollisionTile % TILESET_COLS;
+                const row = Math.floor(selectedCollisionTile / TILESET_COLS);
+                const tileWidth = tilesetImage.width / TILESET_COLS;
+                const tileHeight = tilesetImage.height / TILESET_ROWS;
+                
+                collisionCtx.imageSmoothingEnabled = false;
+                collisionCtx.drawImage(
+                    tilesetImage,
+                    col * tileWidth, row * tileHeight, tileWidth, tileHeight,
+                    0, 0, 128, 128
+                );
+            }
+            
+            // Draw collision boxes
+            const boxes = tileCollisions[selectedCollisionTile] || [];
+            boxes.forEach((box, index) => {
+                const scale = 4; // 32px tile to 128px canvas
+                collisionCtx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                collisionCtx.strokeStyle = '#ff0000';
+                collisionCtx.lineWidth = 2;
+                collisionCtx.fillRect(box.x * scale, box.y * scale, box.w * scale, box.h * scale);
+                collisionCtx.strokeRect(box.x * scale, box.y * scale, box.w * scale, box.h * scale);
+            });
+            
+            // Draw current drawing box
+            if (isDrawingCollision && collisionStart) {
+                const rect = collisionCanvas.getBoundingClientRect();
+                const mouseX = collisionStart.currentX;
+                const mouseY = collisionStart.currentY;
+                const startX = collisionStart.startX;
+                const startY = collisionStart.startY;
+                
+                const x = Math.min(startX, mouseX);
+                const y = Math.min(startY, mouseY);
+                const w = Math.abs(mouseX - startX);
+                const h = Math.abs(mouseY - startY);
+                
+                collisionCtx.fillStyle = 'rgba(0, 255, 0, 0.3)';
+                collisionCtx.strokeStyle = '#00ff00';
+                collisionCtx.lineWidth = 2;
+                collisionCtx.fillRect(x, y, w, h);
+                collisionCtx.strokeRect(x, y, w, h);
+            }
+        }
+
+        function updateCollisionBoxList() {
+            const list = document.getElementById('collisionBoxList');
+            list.innerHTML = '';
+            
+            const boxes = tileCollisions[selectedCollisionTile] || [];
+            boxes.forEach((box, index) => {
+                const item = document.createElement('div');
+                item.className = 'collision-box-item';
+                item.innerHTML = `
+                    <span>Box ${index + 1}: x=${box.x}, y=${box.y}, w=${box.w}, h=${box.h}</span>
+                    <button onclick="deleteCollisionBox(${index})" class="danger">Delete</button>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function deleteCollisionBox(index) {
+            if (selectedCollisionTile !== null) {
+                tileCollisions[selectedCollisionTile].splice(index, 1);
+                if (tileCollisions[selectedCollisionTile].length === 0) {
+                    tileCollisions[selectedCollisionTile] = [{x: 0, y: 0, w: 32, h: 32}];
+                }
+                drawCollisionCanvas();
+                updateCollisionBoxList();
+            }
+        }
+
+        function clearCollisionBoxes() {
+            if (selectedCollisionTile !== null) {
+                tileCollisions[selectedCollisionTile] = [{x: 0, y: 0, w: 32, h: 32}];
+                drawCollisionCanvas();
+                updateCollisionBoxList();
+                showStatus('Collision boxes cleared', 'success');
+            }
+        }
+
+        async function saveCollisions() {
+            try {
+                const mapName = document.getElementById('mapName').value.trim();
+                
+                if (!mapName) {
+                    showStatus('Please enter a map name', 'error');
+                    return;
+                }
+                
+                const response = await fetch('/api/save_map', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: mapName,
+                        width: mapWidth,
+                        height: mapHeight,
+                        tiles: mapData,
+                        spawnPoints: spawnPoints,
+                        tileCollisions: tileCollisions
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showStatus('Collision obstacles saved successfully', 'success');
+                } else {
+                    showStatus(result.error || 'Error saving collisions', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving collisions:', error);
+                showStatus('Error saving collisions', 'error');
+            }
+        }
+
+        // Collision canvas event handlers
+        collisionCanvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                const rect = collisionCanvas.getBoundingClientRect();
+                collisionStart = {
+                    startX: e.clientX - rect.left,
+                    startY: e.clientY - rect.top,
+                    currentX: e.clientX - rect.left,
+                    currentY: e.clientY - rect.top
+                };
+                isDrawingCollision = true;
+            } else if (e.button === 2) {
+                e.preventDefault();
+                const rect = collisionCanvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                const scale = 4;
+                
+                const boxes = tileCollisions[selectedCollisionTile] || [];
+                for (let i = boxes.length - 1; i >= 0; i--) {
+                    const box = boxes[i];
+                    if (mouseX >= box.x * scale && mouseX <= (box.x + box.w) * scale &&
+                        mouseY >= box.y * scale && mouseY <= (box.y + box.h) * scale) {
+                        deleteCollisionBox(i);
+                        break;
+                    }
+                }
+            }
+        });
+
+        collisionCanvas.addEventListener('mousemove', (e) => {
+            if (isDrawingCollision) {
+                const rect = collisionCanvas.getBoundingClientRect();
+                collisionStart.currentX = e.clientX - rect.left;
+                collisionStart.currentY = e.clientY - rect.top;
+                drawCollisionCanvas();
+            }
+        });
+
+        collisionCanvas.addEventListener('mouseup', (e) => {
+            if (isDrawingCollision && collisionStart) {
+                const rect = collisionCanvas.getBoundingClientRect();
+                const endX = e.clientX - rect.left;
+                const endY = e.clientY - rect.top;
+                
+                const x = Math.min(collisionStart.startX, endX);
+                const y = Math.min(collisionStart.startY, endY);
+                const w = Math.abs(endX - collisionStart.startX);
+                const h = Math.abs(endY - collisionStart.startY);
+                
+                if (w > 2 && h > 2) {
+                    const scale = 4;
+                    const box = {
+                        x: Math.round(x / scale),
+                        y: Math.round(y / scale),
+                        w: Math.round(w / scale),
+                        h: Math.round(h / scale)
+                    };
+                    
+                    if (selectedCollisionTile !== null) {
+                        tileCollisions[selectedCollisionTile].push(box);
+                        drawCollisionCanvas();
+                        updateCollisionBoxList();
+                    }
+                }
+                
+                isDrawingCollision = false;
+                collisionStart = null;
+                drawCollisionCanvas();
+            }
+        });
+
+        collisionCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    </script>
+</body>
+</html>

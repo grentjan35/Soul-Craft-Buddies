@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Map Enhancer - Grid Slicer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #fff;
+            overflow-x: auto;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+        
+        .controls {
+            background: #16213e;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        label {
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        input[type="number"] {
+            padding: 8px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            background: #0f3460;
+            color: #fff;
+            width: 80px;
+            font-size: 16px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        .info {
+            background: #0f3460;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .canvas-container {
+            background: #0f3460;
+            padding: 20px;
+            border-radius: 10px;
+            overflow: auto;
+            max-height: 80vh;
+        }
+        
+        canvas {
+            border: 3px solid #4CAF50;
+            cursor: crosshair;
+            display: block;
+        }
+        
+        .popup {
+            position: fixed;
+            background: #16213e;
+            border: 3px solid #4CAF50;
+            border-radius: 10px;
+            padding: 20px;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            min-width: 200px;
+        }
+        
+        .popup h3 {
+            margin: 0 0 15px 0;
+            color: #4CAF50;
+        }
+        
+        .popup-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .popup-buttons button {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        
+        .popup-buttons button.yes {
+            background: #4CAF50;
+        }
+        
+        .popup-buttons button.no {
+            background: #e94560;
+        }
+        
+        button.download-all {
+            background: #e94560;
+        }
+        
+        button.download-all:hover {
+            background: #d6364f;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 20px;
+            color: #4CAF50;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Map Enhancer - Grid Slicer</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="columns">Columns:</label>
+                <input type="number" id="columns" value="4" min="1" max="20">
+            </div>
+            <div class="control-group">
+                <label for="rows">Rows:</label>
+                <input type="number" id="rows" value="4" min="1" max="20">
+            </div>
+            <button id="applyGrid">Apply Grid</button>
+            <button id="downloadAll" class="download-all">Download All Tiles</button>
+            <button id="downloadFull" class="download-all">FULL Screenshot</button>
+            <div class="info" id="gridInfo">Grid: 4×4</div>
+            <div class="info" id="mapInfo">Loading map...</div>
+        </div>
+        
+        <div class="canvas-container">
+            <div id="loading" class="loading">Loading map and tileset...</div>
+            <canvas id="mapCanvas"></canvas>
+        </div>
+    </div>
+    
+    <div id="popup" class="popup" style="display: none;">
+        <h3>Download this tile?</h3>
+        <div class="popup-buttons">
+            <button class="yes" id="downloadYes">Yes</button>
+            <button class="no" id="downloadNo">No</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script>
+        const TILE_SIZE = 32;
+        let currentMap = null;
+        let tilesetImage = null;
+        let gridColumns = 4;
+        let gridRows = 4;
+        let selectedCell = null;
+        
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        const loadingDiv = document.getElementById('loading');
+        const popup = document.getElementById('popup');
+
+        async function requestEnvironmentToken() {
+            const response = await fetch('/api/request_environment_token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to request environment token: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (!data.token) {
+                throw new Error('Environment token missing from response');
+            }
+
+            return data.token;
+        }
+        
+        async function loadMap() {
+            try {
+                const response = await fetch('/api/current_map?map=default');
+                const mapData = await response.json();
+                
+                if (mapData.error) {
+                    throw new Error(mapData.error);
+                }
+                
+                currentMap = mapData;
+                document.getElementById('mapInfo').textContent = 
+                    `Map: ${mapData.width}×${mapData.height} tiles (${mapData.width * TILE_SIZE}×${mapData.height * TILE_SIZE}px)`;
+                
+                return mapData;
+            } catch (error) {
+                console.error('Error loading map:', error);
+                loadingDiv.textContent = 'Error loading map: ' + error.message;
+                throw error;
+            }
+        }
+        
+        async function loadTileset() {
+            try {
+                const environmentToken = await requestEnvironmentToken();
+                const response = await fetch(`/api/tileset/${environmentToken}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch tileset: ${response.status}`);
+                }
+                const blob = await response.blob();
+                tilesetImage = await createImageBitmap(blob);
+                return tilesetImage;
+            } catch (error) {
+                console.error('Error loading tileset:', error);
+                loadingDiv.textContent = 'Error loading tileset: ' + error.message;
+                throw error;
+            }
+        }
+        
+        function renderMapWithoutGrid() {
+            if (!currentMap || !tilesetImage) {
+                return null;
+            }
+            
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            const mapWidth = currentMap.width * TILE_SIZE;
+            const mapHeight = currentMap.height * TILE_SIZE;
+            
+            tempCanvas.width = mapWidth;
+            tempCanvas.height = mapHeight;
+            
+            const tiles = currentMap.tiles;
+            const mapTileWidth = currentMap.width;
+            const mapTileHeight = currentMap.height;
+            const tilesetWidth = tilesetImage.width / 4;
+            const tilesetHeight = tilesetImage.height / 3;
+            
+            for (let y = 0; y < mapTileHeight; y++) {
+                for (let x = 0; x < mapTileWidth; x++) {
+                    const tileIndex = tiles[y][x];
+                    if (tileIndex >= 0) {
+                        const col = tileIndex % 4;
+                        const row = Math.floor(tileIndex / 4);
+                        tempCtx.drawImage(
+                            tilesetImage,
+                            col * tilesetWidth, row * tilesetHeight, tilesetWidth, tilesetHeight,
+                            x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
+                        );
+                    }
+                }
+            }
+            
+            return tempCanvas;
+        }
+        
+        function renderMap() {
+            if (!currentMap || !tilesetImage) {
+                return;
+            }
+            
+            const mapWidth = currentMap.width * TILE_SIZE;
+            const mapHeight = currentMap.height * TILE_SIZE;
+            
+            canvas.width = mapWidth;
+            canvas.height = mapHeight;
+            
+            const tiles = currentMap.tiles;
+            const mapTileWidth = currentMap.width;
+            const mapTileHeight = currentMap.height;
+            const tilesetWidth = tilesetImage.width / 4;
+            const tilesetHeight = tilesetImage.height / 3;
+            
+            for (let y = 0; y < mapTileHeight; y++) {
+                for (let x = 0; x < mapTileWidth; x++) {
+                    const tileIndex = tiles[y][x];
+                    if (tileIndex >= 0) {
+                        const col = tileIndex % 4;
+                        const row = Math.floor(tileIndex / 4);
+                        ctx.drawImage(
+                            tilesetImage,
+                            col * tilesetWidth, row * tilesetHeight, tilesetWidth, tilesetHeight,
+                            x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
+                        );
+                    }
+                }
+            }
+            
+            drawGrid();
+        }
+        
+        function drawGrid() {
+            if (!currentMap) {
+                return;
+            }
+            
+            const mapWidth = canvas.width;
+            const mapHeight = canvas.height;
+            const cellWidth = mapWidth / gridColumns;
+            const cellHeight = mapHeight / gridRows;
+            
+            ctx.strokeStyle = '#e94560';
+            ctx.lineWidth = 2;
+            
+            for (let i = 0; i <= gridColumns; i++) {
+                const x = i * cellWidth;
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, mapHeight);
+                ctx.stroke();
+            }
+            
+            for (let i = 0; i <= gridRows; i++) {
+                const y = i * cellHeight;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(mapWidth, y);
+                ctx.stroke();
+            }
+        }
+        
+        function getCellFromCoordinates(x, y) {
+            const cellWidth = canvas.width / gridColumns;
+            const cellHeight = canvas.height / gridRows;
+            
+            const col = Math.floor(x / cellWidth);
+            const row = Math.floor(y / cellHeight);
+            
+            if (col >= 0 && col < gridColumns && row >= 0 && row < gridRows) {
+                return { col, row };
+            }
+            
+            return null;
+        }
+        
+        function showPopup(cell, x, y) {
+            selectedCell = cell;
+            
+            const popupWidth = 220;
+            const popupHeight = 100;
+            
+            let popupX = x + 20;
+            let popupY = y + 20;
+            
+            if (popupX + popupWidth > window.innerWidth) {
+                popupX = x - popupWidth - 20;
+            }
+            if (popupY + popupHeight > window.innerHeight) {
+                popupY = y - popupHeight - 20;
+            }
+            
+            popup.style.left = popupX + 'px';
+            popup.style.top = popupY + 'px';
+            popup.style.display = 'block';
+        }
+        
+        function hidePopup() {
+            popup.style.display = 'none';
+            selectedCell = null;
+        }
+        
+        function downloadTile() {
+            if (!selectedCell) {
+                return;
+            }
+            
+            const { col, row } = selectedCell;
+            const cellWidth = canvas.width / gridColumns;
+            const cellHeight = canvas.height / gridRows;
+            
+            const x = col * cellWidth;
+            const y = row * cellHeight;
+            
+            const mapWithoutGrid = renderMapWithoutGrid();
+            if (!mapWithoutGrid) {
+                return;
+            }
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = cellWidth;
+            tempCanvas.height = cellHeight;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCtx.drawImage(mapWithoutGrid, x, y, cellWidth, cellHeight, 0, 0, cellWidth, cellHeight);
+            
+            const link = document.createElement('a');
+            link.download = `tile_${col}_${row}.png`;
+            link.href = tempCanvas.toDataURL('image/png');
+            link.click();
+            
+            hidePopup();
+        }
+        
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const cell = getCellFromCoordinates(x, y);
+            
+            if (cell) {
+                showPopup(cell, e.clientX, e.clientY);
+            }
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const cell = getCellFromCoordinates(x, y);
+            
+            if (cell) {
+                canvas.style.cursor = 'pointer';
+            } else {
+                canvas.style.cursor = 'crosshair';
+            }
+        });
+        
+        async function downloadAllTiles() {
+            const mapWithoutGrid = renderMapWithoutGrid();
+            if (!mapWithoutGrid) {
+                alert('Map not loaded!');
+                return;
+            }
+            
+            const cellWidth = canvas.width / gridColumns;
+            const cellHeight = canvas.height / gridRows;
+            
+            const zip = new JSZip();
+            
+            for (let row = 0; row < gridRows; row++) {
+                for (let col = 0; col < gridColumns; col++) {
+                    const x = col * cellWidth;
+                    const y = row * cellHeight;
+                    
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = cellWidth;
+                    tempCanvas.height = cellHeight;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    tempCtx.drawImage(mapWithoutGrid, x, y, cellWidth, cellHeight, 0, 0, cellWidth, cellHeight);
+                    
+                    const imageData = tempCanvas.toDataURL('image/png').split(',')[1];
+                    zip.file(`tile_${col}_${row}.png`, imageData, { base64: true });
+                }
+            }
+            
+            const content = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(content);
+            link.download = `tiles_${gridColumns}x${gridRows}.zip`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+        
+        async function downloadFullScreenshot() {
+            const mapWithoutGrid = renderMapWithoutGrid();
+            if (!mapWithoutGrid) {
+                alert('Map not loaded!');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.download = `full_level_${currentMap.width}x${currentMap.height}.png`;
+            link.href = mapWithoutGrid.toDataURL('image/png');
+            link.click();
+        }
+
+        document.getElementById('applyGrid').addEventListener('click', () => {
+            gridColumns = parseInt(document.getElementById('columns').value) || 4;
+            gridRows = parseInt(document.getElementById('rows').value) || 4;
+            
+            gridColumns = Math.max(1, Math.min(20, gridColumns));
+            gridRows = Math.max(1, Math.min(20, gridRows));
+            
+            document.getElementById('columns').value = gridColumns;
+            document.getElementById('rows').value = gridRows;
+            
+            document.getElementById('gridInfo').textContent = `Grid: ${gridColumns}×${gridRows}`;
+            
+            renderMap();
+        });
+        
+        document.getElementById('downloadYes').addEventListener('click', downloadTile);
+        document.getElementById('downloadNo').addEventListener('click', hidePopup);
+        document.getElementById('downloadAll').addEventListener('click', downloadAllTiles);
+        document.getElementById('downloadFull').addEventListener('click', downloadFullScreenshot);
+        
+        document.addEventListener('click', (e) => {
+            if (!popup.contains(e.target) && e.target !== canvas) {
+                hidePopup();
+            }
+        });
+        
+        async function init() {
+            try {
+                await Promise.all([loadMap(), loadTileset()]);
+                loadingDiv.style.display = 'none';
+                renderMap();
+            } catch (error) {
+                console.error('Initialization error:', error);
+            }
+        }
+        
+        init();
+    </script>
+</body>
+</html>
