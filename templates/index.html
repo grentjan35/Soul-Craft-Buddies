@@ -1073,16 +1073,16 @@
                     video.muted = true;
                     video.playsInline = true;
                     video.autoplay = true;
-                    video.addEventListener('loadeddata', () => {
-                        // Keep the already-loaded media playable, but kill the blob URL itself
-                        // so opening it directly becomes much less useful.
-                        revokeHomescreenVideoUrl();
-                    }, { once: true });
                     video.play().catch(e => console.log('Video autoplay failed:', e));
                 } catch (error) {
                     console.error('Failed to load homescreen video:', error);
                 }
             }
+
+            // Some browsers may continue reading from the blob URL after `loadeddata`.
+            // Revoke it only when the page is being torn down or before a replacement URL is assigned.
+            window.addEventListener('pagehide', revokeHomescreenVideoUrl);
+            window.addEventListener('beforeunload', revokeHomescreenVideoUrl);
             
             loadVideo();
 
