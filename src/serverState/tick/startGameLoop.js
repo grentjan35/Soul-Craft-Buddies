@@ -266,7 +266,7 @@ function resolvePlayerPlayerCollisions(input) {
       if (p1.is_dying || p2.is_dying) continue;
 
       if (!checkPlayerPlayerCollision({ p1, p2 })) continue;
-      pushPlayersApart({ p1, p2 });
+      pushPlayersApart({ state: input.state, p1, p2 });
     }
   }
 }
@@ -290,7 +290,7 @@ function checkPlayerPlayerCollision(input) {
 
 /**
  * Pushes two overlapping players apart.
- * @param {{p1: any, p2: any}} input
+ * @param {{state: any, p1: any, p2: any}} input
  */
 function pushPlayersApart(input) {
   const a = getPlayerHitbox(input.p1);
@@ -301,27 +301,154 @@ function pushPlayersApart(input) {
 
   if (overlapX < overlapY) {
     if (a.x < b.x) {
-      input.p1.x -= overlapX / 2;
-      input.p2.x += overlapX / 2;
+      separatePlayersAlongAxis({
+        state: input.state,
+        p1: input.p1,
+        p2: input.p2,
+        axis: 'x',
+        delta1: -overlapX / 2,
+        delta2: overlapX / 2,
+      });
     } else {
-      input.p1.x += overlapX / 2;
-      input.p2.x -= overlapX / 2;
+      separatePlayersAlongAxis({
+        state: input.state,
+        p1: input.p1,
+        p2: input.p2,
+        axis: 'x',
+        delta1: overlapX / 2,
+        delta2: -overlapX / 2,
+      });
     }
     return;
   }
 
   if (a.y < b.y) {
-    input.p1.y -= overlapY;
-    input.p1.vy = 0;
-    input.p1.on_ground = true;
-    input.p1.jumps_remaining = 2;
+    const moved = separatePlayersAlongAxis({
+      state: input.state,
+      p1: input.p1,
+      p2: input.p2,
+      axis: 'y',
+      delta1: -overlapY,
+      delta2: 0,
+    });
+    if (moved.movedP1) {
+      input.p1.vy = 0;
+      input.p1.on_ground = true;
+      input.p1.jumps_remaining = 2;
+    }
     return;
   }
 
-  input.p2.y -= overlapY;
-  input.p2.vy = 0;
-  input.p2.on_ground = true;
-  input.p2.jumps_remaining = 2;
+  const moved = separatePlayersAlongAxis({
+    state: input.state,
+    p1: input.p1,
+    p2: input.p2,
+    axis: 'y',
+    delta1: 0,
+    delta2: -overlapY,
+  });
+  if (moved.movedP2) {
+    input.p2.vy = 0;
+    input.p2.on_ground = true;
+    input.p2.jumps_remaining = 2;
+  }
+}
+
+/**
+ * Separates two players while refusing to move either into walls or out of bounds.
+ * @param {{state:any, p1:any, p2:any, axis:'x'|'y', delta1:number, delta2:number}} input
+ * @returns {{movedP1:boolean, movedP2:boolean}}
+ */
+function separatePlayersAlongAxis(input) {
+  const pairMoveAllowed =
+    canMovePlayerBy({ state: input.state, player: input.p1, axis: input.axis, delta: input.delta1 }) &&
+    canMovePlayerBy({ state: input.state, player: input.p2, axis: input.axis, delta: input.delta2 });
+
+  if (pairMoveAllowed) {
+    applyAxisMove({ player: input.p1, axis: input.axis, delta: input.delta1 });
+    applyAxisMove({ player: input.p2, axis: input.axis, delta: input.delta2 });
+    return { movedP1: input.delta1 !== 0, movedP2: input.delta2 !== 0 };
+  }
+
+  const p1SoloAllowed = canMovePlayerBy({
+    state: input.state,
+    player: input.p1,
+    axis: input.axis,
+    delta: input.delta1 - input.delta2,
+  });
+  if (p1SoloAllowed) {
+    applyAxisMove({ player: input.p1, axis: input.axis, delta: input.delta1 - input.delta2 });
+    return { movedP1: input.delta1 !== input.delta2, movedP2: false };
+  }
+
+  const p2SoloAllowed = canMovePlayerBy({
+    state: input.state,
+    player: input.p2,
+    axis: input.axis,
+    delta: input.delta2 - input.delta1,
+  });
+  if (p2SoloAllowed) {
+    applyAxisMove({ player: input.p2, axis: input.axis, delta: input.delta2 - input.delta1 });
+    return { movedP1: false, movedP2: input.delta1 !== input.delta2 };
+  }
+
+  return { movedP1: false, movedP2: false };
+}
+
+/**
+ * Checks whether a player can move along one axis without entering terrain.
+ * @param {{state:any, player:any, axis:'x'|'y', delta:number}} input
+ * @returns {boolean}
+ */
+function canMovePlayerBy(input) {
+  if (input.delta === 0) return true;
+
+  const candidateX = input.axis === 'x' ? input.player.x + input.delta : input.player.x;
+  const candidateY = input.axis === 'y' ? input.player.y + input.delta : input.player.y;
+  return isPlayerPlacementValid({ state: input.state, player: input.player, x: candidateX, y: candidateY });
+}
+
+/**
+ * Applies an axis move to a player.
+ * @param {{player:any, axis:'x'|'y', delta:number}} input
+ */
+function applyAxisMove(input) {
+  if (input.delta === 0) return;
+  if (input.axis === 'x') input.player.x += input.delta;
+  else input.player.y += input.delta;
+}
+
+/**
+ * Returns true when the candidate player center is within bounds and not inside terrain.
+ * @param {{state:any, player:any, x:number, y:number}} input
+ * @returns {boolean}
+ */
+function isPlayerPlacementValid(input) {
+  const halfW = PLAYER_HITBOX_WIDTH / 2;
+  const halfH = PLAYER_HITBOX_HEIGHT / 2;
+  const hbX = input.x - halfW;
+  const hbY = input.y - halfH;
+  const { mapBounds } = input.state;
+
+  if (hbX < mapBounds.min_x) return false;
+  if (hbX + PLAYER_HITBOX_WIDTH > mapBounds.max_x) return false;
+  if (hbY < mapBounds.min_y) return false;
+  if (hbY + PLAYER_HITBOX_HEIGHT > mapBounds.max_y) return false;
+
+  const nearby = getNearbyPlatforms({
+    platformGrid: input.state.platformGrid,
+    x: input.x,
+    y: input.y,
+  });
+  const candidate = { ...input.player, x: input.x, y: input.y };
+
+  for (const plat of nearby) {
+    if (checkPlayerPlatformCollision({ player: candidate, platform: plat })) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
