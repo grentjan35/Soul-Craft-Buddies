@@ -34,6 +34,26 @@
         
         #gameCanvas {
             display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: var(--game-display-width, 100vw);
+            height: var(--game-display-height, 100vh);
+            transform: translate(-50%, -50%);
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            z-index: 1;
+            background: #000;
+        }
+
+        #glCanvas {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: var(--game-display-width, 100vw);
+            height: var(--game-display-height, 100vh);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
         }
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
         
@@ -1313,6 +1333,8 @@
         });
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const GAME_VIEWPORT_WIDTH = 1600;
+        const GAME_VIEWPORT_HEIGHT = 900;
 
         // WebGL Setup
         const glCanvas = document.getElementById('glCanvas');
@@ -1364,13 +1386,22 @@
         function resizeCanvas() {
             const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
             const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
+            const viewportScale = Math.min(viewportWidth / GAME_VIEWPORT_WIDTH, viewportHeight / GAME_VIEWPORT_HEIGHT);
+            const displayWidth = Math.max(1, Math.round(GAME_VIEWPORT_WIDTH * viewportScale));
+            const displayHeight = Math.max(1, Math.round(GAME_VIEWPORT_HEIGHT * viewportScale));
 
-            canvas.width = viewportWidth;
-            canvas.height = viewportHeight;
+            canvas.width = GAME_VIEWPORT_WIDTH;
+            canvas.height = GAME_VIEWPORT_HEIGHT;
+            canvas.style.width = `${displayWidth}px`;
+            canvas.style.height = `${displayHeight}px`;
+            document.documentElement.style.setProperty('--game-display-width', `${displayWidth}px`);
+            document.documentElement.style.setProperty('--game-display-height', `${displayHeight}px`);
             
             if (glCanvas) {
                 glCanvas.width = canvas.width;
                 glCanvas.height = canvas.height;
+                glCanvas.style.width = `${displayWidth}px`;
+                glCanvas.style.height = `${displayHeight}px`;
                 if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
             }
         }
