@@ -9,22 +9,10 @@ const { loadCharacters } = require('./characters/loadCharacters');
  */
 function registerSocketHandlers(input) {
   const { socket, io, state } = input;
-  let debugLatencyInterval = null;
 
   handleConnect({ socket, io, state });
 
-  debugLatencyInterval = setInterval(() => {
-    const player = state.players.get(socket.id);
-    if (!player) return;
-
-    socket.emit('debug_latency_probe', { sentAt: Date.now() });
-  }, 5000);
-
   socket.on('disconnect', () => {
-    if (debugLatencyInterval) {
-      clearInterval(debugLatencyInterval);
-      debugLatencyInterval = null;
-    }
     handleDisconnect({ socket, io, state });
   });
 
@@ -163,16 +151,19 @@ function registerSocketHandlers(input) {
     handleLoadMap({ socket, io, state, data });
   });
 
-  socket.on('debug_latency_probe_result', (data) => {
+  socket.on('client_runtime_error', (data) => {
     const player = state.players.get(socket.id);
-    if (!player) return;
+    const label = player
+      ? `${String(player.name ?? `P${socket.id.slice(0, 4)}`)} (${socket.id.slice(0, 6)})`
+      : `Unknown (${socket.id.slice(0, 6)})`;
+    const errorType = String(data?.type ?? 'client-error');
+    const message = String(data?.message ?? 'Unknown client error');
+    const source = data?.source ? ` source=${String(data.source)}` : '';
+    const line = Number.isFinite(data?.line) ? ` line=${data.line}` : '';
+    const column = Number.isFinite(data?.column) ? ` column=${data.column}` : '';
+    const stack = data?.stack ? `\n${String(data.stack)}` : '';
 
-    const sentAt = typeof data?.sentAt === 'number' ? data.sentAt : NaN;
-    if (!Number.isFinite(sentAt)) return;
-
-    const rttMs = Date.now() - sentAt;
-    const label = `${String(player.name ?? `P${socket.id.slice(0, 4)}`)} (${socket.id.slice(0, 6)})`;
-    console.log(`[debug-latency] ${label}: ${rttMs}ms RTT`);
+    console.error(`[client-runtime-error] ${label} ${errorType}: ${message}${source}${line}${column}${stack}`);
   });
 }
 

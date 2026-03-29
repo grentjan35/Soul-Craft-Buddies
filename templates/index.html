@@ -769,6 +769,46 @@
         });
         let myPlayerName = "Player";
 
+        function reportClientRuntimeError(payload) {
+            const report = {
+                type: String(payload?.type ?? 'client-error'),
+                message: String(payload?.message ?? 'Unknown client error'),
+                source: payload?.source ? String(payload.source) : '',
+                line: typeof payload?.line === 'number' ? payload.line : undefined,
+                column: typeof payload?.column === 'number' ? payload.column : undefined,
+                stack: payload?.stack ? String(payload.stack) : ''
+            };
+
+            if (socket.connected) {
+                socket.emit('client_runtime_error', report);
+                return;
+            }
+
+            socket.once('connect', () => {
+                socket.emit('client_runtime_error', report);
+            });
+        }
+
+        window.addEventListener('error', (event) => {
+            reportClientRuntimeError({
+                type: 'window-error',
+                message: event.message,
+                source: event.filename,
+                line: event.lineno,
+                column: event.colno,
+                stack: event.error?.stack
+            });
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            const reason = event.reason;
+            reportClientRuntimeError({
+                type: 'unhandledrejection',
+                message: typeof reason === 'string' ? reason : (reason?.message ?? 'Unhandled promise rejection'),
+                stack: reason?.stack
+            });
+        });
+
         // Frame Rate Configuration
         let fpsCap = 120; // Default for high-end
         let isLowEnd = false;
@@ -1644,6 +1684,11 @@
 
         socket.on('connect_error', (error) => {
             console.error('Connection error:', error);
+            reportClientRuntimeError({
+                type: 'socket-connect-error',
+                message: error?.message ?? 'Socket connection error',
+                stack: error?.stack
+            });
             // Show user-friendly error message
             const errorMsg = document.createElement('div');
             errorMsg.style.cssText = `
@@ -1666,12 +1711,6 @@
             assignedCharacter = data.character;
             console.log(`Assigned character: ${assignedCharacter}`);
             loadCharacterAssets();
-        });
-
-        socket.on('debug_latency_probe', (data) => {
-            socket.emit('debug_latency_probe_result', {
-                sentAt: data?.sentAt
-            });
         });
 
         async function fetchWithRetry(url, options = {}, maxRetries = 3) {
