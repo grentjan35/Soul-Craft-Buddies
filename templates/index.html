@@ -2,17 +2,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <title>Multiplayer Platformer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         :root {
-            --mobile-controls-height: 168px;
+            --mobile-controls-height: 184px;
             --mobile-edge-gap: 20px;
-            --mobile-action-size: 80px;
+            --mobile-action-size: 86px;
             --mobile-action-gap: 14px;
             --mobile-chat-width: 300px;
             --mobile-chat-bottom-offset: calc(env(safe-area-inset-bottom, 0px) + 12px);
+        }
+
+        html, body {
+            overscroll-behavior: none;
+            -webkit-text-size-adjust: 100%;
         }
 
         body { 
@@ -44,6 +49,7 @@
             image-rendering: crisp-edges;
             z-index: 1;
             background: #000;
+            touch-action: none;
         }
 
         #glCanvas {
@@ -64,6 +70,7 @@
             background: #000000; /* Pure black fallback */
             display: flex; justify-content: center; align-items: center;
             z-index: 2000; overflow: hidden;
+            touch-action: manipulation;
         }
 
         #menu-bg-canvas {
@@ -81,15 +88,19 @@
             align-items: center;
             /* Subtle glow only on UI itself */
             filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+            width: min(88vw, 520px);
+            padding: 24px 20px;
+            box-sizing: border-box;
         }
 
         .start-title {
-            font-size: 4.5rem;
+            font-size: clamp(2.4rem, 8vw, 4.5rem);
             color: #444; /* Very dark grey, barely visible */
             margin-bottom: 60px;
-            letter-spacing: 25px;
+            letter-spacing: clamp(10px, 4vw, 25px);
             text-shadow: 0 0 30px rgba(255,255,255,0.05); /* Very faint glow */
             transition: color 1s ease;
+            text-align: center;
         }
 
         /* When the player hovers over the container, the title "wakes up" slightly */
@@ -103,10 +114,11 @@
             border-bottom: 1px solid #111;
             color: #444;
             padding: 10px;
-            width: 200px;
+            width: min(240px, 70vw);
             text-align: center;
             margin-bottom: 30px;
             transition: border-color 0.5s;
+            font-size: 16px;
         }
 
         .start-input:focus {
@@ -120,8 +132,8 @@
             background: rgba(0, 0, 0, 0.8);
             border: 1px solid #1a1a1a; /* Almost invisible border */
             color: #333; /* Dark text */
-            padding: 20px 100px;
-            font-size: 1.2rem;
+            padding: 20px clamp(40px, 18vw, 100px);
+            font-size: max(16px, 1.2rem);
             cursor: pointer;
             letter-spacing: 10px;
             transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
@@ -151,6 +163,7 @@
             justify-content: center;
             align-items: center;
             z-index: 3000;
+            touch-action: manipulation;
         }
 
         /* Remove pixelate filter from loading screen - no filter applied for clean look */
@@ -244,6 +257,7 @@
             width: 300px;
             max-width: calc(100vw - 40px);
             display: none; /* ADD THIS LINE to hide it on initial load */
+            touch-action: manipulation;
         }
 
         #chat-box {
@@ -422,6 +436,7 @@
             padding: 0 0 0 var(--mobile-edge-gap);
             box-sizing: border-box;
             pointer-events: none;
+            touch-action: none;
         }
 
         .mobile-control-cluster {
@@ -507,21 +522,21 @@
         /* Responsive scaling for different screen sizes */
         @media (max-width: 768px) {
             :root {
-                --mobile-controls-height: 150px;
+                --mobile-controls-height: 168px;
                 --mobile-edge-gap: 16px;
-                --mobile-action-size: 64px;
+                --mobile-action-size: 74px;
                 --mobile-action-gap: 12px;
                 --mobile-chat-width: 240px;
             }
 
             #joystick-container {
-                width: 100px;
-                height: 100px;
+                width: 112px;
+                height: 112px;
             }
             
             #joystick-thumb {
-                width: 40px;
-                height: 40px;
+                width: 44px;
+                height: 44px;
             }
             
             .mobile-action-button {
@@ -532,21 +547,21 @@
 
         @media (max-width: 480px) {
             :root {
-                --mobile-controls-height: 132px;
+                --mobile-controls-height: 148px;
                 --mobile-edge-gap: 10px;
-                --mobile-action-size: 56px;
+                --mobile-action-size: 64px;
                 --mobile-action-gap: 10px;
                 --mobile-chat-width: 160px;
             }
             
             #joystick-container {
-                width: 80px;
-                height: 80px;
+                width: 96px;
+                height: 96px;
             }
             
             #joystick-thumb {
-                width: 35px;
-                height: 35px;
+                width: 40px;
+                height: 40px;
             }
             
             .mobile-action-button {
@@ -995,12 +1010,21 @@
 
         let jumpButtonPressed = false;
 
+        function getCanvasWorldPoint(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const canvasPixelX = ((clientX - rect.left) / rect.width) * canvas.width;
+            const canvasPixelY = ((clientY - rect.top) / rect.height) * canvas.height;
+
+            return {
+                worldX: canvasPixelX / cameraZoom + cameraX,
+                worldY: canvasPixelY / cameraZoom + cameraY
+            };
+        }
+
         function fireProjectileAtScreenPoint(clientX, clientY) {
             if (chatActive || !allAssetsLoaded) return;
 
-            const rect = canvas.getBoundingClientRect();
-            const worldX = (clientX - rect.left) / cameraZoom + cameraX;
-            const worldY = (clientY - rect.top) / cameraZoom + cameraY;
+            const { worldX, worldY } = getCanvasWorldPoint(clientX, clientY);
             const myPlayer = getPlayerPosition(socket.id);
             if (!myPlayer) return;
 
@@ -2293,9 +2317,9 @@
         });
         
         canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            mousePosition.x = (e.clientX - rect.left) / cameraZoom + cameraX;
-            mousePosition.y = (e.clientY - rect.top) / cameraZoom + cameraY;
+            const { worldX, worldY } = getCanvasWorldPoint(e.clientX, e.clientY);
+            mousePosition.x = worldX;
+            mousePosition.y = worldY;
         });
 
 
