@@ -2,27 +2,39 @@ const fs = require('fs');
 const path = require('path');
 
 /**
- * Picks a random character from static/assets/characters.
- * Why: Keep behavior similar to Python discover_characters + get_random_character.
+ * Lists available character folders from static/assets/characters.
  * @param {{state: any}} input
- * @returns {{character: string}}
+ * @returns {string[]}
  */
-function loadCharacters(input) {
+function listCharacters(input) {
   const baseDir = path.join(input.state.config?.staticDir ?? '', 'assets', 'characters');
 
   try {
     const entries = fs.readdirSync(baseDir, { withFileTypes: true });
-    const names = entries.filter((e) => e.isDirectory()).map((e) => e.name);
-
-    if (names.length === 0) {
-      return { character: 'spartan' };
-    }
-
-    const idx = Math.floor(Math.random() * names.length);
-    return { character: names[idx] };
+    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
-    return { character: 'spartan' };
+    return [];
   }
 }
 
-module.exports = { loadCharacters };
+/**
+ * Resolves the requested character if valid, otherwise falls back safely.
+ * @param {{state: any, requestedCharacter?: string | null}} input
+ * @returns {{character: string, availableCharacters: string[]}}
+ */
+function resolveCharacterSelection(input) {
+  const availableCharacters = listCharacters({ state: input.state });
+  const requestedCharacter = String(input.requestedCharacter ?? '').trim().toLowerCase();
+
+  if (requestedCharacter && availableCharacters.includes(requestedCharacter)) {
+    return { character: requestedCharacter, availableCharacters };
+  }
+
+  if (availableCharacters.length > 0) {
+    return { character: availableCharacters[0], availableCharacters };
+  }
+
+  return { character: 'spartan', availableCharacters };
+}
+
+module.exports = { listCharacters, resolveCharacterSelection };

@@ -7,6 +7,42 @@ const { resolveUnderBaseDir } = require('../../utils/pathSafety');
 const { signToken, verifyToken } = require('./tokenService');
 const { loadManifest } = require('./manifestService');
 
+function listAvailableCharacterCards(staticDir) {
+  const characterDir = path.join(staticDir, 'assets', 'characters');
+  const cardsDir = path.join(staticDir, 'assets', 'cards');
+
+  let characterNames = [];
+  let cardNames = new Set();
+
+  try {
+    characterNames = fs
+      .readdirSync(characterDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    characterNames = [];
+  }
+
+  try {
+    cardNames = new Set(
+      fs
+        .readdirSync(cardsDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => path.parse(entry.name).name.toLowerCase())
+    );
+  } catch {
+    cardNames = new Set();
+  }
+
+  return characterNames
+    .filter((character) => cardNames.has(`${character.toLowerCase()}a`))
+    .sort()
+    .map((character) => ({
+      character,
+      cardAsset: `${character}A`,
+    }));
+}
+
 /**
  * Converts a web path like `/static/assets/foo.png` into a path relative to project root.
  * Why: manifest.json uses `/static/...` keys, while we need filesystem paths.
@@ -126,6 +162,8 @@ function createAssetsRouter(deps) {
 
   const manifestResult = loadManifest({ manifestPath: deps.manifestPath });
   const manifest = manifestResult.ok ? manifestResult.manifest : {};
+  const selectableCharacters = listAvailableCharacterCards(deps.staticDir);
+  const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -139,6 +177,24 @@ function createAssetsRouter(deps) {
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({ token });
+  });
+
+  router.get('/audio/menu/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicMenuSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
   });
 
   router.post('/api/request_asset', (req, res) => {
@@ -216,6 +272,44 @@ function createAssetsRouter(deps) {
     const token = signToken({
       secretKey: deps.secretKey,
       payload: { character, asset_sid: assetSession.sessionId },
+      expiresInSeconds: 60,
+    });
+
+    res.json({ token });
+  });
+
+  router.get('/api/character_selection_manifest', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ characters: selectableCharacters });
+  });
+
+  router.post('/api/request_character_card_token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
+    const character = String(req.body?.character ?? '').trim().toLowerCase();
+    const selection = selectableCharacters.find((entry) => entry.character === character);
+    if (!selection) {
+      res.status(404).json({ error: 'Character card not found' });
+      return;
+    }
+
+    const token = signToken({
+      secretKey: deps.secretKey,
+      payload: {
+        type: 'character_card',
+        character,
+        asset_sid: assetSession.sessionId,
+      },
       expiresInSeconds: 60,
     });
 
@@ -497,6 +591,51 @@ function createAssetsRouter(deps) {
     } catch {
       res.status(500).send('Server error');
     }
+  });
+
+  router.get('/api/character_card/:token/:character', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const token = String(req.params.token ?? '');
+    const character = String(req.params.character ?? '').trim().toLowerCase();
+
+    const verified = verifyToken({ secretKey: deps.secretKey, token });
+    if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const payload = verified.payload;
+    if (
+      payload.type !== 'character_card' ||
+      payload.character !== character ||
+      !tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })
+    ) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const selection = selectableCharacters.find((entry) => entry.character === character);
+    if (!selection) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    const assetPath = path.join(deps.staticDir, 'assets', 'cards', `${selection.cardAsset}.png`);
+    if (!fs.existsSync(assetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: assetPath,
+      downloadName: `${selection.cardAsset}.png`,
+    });
   });
 
   return router;

@@ -1,6 +1,6 @@
 const { PLAYER_MAX_SIZE, PLAYER_MAX_HEALTH, ATTACK_DURATION, FIREBALL_POWER_MAX } = require('../state/constants');
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
-const { loadCharacters } = require('./characters/loadCharacters');
+const { resolveCharacterSelection } = require('./characters/loadCharacters');
 
 /**
  * Registers all Socket.IO event handlers for a connected client.
@@ -173,9 +173,13 @@ function registerSocketHandlers(input) {
  */
 function handleConnect(input) {
   const nameQuery = input.socket.handshake?.query?.name;
+  const characterQuery = input.socket.handshake?.query?.character;
   const playerName = String(nameQuery ?? `Player_${input.socket.id.slice(0, 4)}`).slice(0, 15);
 
-  const characterInfo = loadCharacters({ state: input.state });
+  const characterInfo = resolveCharacterSelection({
+    state: input.state,
+    requestedCharacter: characterQuery,
+  });
   const character = characterInfo.character;
 
   const spawnPoint = pickSpawnPoint({ state: input.state });
