@@ -2,15 +2,26 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <title>Multiplayer Platformer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
+        :root {
+            --mobile-controls-height: 168px;
+            --mobile-edge-gap: 20px;
+            --mobile-action-size: 80px;
+            --mobile-action-gap: 14px;
+            --mobile-chat-width: 300px;
+            --mobile-chat-bottom-offset: calc(env(safe-area-inset-bottom, 0px) + 12px);
+        }
+
         body { 
             margin: 0; 
             padding: 0; 
             width: 100vw; 
             height: 100vh; 
+            min-height: 100svh;
+            min-height: 100dvh;
             overflow: hidden; 
             font-family: 'EB Garamond', serif;
             background-color: #000; /* Ensure body is black immediately */
@@ -211,6 +222,7 @@
             z-index: 100;
             font-family: 'EB Garamond', serif;
             width: 300px;
+            max-width: calc(100vw - 40px);
             display: none; /* ADD THIS LINE to hide it on initial load */
         }
 
@@ -381,18 +393,31 @@
         /* Mobile Controls Styling */
         #mobile-controls {
             position: fixed;
-            bottom: 20px;
             left: 0;
-            right: 0;
-            height: 150px;
+            bottom: var(--mobile-chat-bottom-offset);
+            height: var(--mobile-controls-height);
             z-index: 50;
+            display: flex;
+            align-items: flex-end;
+            padding: 0 0 0 var(--mobile-edge-gap);
+            box-sizing: border-box;
             pointer-events: none;
         }
 
+        .mobile-control-cluster {
+            display: flex;
+            align-items: flex-end;
+            gap: var(--mobile-action-gap);
+            min-width: 0;
+            pointer-events: none;
+        }
+
+        #mobile-movement-cluster {
+            justify-content: flex-start;
+        }
+
         #joystick-container {
-            position: absolute;
-            bottom: 0;
-            left: 20px;
+            position: relative;
             width: 120px;
             height: 120px;
             pointer-events: auto;
@@ -428,35 +453,47 @@
             box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
         }
 
-        #jump-button {
-            position: absolute;
-            bottom: 20px;
-            right: 340px;
-            width: 80px;
-            height: 80px;
+        .mobile-action-button {
+            width: var(--mobile-action-size);
+            height: var(--mobile-action-size);
             border-radius: 50%;
-            background: rgba(0, 150, 255, 0.6);
             border: 3px solid rgba(255, 255, 255, 0.8);
             color: white;
             font-family: 'EB Garamond', serif;
             font-weight: bold;
             font-size: 16px;
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
             pointer-events: auto;
             user-select: none;
             -webkit-user-select: none;
             transition: all 0.1s ease;
+            box-sizing: border-box;
+        }
+
+        #jump-button {
+            background: rgba(0, 150, 255, 0.6);
+        }
+
+        .mobile-action-button:active {
+            transform: scale(0.95);
         }
 
         #jump-button:active {
             background: rgba(0, 200, 255, 0.8);
-            transform: scale(0.95);
         }
 
         /* Responsive scaling for different screen sizes */
         @media (max-width: 768px) {
+            :root {
+                --mobile-controls-height: 150px;
+                --mobile-edge-gap: 16px;
+                --mobile-action-size: 64px;
+                --mobile-action-gap: 12px;
+                --mobile-chat-width: 240px;
+            }
+
             #joystick-container {
                 width: 100px;
                 height: 100px;
@@ -467,23 +504,24 @@
                 height: 40px;
             }
             
-            #jump-button {
-                width: 60px;
-                height: 60px;
+            .mobile-action-button {
                 font-size: 14px;
-                right: 250px;
             }
+
         }
 
         @media (max-width: 480px) {
-            #mobile-controls {
-                height: 120px;
+            :root {
+                --mobile-controls-height: 132px;
+                --mobile-edge-gap: 10px;
+                --mobile-action-size: 56px;
+                --mobile-action-gap: 10px;
+                --mobile-chat-width: 160px;
             }
             
             #joystick-container {
                 width: 80px;
                 height: 80px;
-                left: 10px;
             }
             
             #joystick-thumb {
@@ -491,11 +529,35 @@
                 height: 35px;
             }
             
-            #jump-button {
-                width: 50px;
-                height: 50px;
-                right: 10px;
+            .mobile-action-button {
                 font-size: 12px;
+            }
+        }
+
+        @media (hover: none) and (pointer: coarse) {
+            #chat-container {
+                left: auto;
+                right: 12px;
+                width: min(var(--mobile-chat-width), calc(100vw - 24px));
+                max-width: calc(100vw - 24px);
+                bottom: var(--mobile-chat-bottom-offset);
+            }
+
+            #chat-box.expanded {
+                height: min(150px, 28vh);
+                max-height: min(150px, 28vh);
+            }
+
+            #chat-messages {
+                height: auto;
+                max-height: min(112px, 20vh);
+            }
+
+            #jump-button {
+                position: fixed;
+                right: calc(12px + min(var(--mobile-chat-width), calc(100vw - 24px)) + var(--mobile-action-gap));
+                bottom: var(--mobile-chat-bottom-offset);
+                z-index: 101;
             }
         }
     </style>
@@ -551,16 +613,15 @@
 
     <!-- Mobile Controls -->
     <div id="mobile-controls" style="display: none;">
-        <!-- Joystick Container -->
-        <div id="joystick-container">
-            <div id="joystick-base">
-                <div id="joystick-thumb"></div>
+        <div class="mobile-control-cluster" id="mobile-movement-cluster">
+            <div id="joystick-container">
+                <div id="joystick-base">
+                    <div id="joystick-thumb"></div>
+                </div>
             </div>
         </div>
-        
-        <!-- Jump Button -->
-        <div id="jump-button">JUMP</div>
     </div>
+    <div id="jump-button" class="mobile-action-button">JUMP</div>
 
     <script id="vertex-shader" type="x-shader/x-vertex">
         attribute vec2 a_position;
@@ -814,6 +875,8 @@
         // Initialize mobile controls if on mobile device
         function initializeMobileControls() {
             if (!isMobile) return;
+
+            document.body.classList.add('mobile-device');
             
             mobileControls = document.getElementById('mobile-controls');
             joystickThumb = document.getElementById('joystick-thumb');
@@ -821,6 +884,7 @@
             
             // Show mobile controls
             mobileControls.style.display = 'block';
+            jumpButton.style.display = 'flex';
             
             // Setup joystick touch events
             const joystickContainer = document.getElementById('joystick-container');
@@ -832,10 +896,12 @@
             // Setup jump button touch events
             jumpButton.addEventListener('touchstart', handleJumpStart, { passive: false });
             jumpButton.addEventListener('touchend', handleJumpEnd, { passive: false });
+            jumpButton.addEventListener('touchcancel', handleJumpEnd, { passive: false });
             
             // Prevent default touch behaviors on game canvas
             const canvas = document.getElementById('gameCanvas');
             canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+            canvas.addEventListener('touchend', handleCanvasTapAttack, { passive: false });
         }
 
         function handleJoystickStart(e) {
@@ -908,6 +974,21 @@
         }
 
         let jumpButtonPressed = false;
+
+        function fireProjectileAtScreenPoint(clientX, clientY) {
+            if (chatActive || !allAssetsLoaded) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const worldX = (clientX - rect.left) / cameraZoom + cameraX;
+            const worldY = (clientY - rect.top) / cameraZoom + cameraY;
+            const myPlayer = getPlayerPosition(socket.id);
+            if (!myPlayer) return;
+
+            const dx = worldX - myPlayer.x;
+            const dy = worldY - myPlayer.y;
+            const angle = Math.atan2(dy, dx);
+            socket.emit('projectile_fire', { angle });
+        }
         
         function handleJumpStart(e) {
             e.preventDefault();
@@ -920,6 +1001,14 @@
         function handleJumpEnd(e) {
             e.preventDefault();
             jumpButtonPressed = false;
+        }
+
+        function handleCanvasTapAttack(e) {
+            e.preventDefault();
+            if (chatActive || !allAssetsLoaded || joystickActive || e.changedTouches.length === 0) return;
+
+            const touch = e.changedTouches[0];
+            fireProjectileAtScreenPoint(touch.clientX, touch.clientY);
         }
 
         // WebGL Menu Background System
@@ -1273,9 +1362,11 @@
         }
 
         function resizeCanvas() {
-            // Restore original behavior: 1:1 pixel mapping
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
+            const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
+
+            canvas.width = viewportWidth;
+            canvas.height = viewportHeight;
             
             if (glCanvas) {
                 glCanvas.width = canvas.width;
@@ -1286,6 +1377,11 @@
         initWebGL();
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => {
+            requestAnimationFrame(resizeCanvas);
+            setTimeout(resizeCanvas, 250);
+        });
+        window.visualViewport?.addEventListener('resize', resizeCanvas);
         
         // Initialize mobile controls
         initializeMobileControls();
@@ -2126,6 +2222,7 @@
         chatInput.addEventListener('focus', () => {
             chatActive = true;
             chatBox.style.display = 'block';
+            chatBox.classList.remove('expanded', 'collapsed');
             // Set initial expanded state
             if (chatExpanded) {
                 chatBox.classList.add('expanded');
@@ -2160,20 +2257,7 @@
         // Mouse event handlers for fireball shooting
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0 && !chatActive && allAssetsLoaded) { // Left click
-                // Update mouse position to current click position
-                const rect = canvas.getBoundingClientRect();
-                const currentMouseX = (e.clientX - rect.left) / cameraZoom + cameraX;
-                const currentMouseY = (e.clientY - rect.top) / cameraZoom + cameraY;
-                
-                // Calculate angle from player to click position
-                const myPlayer = getPlayerPosition(socket.id);
-                if (myPlayer) {
-                    const dx = currentMouseX - myPlayer.x;
-                    const dy = currentMouseY - myPlayer.y;
-                    const angle = Math.atan2(dy, dx);
-                    
-                    socket.emit('projectile_fire', { angle: angle });
-                }
+                fireProjectileAtScreenPoint(e.clientX, e.clientY);
             }
         });
         
