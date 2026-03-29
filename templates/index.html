@@ -362,18 +362,23 @@
             pointer-events: none;
         }
 
-        .character-card img {
-            width: 100%;
+        .character-card-art {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            width: auto;
             height: 100%;
-            object-fit: cover;
+            min-width: 100%;
             display: block;
+            transform: translateX(-50%);
+            transform-origin: center center;
             filter: saturate(0.9) brightness(0.84) contrast(1.06);
             pointer-events: none;
             transition: transform 260ms ease, filter 220ms ease;
         }
 
-        .character-card.is-visible:hover img {
-            transform: scale(1.045);
+        .character-card.is-visible:hover .character-card-art {
+            transform: translateX(-50%) scale(1.045);
             filter: saturate(1.08) brightness(0.98) contrast(1.1);
         }
 
@@ -1629,6 +1634,12 @@
                     homescreenVideoUrl = null;
                 }
             }
+
+            video.addEventListener('loadeddata', () => {
+                // Keep playback alive inside the existing media element,
+                // but invalidate the blob URL so it cannot be opened directly.
+                revokeHomescreenVideoUrl();
+            });
             
             // Get environment token and load video
             async function loadVideo() {
@@ -1649,16 +1660,11 @@
                 }
             }
 
-            // Some browsers may continue reading from the blob URL after `loadeddata`.
-            // Revoke it only when the page is being torn down or before a replacement URL is assigned.
+            // Clean up any still-live blob URL if the page is leaving before media has loaded.
             window.addEventListener('pagehide', revokeHomescreenVideoUrl);
             window.addEventListener('beforeunload', revokeHomescreenVideoUrl);
             
             loadVideo();
-
-            window.addEventListener('beforeunload', () => {
-                revokeHomescreenVideoUrl();
-            });
             
             // Create texture from video
             const texture = menuGL.createTexture();
@@ -1963,10 +1969,24 @@
                     button.className = 'character-card';
                     button.dataset.character = entry.character;
                     button.setAttribute('aria-label', `Select ${formatCharacterName(entry.character)}`);
-                    button.innerHTML = `
-                        <img src="${entry.cardUrl}" alt="${formatCharacterName(entry.character)} card">
-                        <div class="character-card-label">${formatCharacterName(entry.character)}</div>
-                    `;
+                    const cardCanvas = document.createElement('canvas');
+                    cardCanvas.className = 'character-card-art';
+                    cardCanvas.width = entry.cardBitmap.width;
+                    cardCanvas.height = entry.cardBitmap.height;
+                    cardCanvas.setAttribute('aria-hidden', 'true');
+
+                    const cardCtx = cardCanvas.getContext('2d');
+                    if (cardCtx) {
+                        cardCtx.imageSmoothingEnabled = true;
+                        cardCtx.drawImage(entry.cardBitmap, 0, 0);
+                    }
+
+                    const label = document.createElement('div');
+                    label.className = 'character-card-label';
+                    label.textContent = formatCharacterName(entry.character);
+
+                    button.appendChild(cardCanvas);
+                    button.appendChild(label);
 
                     registerMenuHoverSound(button);
 
@@ -1987,22 +2007,23 @@
                         throw new Error('No character cards were found.');
                     }
 
-                    const cardsWithUrls = await Promise.all(
+                    const cardsWithBitmaps = await Promise.all(
                         availableCharacterSelections.map(async (entry) => {
                             const cardToken = await getCharacterCardToken(entry.character);
                             const cardBlob = await fetchProtectedBlob(
                                 `/api/character_card/${cardToken}/${entry.character}`,
                                 'image/png'
                             );
+                            const cardBitmap = await createImageBitmap(cardBlob);
 
                             return {
                                 ...entry,
-                                cardUrl: URL.createObjectURL(cardBlob)
+                                cardBitmap
                             };
                         })
                     );
 
-                    availableCharacterSelections = cardsWithUrls;
+                    availableCharacterSelections = cardsWithBitmaps;
                     renderCharacterCarousel();
                     selectionUiReady = true;
                     updateSelectionCopy('Choose a soul');

@@ -286,7 +286,11 @@ function createAssetsRouter(deps) {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ characters: selectableCharacters });
+    res.json({
+      characters: selectableCharacters.map((entry) => ({
+        character: entry.character,
+      })),
+    });
   });
 
   router.post('/api/request_character_card_token', (req, res) => {
@@ -634,7 +638,7 @@ function createAssetsRouter(deps) {
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
-      downloadName: `${selection.cardAsset}.png`,
+      downloadName: 'character-card.png',
     });
   });
 
