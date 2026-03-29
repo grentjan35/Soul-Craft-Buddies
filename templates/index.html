@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
-    <title>Multiplayer Platformer</title>
+    <title>Soul Craft.io</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         :root {
@@ -1666,6 +1666,12 @@
             assignedCharacter = data.character;
             console.log(`Assigned character: ${assignedCharacter}`);
             loadCharacterAssets();
+        });
+
+        socket.on('debug_latency_probe', (data) => {
+            socket.emit('debug_latency_probe_result', {
+                sentAt: data?.sentAt
+            });
         });
 
         async function fetchWithRetry(url, options = {}, maxRetries = 3) {

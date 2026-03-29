@@ -9,10 +9,22 @@ const { loadCharacters } = require('./characters/loadCharacters');
  */
 function registerSocketHandlers(input) {
   const { socket, io, state } = input;
+  let debugLatencyInterval = null;
 
   handleConnect({ socket, io, state });
 
+  debugLatencyInterval = setInterval(() => {
+    const player = state.players.get(socket.id);
+    if (!player) return;
+
+    socket.emit('debug_latency_probe', { sentAt: Date.now() });
+  }, 5000);
+
   socket.on('disconnect', () => {
+    if (debugLatencyInterval) {
+      clearInterval(debugLatencyInterval);
+      debugLatencyInterval = null;
+    }
     handleDisconnect({ socket, io, state });
   });
 
@@ -149,6 +161,18 @@ function registerSocketHandlers(input) {
 
   socket.on('load_map', (data) => {
     handleLoadMap({ socket, io, state, data });
+  });
+
+  socket.on('debug_latency_probe_result', (data) => {
+    const player = state.players.get(socket.id);
+    if (!player) return;
+
+    const sentAt = typeof data?.sentAt === 'number' ? data.sentAt : NaN;
+    if (!Number.isFinite(sentAt)) return;
+
+    const rttMs = Date.now() - sentAt;
+    const label = `${String(player.name ?? `P${socket.id.slice(0, 4)}`)} (${socket.id.slice(0, 6)})`;
+    console.log(`[debug-latency] ${label}: ${rttMs}ms RTT`);
   });
 }
 
