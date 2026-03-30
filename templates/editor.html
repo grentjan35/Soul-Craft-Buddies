@@ -11,19 +11,25 @@
         .controls { display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
         .control-group { display: flex; flex-direction: column; gap: 5px; }
         label { font-size: 14px; color: #aaa; }
-        input, button { padding: 8px 12px; border: none; border-radius: 4px; font-size: 14px; }
-        input[type="number"], input[type="text"] { background: #333; color: #fff; border: 1px solid #555; }
+        input, button, select { padding: 8px 12px; border: none; border-radius: 4px; font-size: 14px; }
+        input[type="number"], input[type="text"], select { background: #333; color: #fff; border: 1px solid #555; }
         button { cursor: pointer; background: #4CAF50; color: #fff; }
         button:hover { background: #45a049; }
         button.danger { background: #f44336; }
         button.danger:hover { background: #da190b; }
         .editor-container { display: flex; gap: 20px; height: calc(100vh - 200px); }
-        .tile-palette { flex-shrink: 0; background: #2a2a3e; padding: 15px; border-radius: 8px; }
+        .tile-palette { width: 280px; flex-shrink: 0; background: #2a2a3e; padding: 15px; border-radius: 8px; overflow-y: auto; }
         .tile-palette h3 { margin-top: 0; margin-bottom: 10px; }
         .palette-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
         .palette-tile { width: 48px; height: 48px; border: 2px solid #555; cursor: pointer; background: #333; image-rendering: pixelated; }
         .palette-tile:hover { border-color: #4CAF50; }
         .palette-tile.selected { border-color: #4CAF50; box-shadow: 0 0 10px #4CAF50; }
+        .background-palette-grid { display: grid; gap: 12px; }
+        .background-palette-item { border: 2px solid #555; border-radius: 8px; background: #242438; padding: 10px; cursor: pointer; }
+        .background-palette-item:hover { border-color: #4CAF50; }
+        .background-palette-item.selected { border-color: #4CAF50; box-shadow: 0 0 12px rgba(76, 175, 80, 0.45); }
+        .background-thumb { width: 100%; height: 110px; object-fit: contain; image-rendering: pixelated; background: #111; border-radius: 4px; display: block; }
+        .background-meta { margin-top: 8px; font-size: 13px; color: #ddd; word-break: break-word; }
         .canvas-container { flex-grow: 1; background: #2a2a3e; padding: 15px; border-radius: 8px; overflow: auto; min-height: 600px; }
         #editorCanvas { border: 2px solid #555; cursor: crosshair; image-rendering: pixelated; }
         .map-list { margin-top: 20px; background: #2a2a3e; padding: 15px; border-radius: 8px; }
@@ -46,6 +52,12 @@
         .collision-box-list { margin-top: 15px; max-height: 200px; overflow-y: auto; }
         .collision-box-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #333; margin: 5px 0; border-radius: 4px; }
         .collision-box-item button { padding: 4px 8px; font-size: 12px; }
+        .stack-list { display: grid; gap: 8px; margin-top: 12px; }
+        .stack-item { padding: 10px; border-radius: 6px; background: #333; border: 1px solid #4b4b63; }
+        .stack-item.selected { border-color: #4CAF50; box-shadow: 0 0 10px rgba(76, 175, 80, 0.3); }
+        .stack-item strong { display: block; margin-bottom: 4px; }
+        .stack-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .empty-state { color: #888; font-size: 13px; padding: 8px 0; }
     </style>
 </head>
 <body>
@@ -69,13 +81,14 @@
             <button onclick="saveMap()">Save Map</button>
             <button onclick="loadMap()">Load Map</button>
             <button onclick="clearMap()" class="danger">Clear Map</button>
-            <button onclick="playMap()">▶ Play in Game</button>
-            <button onclick="toggleCollisionsTab()">🎯 Collisions</button>
+            <button onclick="playMap()">Play in Game</button>
+            <button onclick="toggleCollisionsTab()">Collisions</button>
             <div class="control-group">
-                <label>Tool</label>
-                <select id="toolMode" onchange="setToolMode(this.value)" style="padding: 8px 12px; border: none; border-radius: 4px; font-size: 14px; background: #333; color: #fff; border: 1px solid #555;">
-                    <option value="tile">🎨 Tile Paint</option>
-                    <option value="spawn">🚩 Spawn Point</option>
+                <label>Editor Tab</label>
+                <select id="toolMode" onchange="setToolMode(this.value)">
+                    <option value="tile">Tile Paint</option>
+                    <option value="spawn">Spawn Point</option>
+                    <option value="background">Background Editor</option>
                 </select>
             </div>
             <div class="control-group" style="margin-left: auto;">
@@ -90,14 +103,47 @@
 
         <div class="editor-container">
             <div class="tile-palette">
-                <h3>Tile Palette</h3>
-                <div class="palette-grid" id="paletteGrid"></div>
-                <div class="info">
-                    <p>Selected: <span id="selectedTileInfo">0</span></p>
-                    <p>Left click: Paint tile / Place spawn</p>
-                    <p>Right click: Erase tile / Remove spawn</p>
-                    <p>Shift+drag or Middle click: Pan</p>
-                    <p>Ctrl+scroll: Zoom</p>
+                <div id="tilePalettePanel">
+                    <h3>Tile Palette</h3>
+                    <div class="palette-grid" id="paletteGrid"></div>
+                    <div class="info">
+                        <p>Selected: <span id="selectedTileInfo">0</span></p>
+                        <p>Left click: Paint tile</p>
+                        <p>Right click: Erase tile</p>
+                        <p>Shift+drag or Middle click: Pan</p>
+                        <p>Ctrl+scroll: Zoom</p>
+                    </div>
+                </div>
+                <div id="spawnPalettePanel" style="display: none;">
+                    <h3>Spawn Tool</h3>
+                    <div class="info">
+                        <p>Left click: Place spawn point</p>
+                        <p>Right click: Remove nearby spawn point</p>
+                        <p>Shift+drag or Middle click: Pan</p>
+                        <p>Ctrl+scroll: Zoom</p>
+                    </div>
+                </div>
+                <div id="backgroundPalettePanel" style="display: none;">
+                    <h3>Background Editor</h3>
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: flex; align-items: center; gap: 8px; color: #ddd;">
+                            <input type="checkbox" id="backgroundPreviewFront" onchange="setBackgroundPreviewLayer(this.checked)">
+                            Preview backgrounds in front
+                        </label>
+                    </div>
+                    <div class="background-palette-grid" id="backgroundPaletteGrid"></div>
+                    <div class="info">
+                        <p>Selected asset: <span id="selectedBackgroundInfo">None</span></p>
+                        <p>Left click an image in the level: select and drag it</p>
+                        <p>Left click empty space: place the selected background there</p>
+                        <p>Right click a placed background: remove it</p>
+                        <p>Backgrounds keep their real size and stay grid-aligned</p>
+                        <p>Save Map stores the current background positions too</p>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <h3 style="margin-bottom: 10px;">Placed Backgrounds</h3>
+                        <div id="backgroundStack" class="stack-list"></div>
+                    </div>
                 </div>
             </div>
             
@@ -119,7 +165,7 @@
                 </div>
                 <div style="margin-top: 15px;">
                     <button onclick="clearCollisionBoxes()">Clear All Boxes</button>
-                    <button onclick="saveCollisions()" style="margin-left: 10px;">💾 Save Obstacles</button>
+                    <button onclick="saveCollisions()" style="margin-left: 10px;">Save Obstacles</button>
                 </div>
                 <div class="collision-box-list" id="collisionBoxList"></div>
                 <div class="info">
@@ -155,6 +201,15 @@
         let selectedCollisionTile = null;
         let isDrawingCollision = false;
         let collisionStart = null;
+        let backgroundAssets = [];
+        let selectedBackgroundAsset = null;
+        let placedBackgrounds = [];
+        let selectedPlacedBackgroundId = null;
+        let draggingBackgroundId = null;
+        let backgroundDragOffset = { x: 0, y: 0 };
+        const backgroundImageCache = new Map();
+        let nextBackgroundId = 1;
+        let editorBackgroundPreviewFront = false;
         
         // View controls for panning and zooming
         let viewOffset = { x: 0, y: 0 };
@@ -250,27 +305,54 @@
             return data.token;
         }
 
+        async function fetchImageBitmap(url) {
+            const response = await fetchWithAssetSession(url);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.status}`);
+            }
+
+            const bytes = await response.arrayBuffer();
+            const blob = new Blob([bytes], { type: 'image/png' });
+            return createImageBitmap(blob);
+        }
+
+        async function loadBackgroundCatalog(environmentToken) {
+            const response = await fetchWithAssetSession(`/api/backgrounds/${environmentToken}`);
+            if (!response.ok) {
+                throw new Error(`Failed to load backgrounds: ${response.status}`);
+            }
+
+            const result = await response.json();
+            backgroundAssets = Array.isArray(result.backgrounds) ? result.backgrounds : [];
+
+            await Promise.all(backgroundAssets.map(async (assetName) => {
+                const bitmap = await fetchImageBitmap(`/api/background_asset/${environmentToken}/${encodeURIComponent(assetName)}`);
+                backgroundImageCache.set(assetName, bitmap);
+            }));
+
+            if (!selectedBackgroundAsset && backgroundAssets.length > 0) {
+                selectedBackgroundAsset = backgroundAssets[0];
+            }
+
+            initBackgroundPalette();
+        }
+
         // Load tileset image
         async function loadTileset() {
             try {
                 const environmentToken = await requestEnvironmentToken();
-                const response = await fetchWithAssetSession(`/api/tileset/${environmentToken}`);
+                tilesetImage = await fetchImageBitmap(`/api/tileset/${environmentToken}`);
+                await loadBackgroundCatalog(environmentToken);
 
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch tileset: ${response.status}`);
-                }
-
-                const bytes = await response.arrayBuffer();
-                const blob = new Blob([bytes], { type: 'image/png' });
-                tilesetImage = await createImageBitmap(blob);
-                
                 initPalette();
                 initMapData();
+                ensureDefaultBackgroundPlacement();
+                renderPlacedBackgroundStack();
                 resizeCanvas();
                 draw();
             } catch (error) {
-                console.error('Error loading tileset:', error);
-                showStatus(`Error loading tileset: ${error.message}`, 'error');
+                console.error('Error loading editor assets:', error);
+                showStatus(`Error loading editor assets: ${error.message}`, 'error');
             }
         }
 
@@ -322,12 +404,97 @@
             selectTile(0);
         }
 
+        function bitmapToDataUrl(bitmap) {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = bitmap.width;
+            tempCanvas.height = bitmap.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(bitmap, 0, 0);
+            return tempCanvas.toDataURL();
+        }
+
+        function initBackgroundPalette() {
+            const paletteGrid = document.getElementById('backgroundPaletteGrid');
+            paletteGrid.innerHTML = '';
+
+            if (backgroundAssets.length === 0) {
+                paletteGrid.innerHTML = '<div class="empty-state">No background_N.png files were found.</div>';
+                document.getElementById('selectedBackgroundInfo').textContent = 'None';
+                return;
+            }
+
+            backgroundAssets.forEach((assetName) => {
+                const bitmap = backgroundImageCache.get(assetName);
+                const item = document.createElement('div');
+                item.className = `background-palette-item${assetName === selectedBackgroundAsset ? ' selected' : ''}`;
+                item.dataset.assetName = assetName;
+
+                const thumb = document.createElement('img');
+                thumb.className = 'background-thumb';
+                thumb.alt = assetName;
+                thumb.src = bitmapToDataUrl(bitmap);
+
+                const meta = document.createElement('div');
+                meta.className = 'background-meta';
+                meta.textContent = `${assetName} (${bitmap.width} x ${bitmap.height})`;
+
+                item.appendChild(thumb);
+                item.appendChild(meta);
+                item.addEventListener('click', () => selectBackgroundAsset(assetName));
+                paletteGrid.appendChild(item);
+            });
+
+            document.getElementById('selectedBackgroundInfo').textContent = selectedBackgroundAsset || 'None';
+        }
+
         // Select a tile from palette
         function selectTile(index) {
             selectedTile = index;
             document.querySelectorAll('.palette-tile').forEach(t => t.classList.remove('selected'));
             document.querySelector(`.palette-tile[data-tile-index="${index}"]`).classList.add('selected');
             document.getElementById('selectedTileInfo').textContent = index;
+        }
+
+        function selectBackgroundAsset(assetName) {
+            selectedBackgroundAsset = assetName;
+            document.querySelectorAll('.background-palette-item').forEach((item) => {
+                item.classList.toggle('selected', item.dataset.assetName === assetName);
+            });
+            document.getElementById('selectedBackgroundInfo').textContent = assetName || 'None';
+        }
+
+        function normalizeBackgroundPlacement(raw) {
+            const asset = typeof raw?.asset === 'string' && backgroundImageCache.has(raw.asset)
+                ? raw.asset
+                : (backgroundAssets[0] || null);
+            if (!asset) {
+                return null;
+            }
+
+            return {
+                id: Number.isInteger(raw?.id) ? raw.id : nextBackgroundId++,
+                asset,
+                x: snapToGrid(Number(raw?.x) || 0),
+                y: snapToGrid(Number(raw?.y) || 0)
+            };
+        }
+
+        function ensureDefaultBackgroundPlacement() {
+            if (placedBackgrounds.length > 0 || !backgroundImageCache.has('background_1.png')) {
+                return;
+            }
+
+            placedBackgrounds = [{
+                id: nextBackgroundId++,
+                asset: 'background_1.png',
+                x: 0,
+                y: 0
+            }];
+        }
+
+        function syncBackgroundIdentityCounter() {
+            const maxId = placedBackgrounds.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
+            nextBackgroundId = Math.max(nextBackgroundId, maxId + 1);
         }
 
         // Resize canvas to fit map
@@ -340,12 +507,16 @@
         // Draw the editor
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
+
             ctx.save();
             ctx.translate(viewOffset.x, viewOffset.y);
             ctx.scale(zoomLevel, zoomLevel);
-            
-            // Draw grid
+            ctx.imageSmoothingEnabled = false;
+
+            if (!editorBackgroundPreviewFront) {
+                drawBackgrounds();
+            }
+
             ctx.strokeStyle = '#555';
             ctx.lineWidth = 1 / zoomLevel;
             for (let x = 0; x <= mapWidth; x++) {
@@ -360,12 +531,11 @@
                 ctx.lineTo(mapWidth * TILE_SIZE, y * TILE_SIZE);
                 ctx.stroke();
             }
-            
-            // Draw tiles
+
             if (tilesetImage) {
                 const tileWidth = tilesetImage.width / TILESET_COLS;
                 const tileHeight = tilesetImage.height / TILESET_ROWS;
-                
+
                 for (let y = 0; y < mapHeight; y++) {
                     for (let x = 0; x < mapWidth; x++) {
                         const tileIndex = mapData[y][x];
@@ -381,13 +551,11 @@
                     }
                 }
             }
-            
-            // Draw spawn points
+
             spawnPoints.forEach((spawn, index) => {
                 const x = spawn.x;
                 const y = spawn.y;
-                
-                // Draw spawn point marker (green flag)
+
                 ctx.fillStyle = '#4CAF50';
                 ctx.beginPath();
                 ctx.moveTo(x, y);
@@ -395,37 +563,76 @@
                 ctx.lineTo(x, y + 20);
                 ctx.closePath();
                 ctx.fill();
-                
-                // Draw flag pole
+
                 ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 2 / zoomLevel;
                 ctx.beginPath();
                 ctx.moveTo(x, y);
                 ctx.lineTo(x, y + 30);
                 ctx.stroke();
-                
-                // Draw spawn point number
+
                 ctx.fillStyle = '#fff';
-                ctx.font = '12px sans-serif';
+                ctx.font = `${12 / zoomLevel}px sans-serif`;
                 ctx.fillText(`S${index + 1}`, x + 5, y - 5);
             });
-            
+
+            if (editorBackgroundPreviewFront) {
+                drawBackgrounds();
+            }
+
+            drawSelectedBackgroundOutline();
             ctx.restore();
         }
 
-        // Get tile position from mouse event
-        function getTilePosition(e) {
+        function drawBackgrounds() {
+            placedBackgrounds.forEach((background) => {
+                const bitmap = backgroundImageCache.get(background.asset);
+                if (bitmap) {
+                    ctx.drawImage(bitmap, background.x, background.y, bitmap.width, bitmap.height);
+                }
+            });
+        }
+
+        function drawSelectedBackgroundOutline() {
+            if (toolMode !== 'background' || selectedPlacedBackgroundId === null) {
+                return;
+            }
+
+            const background = placedBackgrounds.find((item) => item.id === selectedPlacedBackgroundId);
+            const bitmap = background ? backgroundImageCache.get(background.asset) : null;
+            if (!background || !bitmap) {
+                return;
+            }
+
+            ctx.save();
+            ctx.strokeStyle = '#4CAF50';
+            ctx.lineWidth = 2 / zoomLevel;
+            ctx.setLineDash([8 / zoomLevel, 4 / zoomLevel]);
+            ctx.strokeRect(background.x, background.y, bitmap.width, bitmap.height);
+            ctx.restore();
+        }
+
+        function getWorldPosition(e) {
             const rect = canvas.getBoundingClientRect();
             const mouseX = e.clientX - rect.left;
             const mouseY = e.clientY - rect.top;
-            
-            // Convert screen coordinates to world coordinates accounting for zoom and offset
-            const worldX = (mouseX - viewOffset.x) / zoomLevel;
-            const worldY = (mouseY - viewOffset.y) / zoomLevel;
-            
-            const x = Math.floor(worldX / TILE_SIZE);
-            const y = Math.floor(worldY / TILE_SIZE);
-            return { x, y };
+
+            return {
+                x: (mouseX - viewOffset.x) / zoomLevel,
+                y: (mouseY - viewOffset.y) / zoomLevel
+            };
+        }
+
+        function getTilePosition(e) {
+            const world = getWorldPosition(e);
+            return {
+                x: Math.floor(world.x / TILE_SIZE),
+                y: Math.floor(world.y / TILE_SIZE)
+            };
+        }
+
+        function snapToGrid(value) {
+            return Math.round(value / TILE_SIZE) * TILE_SIZE;
         }
 
         // Paint tile at position
@@ -461,6 +668,126 @@
             }
         }
 
+        function getBackgroundAtWorldPoint(worldX, worldY) {
+            for (let i = placedBackgrounds.length - 1; i >= 0; i--) {
+                const background = placedBackgrounds[i];
+                const bitmap = backgroundImageCache.get(background.asset);
+                if (!bitmap) {
+                    continue;
+                }
+
+                if (
+                    worldX >= background.x &&
+                    worldX <= background.x + bitmap.width &&
+                    worldY >= background.y &&
+                    worldY <= background.y + bitmap.height
+                ) {
+                    return background;
+                }
+            }
+
+            return null;
+        }
+
+        function selectPlacedBackground(backgroundId) {
+            selectedPlacedBackgroundId = backgroundId;
+            renderPlacedBackgroundStack();
+            draw();
+        }
+
+        function moveBackgroundLayer(backgroundId, direction) {
+            const index = placedBackgrounds.findIndex((item) => item.id === backgroundId);
+            const targetIndex = index + direction;
+            if (index === -1 || targetIndex < 0 || targetIndex >= placedBackgrounds.length) {
+                return;
+            }
+
+            const [item] = placedBackgrounds.splice(index, 1);
+            placedBackgrounds.splice(targetIndex, 0, item);
+            renderPlacedBackgroundStack();
+            draw();
+        }
+
+        function removeBackground(backgroundId) {
+            const index = placedBackgrounds.findIndex((item) => item.id === backgroundId);
+            if (index === -1) {
+                return;
+            }
+
+            placedBackgrounds.splice(index, 1);
+            if (selectedPlacedBackgroundId === backgroundId) {
+                selectedPlacedBackgroundId = null;
+            }
+            renderPlacedBackgroundStack();
+            draw();
+        }
+
+        function createPlacedBackground(assetName, x, y) {
+            const placement = {
+                id: nextBackgroundId++,
+                asset: assetName,
+                x: snapToGrid(x),
+                y: snapToGrid(y)
+            };
+            placedBackgrounds.push(placement);
+            selectPlacedBackground(placement.id);
+            renderPlacedBackgroundStack();
+            draw();
+            return placement;
+        }
+
+        function renderPlacedBackgroundStack() {
+            const stack = document.getElementById('backgroundStack');
+            stack.innerHTML = '';
+
+            if (placedBackgrounds.length === 0) {
+                stack.innerHTML = '<div class="empty-state">No backgrounds placed yet.</div>';
+                return;
+            }
+
+            placedBackgrounds.forEach((background, index) => {
+                const bitmap = backgroundImageCache.get(background.asset);
+                const item = document.createElement('div');
+                item.className = `stack-item${background.id === selectedPlacedBackgroundId ? ' selected' : ''}`;
+
+                const title = document.createElement('strong');
+                title.textContent = `${index + 1}. ${background.asset}`;
+
+                const details = document.createElement('div');
+                details.textContent = `x=${background.x}, y=${background.y}${bitmap ? `, ${bitmap.width} x ${bitmap.height}` : ''}`;
+
+                const actions = document.createElement('div');
+                actions.className = 'stack-actions';
+
+                const selectButton = document.createElement('button');
+                selectButton.textContent = 'Select';
+                selectButton.addEventListener('click', () => selectPlacedBackground(background.id));
+
+                const upButton = document.createElement('button');
+                upButton.textContent = 'Up';
+                upButton.addEventListener('click', () => moveBackgroundLayer(background.id, 1));
+
+                const downButton = document.createElement('button');
+                downButton.textContent = 'Down';
+                downButton.addEventListener('click', () => moveBackgroundLayer(background.id, -1));
+
+                const removeButton = document.createElement('button');
+                removeButton.textContent = 'Remove';
+                removeButton.className = 'danger';
+                removeButton.addEventListener('click', () => removeBackground(background.id));
+
+                actions.appendChild(selectButton);
+                actions.appendChild(upButton);
+                actions.appendChild(downButton);
+                actions.appendChild(removeButton);
+
+                item.appendChild(title);
+                item.appendChild(details);
+                item.appendChild(actions);
+                stack.appendChild(item);
+            });
+        }
+
         // Canvas event handlers
         canvas.addEventListener('mousedown', (e) => {
             // Check for panning (middle mouse or space+left click)
@@ -472,8 +799,52 @@
                 return;
             }
             
+            const world = getWorldPosition(e);
             const pos = getTilePosition(e);
-            
+
+            if (toolMode === 'background') {
+                const hit = getBackgroundAtWorldPoint(world.x, world.y);
+
+                if (e.button === 2) {
+                    if (hit) {
+                        removeBackground(hit.id);
+                    }
+                    return;
+                }
+
+                if (e.button === 0) {
+                    if (hit) {
+                        draggingBackgroundId = hit.id;
+                        selectedPlacedBackgroundId = hit.id;
+                        backgroundDragOffset = {
+                            x: world.x - hit.x,
+                            y: world.y - hit.y
+                        };
+
+                        const index = placedBackgrounds.findIndex((item) => item.id === hit.id);
+                        if (index !== -1) {
+                            const [moved] = placedBackgrounds.splice(index, 1);
+                            placedBackgrounds.push(moved);
+                        }
+
+                        renderPlacedBackgroundStack();
+                        draw();
+                        return;
+                    }
+
+                    if (selectedBackgroundAsset) {
+                        const created = createPlacedBackground(selectedBackgroundAsset, world.x, world.y);
+                        draggingBackgroundId = created.id;
+                        backgroundDragOffset = {
+                            x: world.x - created.x,
+                            y: world.y - created.y
+                        };
+                    }
+                }
+
+                return;
+            }
+
             // Handle spawn point mode
             if (toolMode === 'spawn') {
                 if (e.button === 0) { // Left click - add spawn point
@@ -499,6 +870,18 @@
                 return;
             }
             
+            if (draggingBackgroundId !== null) {
+                const world = getWorldPosition(e);
+                const background = placedBackgrounds.find((item) => item.id === draggingBackgroundId);
+                if (background) {
+                    background.x = snapToGrid(world.x - backgroundDragOffset.x);
+                    background.y = snapToGrid(world.y - backgroundDragOffset.y);
+                    renderPlacedBackgroundStack();
+                    draw();
+                }
+                return;
+            }
+
             // Handle painting (only in tile mode)
             if (isPainting && toolMode === 'tile') {
                 const pos = getTilePosition(e);
@@ -509,12 +892,14 @@
         canvas.addEventListener('mouseup', () => {
             isPainting = false;
             isPanning = false;
+            draggingBackgroundId = null;
             canvas.style.cursor = 'crosshair';
         });
 
         canvas.addEventListener('mouseleave', () => {
             isPainting = false;
             isPanning = false;
+            draggingBackgroundId = null;
             canvas.style.cursor = 'crosshair';
         });
 
@@ -580,7 +965,31 @@
         // Set tool mode
         function setToolMode(mode) {
             toolMode = mode;
-            showStatus(`Tool: ${mode === 'tile' ? 'Tile Paint' : 'Spawn Point'}`, 'success');
+            document.getElementById('tilePalettePanel').style.display = mode === 'tile' ? 'block' : 'none';
+            document.getElementById('spawnPalettePanel').style.display = mode === 'spawn' ? 'block' : 'none';
+            document.getElementById('backgroundPalettePanel').style.display = mode === 'background' ? 'block' : 'none';
+
+            const label = mode === 'background'
+                ? 'Background Editor'
+                : mode === 'spawn'
+                    ? 'Spawn Point'
+                    : 'Tile Paint';
+            draw();
+            showStatus(`Tool: ${label}`, 'success');
+        }
+
+        function setBackgroundPreviewLayer(showInFront) {
+            editorBackgroundPreviewFront = Boolean(showInFront);
+            draw();
+        }
+
+        function serializeBackgrounds() {
+            return placedBackgrounds.map((background) => ({
+                id: background.id,
+                asset: background.asset,
+                x: background.x,
+                y: background.y
+            }));
         }
 
         // Save map
@@ -592,10 +1001,10 @@
                 return;
             }
             
-            // Validate map has at least one tile or spawn point
+            // Validate map has at least one tile, spawn point, or background
             const hasTiles = mapData.some(row => row.some(tile => tile >= 0));
-            if (!hasTiles && spawnPoints.length === 0) {
-                showStatus('Map must have at least one tile or spawn point', 'error');
+            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0) {
+                showStatus('Map must have at least one tile, spawn point, or background', 'error');
                 return;
             }
             
@@ -609,7 +1018,8 @@
                         height: mapHeight,
                         tiles: mapData,
                         spawnPoints: spawnPoints,
-                        tileCollisions: tileCollisions
+                        tileCollisions: tileCollisions,
+                        backgrounds: serializeBackgrounds()
                     })
                 });
                 
@@ -646,6 +1056,12 @@
                     mapData = result.tiles;
                     spawnPoints = result.spawnPoints || [];
                     tileCollisions = result.tileCollisions || {};
+                    placedBackgrounds = Array.isArray(result.backgrounds)
+                        ? result.backgrounds.map((background) => normalizeBackgroundPlacement(background)).filter(Boolean)
+                        : [];
+                    ensureDefaultBackgroundPlacement();
+                    syncBackgroundIdentityCounter();
+                    renderPlacedBackgroundStack();
                     
                     document.getElementById('mapWidth').value = mapWidth;
                     document.getElementById('mapHeight').value = mapHeight;
@@ -665,6 +1081,11 @@
         function clearMap() {
             if (confirm('Are you sure you want to clear the map?')) {
                 initMapData();
+                spawnPoints = [];
+                placedBackgrounds = [];
+                selectedPlacedBackgroundId = null;
+                ensureDefaultBackgroundPlacement();
+                renderPlacedBackgroundStack();
                 draw();
                 showStatus('Map cleared', 'success');
             }
@@ -783,6 +1204,8 @@
         loadMapList();
         updateZoomDisplay();
         initCollisionsPanel();
+        renderPlacedBackgroundStack();
+        setToolMode('tile');
 
         // Collisions panel functions
         function toggleCollisionsTab() {
@@ -956,7 +1379,8 @@
                         height: mapHeight,
                         tiles: mapData,
                         spawnPoints: spawnPoints,
-                        tileCollisions: tileCollisions
+                        tileCollisions: tileCollisions,
+                        backgrounds: serializeBackgrounds()
                     })
                 });
                 
@@ -1049,3 +1473,7 @@
     </script>
 </body>
 </html>
+
+
+
+

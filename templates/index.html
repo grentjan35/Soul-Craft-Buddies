@@ -1139,6 +1139,8 @@
         let loadingCompleteAudio = null;
         let loadingCompleteSoundPlayed = false;
         let menuAudio = null;
+        let footstepAudio = null;
+        let fallAudio = null;
 
         function reportClientRuntimeError(payload) {
             const report = {
@@ -1781,8 +1783,11 @@
             loadingCompleteAudio = new Audio('/audio/menu/full.wav');
             loadingCompleteAudio.preload = 'auto';
             loadingCompleteAudio.load();
+            footstepAudio = createFootstepAudioSystem();
+            fallAudio = createFallAudioSystem();
 
             function createMenuAudioSystem() {
+                const MENU_VOLUME_MULTIPLIER = 0.7;
                 const soundUrls = {
                     click: '/audio/menu/click.wav',
                     hover: '/audio/menu/hover.wav',
@@ -1844,13 +1849,198 @@
                     try {
                         audio.pause();
                         audio.currentTime = 0;
-                        audio.volume = volume;
+                        audio.volume = Math.min(1, volume * MENU_VOLUME_MULTIPLIER);
                         const playAttempt = audio.play();
                         if (playAttempt && typeof playAttempt.catch === 'function') {
                             playAttempt.catch(() => {});
                         }
                     } catch (_error) {
                         // Ignore menu audio failures so UI stays responsive.
+                    }
+                }
+
+                return { unlockAudio, play };
+            }
+
+            function createFootstepAudioSystem() {
+                const FOOTSTEP_VOLUME_MULTIPLIER = 1.7;
+                const soundUrls = [
+                    '/audio/footsteps/footsteps_1.wav',
+                    '/audio/footsteps/footsteps_2.wav',
+                    '/audio/footsteps/footsteps_3.wav'
+                ];
+                const audioContext =
+                    window.AudioContext ? new AudioContext() :
+                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const bufferCache = new Map();
+                let nextPoolIndex = 0;
+                let audioUnlocked = false;
+
+                async function loadBuffer(url) {
+                    if (!audioContext) {
+                        return null;
+                    }
+
+                    if (bufferCache.has(url)) {
+                        return bufferCache.get(url);
+                    }
+
+                    const bufferPromise = fetch(url)
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`Failed to load footstep sound: ${url}`);
+                            }
+                            return response.arrayBuffer();
+                        })
+                        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer.slice(0)));
+                    bufferCache.set(url, bufferPromise);
+                    return bufferPromise;
+                }
+
+                function warmBuffers() {
+                    if (!audioContext) {
+                        return;
+                    }
+
+                    for (const url of soundUrls) {
+                        loadBuffer(url).catch(() => {});
+                    }
+                }
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+
+                    audioUnlocked = true;
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(() => {});
+                    }
+                    warmBuffers();
+                }
+
+                function randomSemitone(minSemitone = -2, maxSemitone = 2) {
+                    return minSemitone + Math.random() * (maxSemitone - minSemitone);
+                }
+
+                function computeSpatialMix(worldX, worldY, listenerX, listenerY) {
+                    const dx = worldX - listenerX;
+                    const dy = worldY - listenerY;
+                    const distance = Math.hypot(dx, dy);
+                    const maxDistance = 650;
+                    const nearDistance = 30;
+                    const fade = Math.max(0, 1 - Math.max(0, distance - nearDistance) / (maxDistance - nearDistance));
+                    const gain = fade * fade;
+                    const pan = Math.max(-1, Math.min(1, dx / 320));
+                    return { gain, pan };
+                }
+
+                async function playAt(worldX, worldY, listenerX, listenerY, volume = 0.45, minSemitone = -2, maxSemitone = 2) {
+                    if (!audioContext) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const { gain, pan } = computeSpatialMix(worldX, worldY, listenerX, listenerY);
+                        if (gain <= 0.015) {
+                            return;
+                        }
+
+                        const url = soundUrls[nextPoolIndex % soundUrls.length];
+                        nextPoolIndex += 1;
+                        const buffer = await loadBuffer(url);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const gainNode = audioContext.createGain();
+                        const panNode = audioContext.createStereoPanner();
+                        source.buffer = buffer;
+                        source.playbackRate.value = 1;
+                        source.detune.value = randomSemitone(minSemitone, maxSemitone) * 100;
+                        gainNode.gain.value = Math.min(1, volume * FOOTSTEP_VOLUME_MULTIPLIER) * gain;
+                        panNode.pan.value = pan;
+                        source.connect(gainNode);
+                        gainNode.connect(panNode);
+                        panNode.connect(audioContext.destination);
+                        source.start();
+                    } catch (_error) {
+                        // Ignore footstep playback failures so gameplay continues uninterrupted.
+                    }
+                }
+
+                return { unlockAudio, playAt };
+            }
+
+            function createFallAudioSystem() {
+                const soundUrls = {
+                    fall: '/audio/fall.wav'
+                };
+
+                const audioCache = new Map();
+                let audioUnlocked = false;
+
+                function getSoundPool(soundName) {
+                    if (audioCache.has(soundName)) {
+                        return audioCache.get(soundName);
+                    }
+
+                    const pool = Array.from({ length: 3 }, () => {
+                        const audio = new Audio(soundUrls[soundName]);
+                        audio.preload = 'auto';
+                        audio.load();
+                        return audio;
+                    });
+
+                    audioCache.set(soundName, pool);
+                    return pool;
+                }
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+
+                    audioUnlocked = true;
+                    for (const soundName of Object.keys(soundUrls)) {
+                        for (const audio of getSoundPool(soundName)) {
+                            audio.muted = true;
+                            const playAttempt = audio.play();
+                            if (playAttempt && typeof playAttempt.then === 'function') {
+                                playAttempt
+                                    .then(() => {
+                                        audio.pause();
+                                        audio.currentTime = 0;
+                                        audio.muted = false;
+                                    })
+                                    .catch(() => {
+                                        audio.muted = false;
+                                    });
+                            } else {
+                                audio.muted = false;
+                            }
+                        }
+                    }
+                }
+
+                function play(soundName, volume = 1) {
+                    const pool = getSoundPool(soundName);
+                    const audio = pool.find((item) => item.paused || item.ended) || pool[0];
+                    try {
+                        audio.pause();
+                        audio.currentTime = 0;
+                        audio.volume = volume;
+                        const playAttempt = audio.play();
+                        if (playAttempt && typeof playAttempt.catch === 'function') {
+                            playAttempt.catch(() => {});
+                        }
+                    } catch (_error) {
+                        // Ignore fall audio failures so gameplay stays responsive.
                     }
                 }
 
@@ -1930,9 +2120,9 @@
                 }
 
                 if (selectedCharacter === focused.character) {
-                    updateSelectionCopy(`${formatCharacterName(focused.character)} bound`);
+                    updateSelectionCopy(`SELECTED: ${formatCharacterName(focused.character)}`);
                 } else if (selectedCharacter) {
-                    updateSelectionCopy(`Focused: ${formatCharacterName(focused.character)}`);
+                    updateSelectionCopy('SELECTED');
                 } else {
                     updateSelectionCopy('Choose a soul');
                 }
@@ -2113,6 +2303,8 @@
 
             startScreen.addEventListener('pointerdown', () => {
                 menuAudio.unlockAudio();
+                footstepAudio.unlockAudio();
+                fallAudio.unlockAudio();
                 menuAudio.play('click', 0.42);
             });
 
@@ -2756,8 +2948,42 @@
         let currentMap = null;
         let tilesetImage = null;
         let backgroundImage = null;
+        let backgroundImageCache = {};
         let mapBounds = { minX: 0, maxX: 800, minY: 0, maxY: 600 };
         let spawnPoints = [];
+
+        async function loadBackgroundBitmap(assetName) {
+            if (backgroundImageCache[assetName]) {
+                return backgroundImageCache[assetName];
+            }
+
+            const environmentToken = await getEnvironmentToken();
+            const backgroundBlob = await fetchProtectedBlob(`/api/background_asset/${environmentToken}/${encodeURIComponent(assetName)}`, 'image/png');
+            const bitmap = await createImageBitmap(backgroundBlob);
+            backgroundImageCache[assetName] = bitmap;
+            return bitmap;
+        }
+
+        async function loadMapBackgrounds(mapData) {
+            const placements = Array.isArray(mapData.backgrounds) ? mapData.backgrounds : [];
+            if (placements.length === 0) {
+                if (!backgroundImage) {
+                    const environmentToken = await getEnvironmentToken();
+                    const backgroundBlob = await fetchProtectedBlob(`/api/background/${environmentToken}`, 'image/png');
+                    backgroundImage = await createImageBitmap(backgroundBlob);
+                }
+                mapData.backgrounds = [{ asset: 'background_1.png', x: 0, y: 0 }];
+                backgroundImageCache['background_1.png'] = backgroundImage;
+                return;
+            }
+
+            await Promise.all(
+                placements
+                    .map((placement) => placement?.asset)
+                    .filter((assetName, index, array) => typeof assetName === 'string' && array.indexOf(assetName) === index)
+                    .map((assetName) => loadBackgroundBitmap(assetName))
+            );
+        }
         
         // Load map from server
         async function loadMap() {
@@ -2789,12 +3015,7 @@
                     tilesetImage = await createImageBitmap(tilesetBlob);
                 }
 
-                // Load background image using tokenized endpoint for security
-                if (!backgroundImage) {
-                    const environmentToken = await getEnvironmentToken();
-                    const backgroundBlob = await fetchProtectedBlob(`/api/background/${environmentToken}`, 'image/png');
-                    backgroundImage = await createImageBitmap(backgroundBlob);
-                }
+                await loadMapBackgrounds(mapData);
 
                 // Load spawn points from map
                 spawnPoints = mapData.spawnPoints || [];
@@ -2847,14 +3068,20 @@
                 }
             }
 
-            if (backgroundImage) {
-                mapCtx.drawImage(
-                    backgroundImage,
-                    0, 0,
-                    mapWidth * TILE_SIZE,
-                    mapHeight * TILE_SIZE
-                );
-            }
+            const backgrounds = Array.isArray(currentMap.backgrounds) ? currentMap.backgrounds : [];
+            backgrounds.forEach((placement) => {
+                const bitmap = backgroundImageCache[placement.asset];
+                if (bitmap) {
+                    mapCtx.drawImage(
+                        bitmap,
+                        Number(placement.x) || 0,
+                        Number(placement.y) || 0,
+                        bitmap.width,
+                        bitmap.height
+                    );
+                }
+            });
+
             console.log('Map pre-rendered');
         }
 
@@ -2955,6 +3182,9 @@
         window.dustParticles = [];
         const MAX_DUST_PARTICLES = 50;
         let lastOnGroundState = {};
+        const FOOTSTEP_FRAME_INTERVAL = 5;
+        const footstepFrameCounters = {};
+        const previousFootstepPlayerStates = {};
         
         // Fireball system
         let fireballs = {};
@@ -3229,15 +3459,29 @@
                         createDustParticles(currentState.x, currentState.y + 20, 'jump');
                     }
                     // Check for landing (was in air, now on ground)
-                    else if (!previousState.on_ground && currentState.on_ground && currentState.vy > 0) {
-                        // Determine impact strength based on velocity
-                        const impactSpeed = Math.abs(currentState.vy);
+                    else if (!previousState.on_ground && currentState.on_ground) {
+                        // Landing often arrives with vy already clamped to 0, so use the
+                        // strongest recent downward velocity to estimate impact strength.
+                        const impactVelocity = Math.max(
+                            0,
+                            Number(previousState.vy) || 0,
+                            Number(currentState.vy) || 0
+                        );
+                        const impactSpeed = Math.abs(impactVelocity);
                         if (impactSpeed > 200) {
                             // Hard fall - create more dust
                             createDustParticles(currentState.x, currentState.y + 20, 'land');
+                            // Play fall sound for hard landings
+                            if (fallAudio) {
+                                fallAudio.play('fall', 0.6);
+                            }
                         } else if (impactSpeed > 50) {
                             // Regular landing - smaller dust cloud
                             createDustParticles(currentState.x, currentState.y + 20, 'land');
+                            // Play fall sound for regular landings at lower volume
+                            if (fallAudio) {
+                                fallAudio.play('fall', 0.3);
+                            }
                         }
                     }
                     // Check for walking dust (on ground and moving horizontally)
@@ -3795,6 +4039,76 @@
             return state ? { x: state.x, y: state.y } : null;
         }
 
+        function updateSpatialFootstepAudio() {
+            if (!footstepAudio) {
+                return;
+            }
+
+            const listenerState = getPlayerState(socket.id);
+            if (!listenerState) {
+                for (const sid in previousFootstepPlayerStates) {
+                    delete previousFootstepPlayerStates[sid];
+                }
+                for (const sid in footstepFrameCounters) {
+                    delete footstepFrameCounters[sid];
+                }
+                return;
+            }
+
+            for (const sid in playerState) {
+                const currentState = playerState[sid];
+                if (!currentState) {
+                    continue;
+                }
+
+                const previousState = previousFootstepPlayerStates[sid];
+                const movedHorizontally = previousState ? Math.abs(currentState.x - previousState.x) > 0.6 : false;
+                const landedThisFrame = Boolean(previousState && !previousState.on_ground && currentState.on_ground);
+                const isWalking = currentState.on_ground && movedHorizontally;
+
+                if (landedThisFrame) {
+                    footstepAudio.playAt(
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        sid === socket.id ? 0.6 : 0.5,
+                        -6.5,
+                        -2
+                    );
+                    footstepFrameCounters[sid] = 0;
+                } else if (isWalking) {
+                    footstepFrameCounters[sid] = (footstepFrameCounters[sid] || 0) + 1;
+                    if (footstepFrameCounters[sid] >= FOOTSTEP_FRAME_INTERVAL) {
+                        footstepAudio.playAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            sid === socket.id ? 0.45 : 0.35,
+                            -6,
+                            -1
+                        );
+                        footstepFrameCounters[sid] = 0;
+                    }
+                } else {
+                    footstepFrameCounters[sid] = 0;
+                }
+
+                previousFootstepPlayerStates[sid] = {
+                    x: currentState.x,
+                    on_ground: currentState.on_ground
+                };
+            }
+
+            for (const sid in previousFootstepPlayerStates) {
+                if (!playerState[sid]) {
+                    delete previousFootstepPlayerStates[sid];
+                    delete footstepFrameCounters[sid];
+                }
+            }
+        }
+
         function calculateRenderDimensions(frameW, frameH) {
             // Calculate scale to fit within PLAYER_MAX_SIZE while preserving aspect ratio
             const scaleX = PLAYER_MAX_SIZE / frameW;
@@ -4073,6 +4387,7 @@
             // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
             if (ctx && canvas) {
                 updateInterpolatedRenderState(currentTime);
+                updateSpatialFootstepAudio();
 
                 // Clear main canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);

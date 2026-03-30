@@ -43,6 +43,24 @@ function listAvailableCharacterCards(staticDir) {
     }));
 }
 
+function listAvailableBackgrounds(staticDir) {
+  const tilesetDir = path.join(staticDir, 'assets', 'tileset');
+
+  try {
+    return fs
+      .readdirSync(tilesetDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && /^background_\d+\.png$/i.test(entry.name))
+      .map((entry) => entry.name)
+      .sort((a, b) => {
+        const aNum = Number(a.match(/\d+/)?.[0] ?? 0);
+        const bNum = Number(b.match(/\d+/)?.[0] ?? 0);
+        return aNum - bNum || a.localeCompare(b);
+      });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Converts a web path like `/static/assets/foo.png` into a path relative to project root.
  * Why: manifest.json uses `/static/...` keys, while we need filesystem paths.
@@ -163,7 +181,10 @@ function createAssetsRouter(deps) {
   const manifestResult = loadManifest({ manifestPath: deps.manifestPath });
   const manifest = manifestResult.ok ? manifestResult.manifest : {};
   const selectableCharacters = listAvailableCharacterCards(deps.staticDir);
+  const selectableBackgrounds = listAvailableBackgrounds(deps.staticDir);
   const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
+  const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
+  const publicGameplaySounds = new Set(['fall.wav']);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -182,6 +203,42 @@ function createAssetsRouter(deps) {
   router.get('/audio/menu/:name', (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicMenuSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/footsteps/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicFootstepPattern.test(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicGameplaySounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
@@ -487,7 +544,78 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const bgPath = path.join(deps.staticDir, 'assets', 'tileset', 'background.png');
+    const candidateNames = ['background_1.png', 'background.png'];
+    const bgPath = candidateNames
+      .map((name) => path.join(deps.staticDir, 'assets', 'tileset', name))
+      .find((fullPath) => fs.existsSync(fullPath));
+
+    if (!bgPath || !fs.existsSync(bgPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: bgPath,
+      downloadName: path.basename(bgPath),
+    });
+  });
+
+  router.get('/api/backgrounds/:token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: 'Access Denied' });
+      return;
+    }
+
+    const token = String(req.params.token ?? '');
+    const verified = verifyToken({ secretKey: deps.secretKey, token });
+    if (!verified.ok) {
+      res.status(403).json({ error: 'Access Denied' });
+      return;
+    }
+
+    if (
+      verified.payload.type !== 'environment' ||
+      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
+    ) {
+      res.status(403).json({ error: 'Access Denied' });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ backgrounds: selectableBackgrounds });
+  });
+
+  router.get('/api/background_asset/:token/:filename', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const token = String(req.params.token ?? '');
+    const verified = verifyToken({ secretKey: deps.secretKey, token });
+    if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    if (
+      verified.payload.type !== 'environment' ||
+      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
+    ) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const filename = path.basename(String(req.params.filename ?? ''));
+    if (!/^background_\d+\.png$/i.test(filename) || !selectableBackgrounds.includes(filename)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    const bgPath = path.join(deps.staticDir, 'assets', 'tileset', filename);
     if (!fs.existsSync(bgPath)) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
@@ -496,7 +624,7 @@ function createAssetsRouter(deps) {
     sendProtectedBinaryFile({
       res,
       fullPath: bgPath,
-      downloadName: 'background.png',
+      downloadName: filename,
     });
   });
 

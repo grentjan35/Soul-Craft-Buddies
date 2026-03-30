@@ -19,6 +19,7 @@ function createMapsRouter(deps) {
     const tiles = req.body?.tiles;
     const spawnPoints = req.body?.spawnPoints ?? [];
     const tileCollisions = req.body?.tileCollisions ?? {};
+    const backgrounds = req.body?.backgrounds ?? [];
 
     if (!name) {
       res.status(400).json({ error: 'Map name is required' });
@@ -59,6 +60,24 @@ function createMapsRouter(deps) {
       }
     }
 
+    for (const background of backgrounds) {
+      if (!background || typeof background !== 'object') {
+        res.status(400).json({ error: 'Invalid background format' });
+        return;
+      }
+
+      const asset = String(background.asset ?? '').trim();
+      if (!/^background_\d+\.png$/i.test(asset)) {
+        res.status(400).json({ error: `Invalid background asset: ${asset || '(missing)'}` });
+        return;
+      }
+
+      if (!Number.isFinite(background.x) || !Number.isFinite(background.y)) {
+        res.status(400).json({ error: 'Background must have numeric x and y coordinates' });
+        return;
+      }
+    }
+
     try {
       createBackup({ dataDir: deps.dataDir, mapName: path.basename(name) });
     } catch {
@@ -75,6 +94,7 @@ function createMapsRouter(deps) {
         tiles,
         spawnPoints,
         tileCollisions,
+        backgrounds,
       })
     );
 
@@ -95,6 +115,9 @@ function createMapsRouter(deps) {
       const mapData = JSON.parse(raw);
       if (!mapData.tileCollisions) {
         mapData.tileCollisions = {};
+      }
+      if (!Array.isArray(mapData.backgrounds)) {
+        mapData.backgrounds = [];
       }
       res.json(mapData);
     } catch {
@@ -187,6 +210,7 @@ function createMapsRouter(deps) {
       height: 18,
       tiles: Array.from({ length: 18 }, () => Array.from({ length: 25 }, () => -1)),
       spawnPoints: [],
+      backgrounds: [],
     });
   });
 
