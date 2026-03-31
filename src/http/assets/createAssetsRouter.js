@@ -61,6 +61,45 @@ function listAvailableBackgrounds(staticDir) {
   }
 }
 
+function listAvailableBackgroundCompanions(staticDir) {
+  const tilesetDir = path.join(staticDir, 'assets', 'tileset');
+
+  try {
+    const filenames = fs
+      .readdirSync(tilesetDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name);
+
+    const filenameSet = new Set(filenames);
+    const companionByBackground = {};
+
+    filenames
+      .filter((name) => /^background_\d+\.png$/i.test(name))
+      .forEach((backgroundName) => {
+        const index = backgroundName.match(/(\d+)/)?.[1];
+        if (!index) {
+          return;
+        }
+
+        const preferredForeground = `foreground_${index}.png`;
+        const fallbackForeground = `farground_${index}.png`;
+
+        if (filenameSet.has(preferredForeground)) {
+          companionByBackground[backgroundName] = preferredForeground;
+          return;
+        }
+
+        if (filenameSet.has(fallbackForeground)) {
+          companionByBackground[backgroundName] = fallbackForeground;
+        }
+      });
+
+    return companionByBackground;
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Converts a web path like `/static/assets/foo.png` into a path relative to project root.
  * Why: manifest.json uses `/static/...` keys, while we need filesystem paths.
@@ -182,9 +221,11 @@ function createAssetsRouter(deps) {
   const manifest = manifestResult.ok ? manifestResult.manifest : {};
   const selectableCharacters = listAvailableCharacterCards(deps.staticDir);
   const selectableBackgrounds = listAvailableBackgrounds(deps.staticDir);
+  const backgroundCompanions = listAvailableBackgroundCompanions(deps.staticDir);
   const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
   const publicGameplaySounds = new Set(['fall.wav']);
+  const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -244,6 +285,24 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/fireball/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicFireballSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'fireball', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;
@@ -584,7 +643,10 @@ function createAssetsRouter(deps) {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ backgrounds: selectableBackgrounds });
+    res.json({
+      backgrounds: selectableBackgrounds,
+      backgroundCompanions,
+    });
   });
 
   router.get('/api/background_asset/:token/:filename', (req, res) => {
@@ -610,7 +672,10 @@ function createAssetsRouter(deps) {
     }
 
     const filename = path.basename(String(req.params.filename ?? ''));
-    if (!/^background_\d+\.png$/i.test(filename) || !selectableBackgrounds.includes(filename)) {
+    const isSelectableBackground = /^background_\d+\.png$/i.test(filename) && selectableBackgrounds.includes(filename);
+    const isKnownCompanion = Object.values(backgroundCompanions).includes(filename);
+
+    if (!isSelectableBackground && !isKnownCompanion) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
     }
@@ -624,6 +689,51 @@ function createAssetsRouter(deps) {
     sendProtectedBinaryFile({
       res,
       fullPath: bgPath,
+      downloadName: filename,
+    });
+  });
+
+  router.get('/api/projectile_asset/:token/:projectile/:filename', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const token = String(req.params.token ?? '');
+    const verified = verifyToken({ secretKey: deps.secretKey, token });
+    if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    if (
+      verified.payload.type !== 'environment' ||
+      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
+    ) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const projectileName = path.basename(String(req.params.projectile ?? ''));
+    const filename = path.basename(String(req.params.filename ?? ''));
+    const allowedProjectile = projectileName === 'fireball';
+    const allowedFiles = new Set(['fireball.png', 'explode.png', 'metadata_fireball.json']);
+
+    if (!allowedProjectile || !allowedFiles.has(filename)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    const projectilePath = path.join(deps.staticDir, 'assets', 'projectiles', projectileName, filename);
+    if (!fs.existsSync(projectilePath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: projectilePath,
       downloadName: filename,
     });
   });

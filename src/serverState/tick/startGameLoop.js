@@ -1,6 +1,8 @@
 const {
   FRAME_TIME,
   FIREBALL_SIZE,
+  FIREBALL_RADIUS,
+  FIREBALL_POWER_MAX,
   FIREBALL_DAMAGE,
   FIREBALL_LIFETIME,
   FIREBALL_MAX_DISTANCE,
@@ -76,6 +78,11 @@ function updateDeathsAndRespawns(input) {
     p.health = PLAYER_MAX_HEALTH;
     p.is_dying = false;
     p.death_time = 0;
+    p.is_attacking = false;
+    p.attack_start_time = 0;
+    p.pending_projectile_angle = null;
+    p.pending_projectile_vx = 0;
+    p.pending_projectile_vy = 0;
 
     input.io.emit('player_respawned', { sid });
   }
@@ -92,7 +99,7 @@ function startGameLoop(input) {
 
     dt = Math.min(dt, 0.1);
 
-    updateGameState({ state: input.state, dt });
+    updateGameState({ state: input.state, dt, io: input.io });
     updateFairies({ fairies: input.state.fairies, dt });
     updateFireballs({ state: input.state, dt, io: input.io });
     updateExplosions({ state: input.state, io: input.io });
@@ -130,6 +137,8 @@ function broadcastState(input) {
       render_height: p.render_height,
       character: p.character,
       health: p.health,
+      is_attacking: p.is_attacking,
+      attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
     };
   }
 
@@ -160,6 +169,7 @@ function broadcastState(input) {
       x: e.x,
       y: e.y,
       age: round3(nowSec - e.spawn_time),
+      spawn_time_ms: e.spawn_time_ms ?? Math.round((e.spawn_time ?? 0) * 1000),
     };
   }
 
@@ -228,6 +238,20 @@ function updateGameState(input) {
       const attackStart = p.attack_start_time ?? 0;
       if (nowSec - attackStart >= ATTACK_DURATION) {
         p.is_attacking = false;
+        if (typeof p.pending_projectile_angle === 'number') {
+          spawnPlayerFireball({
+            state: input.state,
+            io: input.io,
+            ownerSid: sid,
+            player: p,
+            angle: p.pending_projectile_angle,
+            vx: typeof p.pending_projectile_vx === 'number' ? p.pending_projectile_vx : Math.cos(p.pending_projectile_angle) * FIREBALL_POWER_MAX,
+            vy: typeof p.pending_projectile_vy === 'number' ? p.pending_projectile_vy : Math.sin(p.pending_projectile_angle) * FIREBALL_POWER_MAX,
+          });
+          p.pending_projectile_angle = null;
+          p.pending_projectile_vx = 0;
+          p.pending_projectile_vy = 0;
+        }
       } else {
         p.action = 'attack';
       }
@@ -248,6 +272,44 @@ function updateGameState(input) {
   }
 
   resolvePlayerPlayerCollisions({ state: input.state });
+}
+
+function spawnPlayerFireball(input) {
+  const nowMs = Date.now();
+  const now = nowMs / 1000;
+  const fireballId = input.state.nextFireballId;
+  input.state.nextFireballId += 1;
+
+  input.state.fireballs.set(fireballId, {
+    id: fireballId,
+    owner_sid: input.ownerSid,
+    x: input.player.x,
+    y: input.player.y,
+    vx: input.vx,
+    vy: input.vy,
+    start_x: input.player.x,
+    start_y: input.player.y,
+    initial_vx: input.vx,
+    initial_vy: input.vy,
+    distance_traveled: 0,
+    spawn_time: now,
+    spawn_time_ms: nowMs,
+    active: true,
+  });
+
+  input.io.emit('projectile_created', {
+    id: fireballId,
+    owner_sid: input.ownerSid,
+    x: input.player.x,
+    y: input.player.y,
+    vx: input.vx,
+    vy: input.vy,
+    start_x: input.player.x,
+    start_y: input.player.y,
+    initial_vx: input.vx,
+    initial_vy: input.vy,
+    spawn_time_ms: nowMs,
+  });
 }
 
 /**
@@ -496,6 +558,11 @@ function updateFireballs(input) {
 
       if (checkFireballPlayerCollision({ fireball: f, player: p })) {
         p.health -= FIREBALL_DAMAGE;
+        p.is_attacking = false;
+        p.attack_start_time = 0;
+        p.pending_projectile_angle = null;
+        p.pending_projectile_vx = 0;
+        p.pending_projectile_vy = 0;
         if (p.health <= 0) {
           p.health = 0;
           p.is_dying = true;
@@ -690,16 +757,11 @@ function checkPlayerPlatformCollision(input) {
  * @returns {boolean}
  */
 function checkFireballPlatformCollision(input) {
-  const half = FIREBALL_SIZE / 2;
-  const x = input.fireball.x - half;
-  const y = input.fireball.y - half;
-
-  return (
-    x < input.platform.x + input.platform.w &&
-    x + FIREBALL_SIZE > input.platform.x &&
-    y < input.platform.y + input.platform.h &&
-    y + FIREBALL_SIZE > input.platform.y
-  );
+  const closestX = Math.max(input.platform.x, Math.min(input.fireball.x, input.platform.x + input.platform.w));
+  const closestY = Math.max(input.platform.y, Math.min(input.fireball.y, input.platform.y + input.platform.h));
+  const dx = input.fireball.x - closestX;
+  const dy = input.fireball.y - closestY;
+  return dx * dx + dy * dy <= FIREBALL_RADIUS * FIREBALL_RADIUS;
 }
 
 /**
@@ -708,17 +770,12 @@ function checkFireballPlatformCollision(input) {
  * @returns {boolean}
  */
 function checkFireballPlayerCollision(input) {
-  const half = FIREBALL_SIZE / 2;
-  const fx = input.fireball.x - half;
-  const fy = input.fireball.y - half;
   const hb = getPlayerHitbox(input.player);
-
-  return (
-    fx < hb.x + PLAYER_HITBOX_WIDTH &&
-    fx + FIREBALL_SIZE > hb.x &&
-    fy < hb.y + PLAYER_HITBOX_HEIGHT &&
-    fy + FIREBALL_SIZE > hb.y
-  );
+  const closestX = Math.max(hb.x, Math.min(input.fireball.x, hb.x + PLAYER_HITBOX_WIDTH));
+  const closestY = Math.max(hb.y, Math.min(input.fireball.y, hb.y + PLAYER_HITBOX_HEIGHT));
+  const dx = input.fireball.x - closestX;
+  const dy = input.fireball.y - closestY;
+  return dx * dx + dy * dy <= FIREBALL_RADIUS * FIREBALL_RADIUS;
 }
 
 /**

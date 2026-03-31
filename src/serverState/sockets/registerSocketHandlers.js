@@ -111,40 +111,9 @@ function registerSocketHandlers(input) {
     const power = FIREBALL_POWER_MAX;
     const vx = Math.cos(angle) * power;
     const vy = Math.sin(angle) * power;
-
-    const fireballId = state.nextFireballId;
-    state.nextFireballId += 1;
-
-    state.fireballs.set(fireballId, {
-      id: fireballId,
-      owner_sid: socket.id,
-      x: player.x,
-      y: player.y,
-      vx,
-      vy,
-      start_x: player.x,
-      start_y: player.y,
-      initial_vx: vx,
-      initial_vy: vy,
-      distance_traveled: 0,
-      spawn_time: now,
-      spawn_time_ms: nowMs,
-      active: true,
-    });
-
-    io.emit('projectile_created', {
-      id: fireballId,
-      owner_sid: socket.id,
-      x: player.x,
-      y: player.y,
-      vx,
-      vy,
-      start_x: player.x,
-      start_y: player.y,
-      initial_vx: vx,
-      initial_vy: vy,
-      spawn_time_ms: nowMs,
-    });
+    player.pending_projectile_angle = angle;
+    player.pending_projectile_vx = vx;
+    player.pending_projectile_vy = vy;
   });
 
   socket.on('load_map', (data) => {
@@ -203,6 +172,11 @@ function handleConnect(input) {
     health: PLAYER_MAX_HEALTH,
     is_dying: false,
     death_time: 0,
+    is_attacking: false,
+    attack_start_time: 0,
+    pending_projectile_angle: null,
+    pending_projectile_vx: 0,
+    pending_projectile_vy: 0,
   });
 
   const now = Date.now() / 1000;
