@@ -26,8 +26,8 @@ function createMapsRouter(deps) {
       return;
     }
 
-    if (!(width >= 10 && width <= 100 && height >= 10 && height <= 100)) {
-      res.status(400).json({ error: 'Map dimensions must be between 10 and 100' });
+    if (!(width >= 10 && width <= 200 && height >= 10 && height <= 200)) {
+      res.status(400).json({ error: 'Map dimensions must be between 10 and 200' });
       return;
     }
 

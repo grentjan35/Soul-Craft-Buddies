@@ -329,6 +329,7 @@ function handleLoadMap(input) {
     height: mapHeight,
     tiles,
     spawnPoints: input.state.spawnPoints,
+    backgrounds: Array.isArray(mapData.backgrounds) ? mapData.backgrounds : [],
   });
 }
 

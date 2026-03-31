@@ -2638,6 +2638,11 @@
         // Client-side caching system
         const sessionAssetCache = new Map();
         const tileCache = new Map();
+        const MAP_CHUNK_TILES = 32;
+        const MAP_CHUNK_PIXEL_SIZE = MAP_CHUNK_TILES * TILE_SIZE;
+        const MAP_CHUNK_PREFETCH_RADIUS = 1;
+        const MAP_CHUNK_BUILD_BUDGET_MS = 6;
+        const MAX_CACHED_MAP_CHUNKS = 96;
 
         // Concurrency control for parallel requests
         const CONCURRENCY_LIMIT = 6;
@@ -3002,6 +3007,7 @@
                     PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
                     spawnPoints = [{x: 100, y: 500, id: 0}];
                     currentMap = null;
+                    resetChunkedMapRenderer();
                     return;
                 }
                 
@@ -3031,38 +3037,84 @@
                 PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
                 spawnPoints = [{x: 100, y: 500, id: 0}];
                 currentMap = null;
+                resetChunkedMapRenderer();
             }
         }
         
-        // Pre-render map to an offscreen canvas for performance
-        let mapCanvas = null;
-        let mapCtx = null;
+        let mapChunkBuildQueue = [];
+        let mapChunkQueuedKeys = new Set();
+        let mapChunkBuildFrameId = 0;
+        let mapChunkGeneration = 0;
 
-        async function preRenderMap() {
-            if (!currentMap || !tilesetImage) return;
+        function getMapChunkKey(chunkX, chunkY) {
+            return `${chunkX},${chunkY}`;
+        }
 
-            const mapWidth = currentMap.width;
-            const mapHeight = currentMap.height;
-            
-            mapCanvas = document.createElement('canvas');
-            mapCanvas.width = mapWidth * TILE_SIZE;
-            mapCanvas.height = mapHeight * TILE_SIZE;
-            mapCtx = mapCanvas.getContext('2d');
+        function resetChunkedMapRenderer() {
+            tileCache.clear();
+            mapChunkBuildQueue = [];
+            mapChunkQueuedKeys.clear();
+            mapChunkGeneration += 1;
+            if (mapChunkBuildFrameId) {
+                cancelAnimationFrame(mapChunkBuildFrameId);
+                mapChunkBuildFrameId = 0;
+            }
+        }
 
+        function trimChunkCache() {
+            if (tileCache.size <= MAX_CACHED_MAP_CHUNKS) {
+                return;
+            }
+
+            const entries = Array.from(tileCache.entries())
+                .sort((a, b) => (a[1].lastUsedAt || 0) - (b[1].lastUsedAt || 0));
+            const overflow = tileCache.size - MAX_CACHED_MAP_CHUNKS;
+            for (let i = 0; i < overflow; i++) {
+                tileCache.delete(entries[i][0]);
+            }
+        }
+
+        function drawMapRegion(targetCtx, worldStartX, worldStartY, regionWidth, regionHeight, destOffsetX = 0, destOffsetY = 0) {
+            if (!currentMap || !tilesetImage || regionWidth <= 0 || regionHeight <= 0) {
+                return;
+            }
+
+            const mapPixelWidth = currentMap.width * TILE_SIZE;
+            const mapPixelHeight = currentMap.height * TILE_SIZE;
+            const clampedStartX = Math.max(0, Math.min(worldStartX, mapPixelWidth));
+            const clampedStartY = Math.max(0, Math.min(worldStartY, mapPixelHeight));
+            const clampedEndX = Math.max(clampedStartX, Math.min(worldStartX + regionWidth, mapPixelWidth));
+            const clampedEndY = Math.max(clampedStartY, Math.min(worldStartY + regionHeight, mapPixelHeight));
+
+            if (clampedEndX <= clampedStartX || clampedEndY <= clampedStartY) {
+                return;
+            }
+
+            const offsetX = clampedStartX - worldStartX;
+            const offsetY = clampedStartY - worldStartY;
             const tiles = currentMap.tiles;
             const tilesetWidth = tilesetImage.width / 4;
             const tilesetHeight = tilesetImage.height / 3;
 
-            for (let y = 0; y < mapHeight; y++) {
-                for (let x = 0; x < mapWidth; x++) {
-                    const tileIndex = tiles[y][x];
+            const startTileX = Math.max(0, Math.floor(clampedStartX / TILE_SIZE));
+            const endTileX = Math.min(currentMap.width, Math.ceil(clampedEndX / TILE_SIZE));
+            const startTileY = Math.max(0, Math.floor(clampedStartY / TILE_SIZE));
+            const endTileY = Math.min(currentMap.height, Math.ceil(clampedEndY / TILE_SIZE));
+
+            for (let y = startTileY; y < endTileY; y++) {
+                const row = tiles[y];
+                for (let x = startTileX; x < endTileX; x++) {
+                    const tileIndex = row[x];
                     if (tileIndex >= 0) {
                         const col = tileIndex % 4;
-                        const row = Math.floor(tileIndex / 4);
-                        mapCtx.drawImage(
+                        const tileRow = Math.floor(tileIndex / 4);
+                        targetCtx.drawImage(
                             tilesetImage,
-                            col * tilesetWidth, row * tilesetHeight, tilesetWidth, tilesetHeight,
-                            x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE
+                            col * tilesetWidth, tileRow * tilesetHeight, tilesetWidth, tilesetHeight,
+                            destOffsetX + x * TILE_SIZE - worldStartX + offsetX,
+                            destOffsetY + y * TILE_SIZE - worldStartY + offsetY,
+                            TILE_SIZE,
+                            TILE_SIZE
                         );
                     }
                 }
@@ -3071,18 +3123,207 @@
             const backgrounds = Array.isArray(currentMap.backgrounds) ? currentMap.backgrounds : [];
             backgrounds.forEach((placement) => {
                 const bitmap = backgroundImageCache[placement.asset];
-                if (bitmap) {
-                    mapCtx.drawImage(
-                        bitmap,
-                        Number(placement.x) || 0,
-                        Number(placement.y) || 0,
-                        bitmap.width,
-                        bitmap.height
-                    );
+                if (!bitmap) {
+                    return;
                 }
-            });
 
-            console.log('Map pre-rendered');
+                const backgroundX = Number(placement.x) || 0;
+                const backgroundY = Number(placement.y) || 0;
+                const backgroundRight = backgroundX + bitmap.width;
+                const backgroundBottom = backgroundY + bitmap.height;
+
+                if (
+                    backgroundRight <= clampedStartX ||
+                    backgroundBottom <= clampedStartY ||
+                    backgroundX >= clampedEndX ||
+                    backgroundY >= clampedEndY
+                ) {
+                    return;
+                }
+
+                targetCtx.drawImage(
+                    bitmap,
+                    destOffsetX + backgroundX - worldStartX + offsetX,
+                    destOffsetY + backgroundY - worldStartY + offsetY,
+                    bitmap.width,
+                    bitmap.height
+                );
+            });
+        }
+
+        function buildMapChunk(chunkX, chunkY) {
+            if (!currentMap || !tilesetImage) {
+                return null;
+            }
+
+            const worldX = chunkX * MAP_CHUNK_PIXEL_SIZE;
+            const worldY = chunkY * MAP_CHUNK_PIXEL_SIZE;
+            const mapPixelWidth = currentMap.width * TILE_SIZE;
+            const mapPixelHeight = currentMap.height * TILE_SIZE;
+            const chunkWidth = Math.min(MAP_CHUNK_PIXEL_SIZE, mapPixelWidth - worldX);
+            const chunkHeight = Math.min(MAP_CHUNK_PIXEL_SIZE, mapPixelHeight - worldY);
+
+            if (chunkWidth <= 0 || chunkHeight <= 0) {
+                return null;
+            }
+
+            const chunkCanvas = document.createElement('canvas');
+            chunkCanvas.width = chunkWidth;
+            chunkCanvas.height = chunkHeight;
+            const chunkCtx = chunkCanvas.getContext('2d');
+            drawMapRegion(chunkCtx, worldX, worldY, chunkWidth, chunkHeight);
+            return chunkCanvas;
+        }
+
+        function scheduleMapChunkBuild() {
+            if (mapChunkBuildFrameId || mapChunkBuildQueue.length === 0) {
+                return;
+            }
+
+            mapChunkBuildFrameId = requestAnimationFrame(() => {
+                mapChunkBuildFrameId = 0;
+                processMapChunkBuildQueue();
+            });
+        }
+
+        function processMapChunkBuildQueue() {
+            if (!currentMap || !tilesetImage) {
+                mapChunkBuildQueue = [];
+                mapChunkQueuedKeys.clear();
+                return;
+            }
+
+            const startedAt = performance.now();
+            while (mapChunkBuildQueue.length > 0 && performance.now() - startedAt < MAP_CHUNK_BUILD_BUDGET_MS) {
+                const nextChunk = mapChunkBuildQueue.shift();
+                mapChunkQueuedKeys.delete(nextChunk.key);
+
+                if (nextChunk.generation !== mapChunkGeneration || tileCache.has(nextChunk.key)) {
+                    continue;
+                }
+
+                const chunkCanvas = buildMapChunk(nextChunk.chunkX, nextChunk.chunkY);
+                if (chunkCanvas) {
+                    tileCache.set(nextChunk.key, {
+                        canvas: chunkCanvas,
+                        chunkX: nextChunk.chunkX,
+                        chunkY: nextChunk.chunkY,
+                        lastUsedAt: performance.now()
+                    });
+                }
+            }
+
+            trimChunkCache();
+            if (mapChunkBuildQueue.length > 0) {
+                scheduleMapChunkBuild();
+            }
+        }
+
+        function queueMapChunk(chunkX, chunkY, priority = 0) {
+            if (!currentMap) {
+                return;
+            }
+
+            const maxChunkX = Math.ceil(currentMap.width / MAP_CHUNK_TILES) - 1;
+            const maxChunkY = Math.ceil(currentMap.height / MAP_CHUNK_TILES) - 1;
+            if (chunkX < 0 || chunkY < 0 || chunkX > maxChunkX || chunkY > maxChunkY) {
+                return;
+            }
+
+            const key = getMapChunkKey(chunkX, chunkY);
+            if (tileCache.has(key) || mapChunkQueuedKeys.has(key)) {
+                return;
+            }
+
+            mapChunkQueuedKeys.add(key);
+            mapChunkBuildQueue.push({
+                key,
+                chunkX,
+                chunkY,
+                priority,
+                generation: mapChunkGeneration
+            });
+            mapChunkBuildQueue.sort((a, b) => a.priority - b.priority);
+            scheduleMapChunkBuild();
+        }
+
+        function warmVisibleMapChunks(visibleWorldX, visibleWorldY, visibleWorldW, visibleWorldH) {
+            if (!currentMap) {
+                return;
+            }
+
+            const startChunkX = Math.max(0, Math.floor(visibleWorldX / MAP_CHUNK_PIXEL_SIZE) - MAP_CHUNK_PREFETCH_RADIUS);
+            const endChunkX = Math.min(
+                Math.ceil(currentMap.width / MAP_CHUNK_TILES) - 1,
+                Math.floor((visibleWorldX + visibleWorldW - 1) / MAP_CHUNK_PIXEL_SIZE) + MAP_CHUNK_PREFETCH_RADIUS
+            );
+            const startChunkY = Math.max(0, Math.floor(visibleWorldY / MAP_CHUNK_PIXEL_SIZE) - MAP_CHUNK_PREFETCH_RADIUS);
+            const endChunkY = Math.min(
+                Math.ceil(currentMap.height / MAP_CHUNK_TILES) - 1,
+                Math.floor((visibleWorldY + visibleWorldH - 1) / MAP_CHUNK_PIXEL_SIZE) + MAP_CHUNK_PREFETCH_RADIUS
+            );
+
+            const centerX = visibleWorldX + visibleWorldW / 2;
+            const centerY = visibleWorldY + visibleWorldH / 2;
+
+            for (let chunkY = startChunkY; chunkY <= endChunkY; chunkY++) {
+                for (let chunkX = startChunkX; chunkX <= endChunkX; chunkX++) {
+                    const chunkCenterX = chunkX * MAP_CHUNK_PIXEL_SIZE + MAP_CHUNK_PIXEL_SIZE / 2;
+                    const chunkCenterY = chunkY * MAP_CHUNK_PIXEL_SIZE + MAP_CHUNK_PIXEL_SIZE / 2;
+                    const dx = chunkCenterX - centerX;
+                    const dy = chunkCenterY - centerY;
+                    queueMapChunk(chunkX, chunkY, dx * dx + dy * dy);
+                }
+            }
+        }
+
+        function drawChunkedMap(targetCtx, visibleWorldX, visibleWorldY, visibleWorldW, visibleWorldH) {
+            if (!currentMap || !tilesetImage) {
+                return false;
+            }
+
+            warmVisibleMapChunks(visibleWorldX, visibleWorldY, visibleWorldW, visibleWorldH);
+
+            const startChunkX = Math.max(0, Math.floor(visibleWorldX / MAP_CHUNK_PIXEL_SIZE));
+            const endChunkX = Math.min(
+                Math.ceil(currentMap.width / MAP_CHUNK_TILES) - 1,
+                Math.floor((visibleWorldX + visibleWorldW - 1) / MAP_CHUNK_PIXEL_SIZE)
+            );
+            const startChunkY = Math.max(0, Math.floor(visibleWorldY / MAP_CHUNK_PIXEL_SIZE));
+            const endChunkY = Math.min(
+                Math.ceil(currentMap.height / MAP_CHUNK_TILES) - 1,
+                Math.floor((visibleWorldY + visibleWorldH - 1) / MAP_CHUNK_PIXEL_SIZE)
+            );
+
+            for (let chunkY = startChunkY; chunkY <= endChunkY; chunkY++) {
+                for (let chunkX = startChunkX; chunkX <= endChunkX; chunkX++) {
+                    const key = getMapChunkKey(chunkX, chunkY);
+                    const worldX = chunkX * MAP_CHUNK_PIXEL_SIZE;
+                    const worldY = chunkY * MAP_CHUNK_PIXEL_SIZE;
+                    const cachedChunk = tileCache.get(key);
+
+                    if (cachedChunk?.canvas) {
+                        cachedChunk.lastUsedAt = performance.now();
+                        targetCtx.drawImage(
+                            cachedChunk.canvas,
+                            worldX - visibleWorldX,
+                            worldY - visibleWorldY
+                        );
+                    } else {
+                        drawMapRegion(
+                            targetCtx,
+                            worldX,
+                            worldY,
+                            Math.min(MAP_CHUNK_PIXEL_SIZE, currentMap.width * TILE_SIZE - worldX),
+                            Math.min(MAP_CHUNK_PIXEL_SIZE, currentMap.height * TILE_SIZE - worldY),
+                            worldX - visibleWorldX,
+                            worldY - visibleWorldY
+                        );
+                    }
+                }
+            }
+
+            return true;
         }
 
         // Convert tile map to platform rectangles using full tile boxes
@@ -3106,22 +3347,36 @@
                 maxY: mapHeight * TILE_SIZE
             };
             
-            // Use full tile boxes for all tiles
             for (let y = 0; y < mapHeight; y++) {
-                for (let x = 0; x < mapWidth; x++) {
-                    const tileType = tiles[y][x];
-                    if (tileType >= 0) {
+                let runStartX = -1;
+                let runTileType = -1;
+
+                for (let x = 0; x <= mapWidth; x++) {
+                    const tileType = x < mapWidth ? tiles[y][x] : -1;
+                    const isSolid = tileType >= 0;
+
+                    if (isSolid && runStartX === -1) {
+                        runStartX = x;
+                        runTileType = tileType;
+                        continue;
+                    }
+
+                    const shouldFlushRun = runStartX !== -1 && (!isSolid || tileType !== runTileType);
+                    if (shouldFlushRun) {
                         PLATFORMS.push({
-                            x: x * TILE_SIZE,
+                            x: runStartX * TILE_SIZE,
                             y: y * TILE_SIZE,
-                            w: TILE_SIZE,
+                            w: (x - runStartX) * TILE_SIZE,
                             h: TILE_SIZE,
-                            tileType: tileType
+                            tileType: runTileType
                         });
+                        runStartX = isSolid ? x : -1;
+                        runTileType = isSolid ? tileType : -1;
                     }
                 }
             }
-            preRenderMap();
+
+            resetChunkedMapRenderer();
         }
         
         // Load map on startup
@@ -3584,9 +3839,10 @@
         });
 
         // Handle map loaded event from server
-        socket.on('map_loaded', (mapData) => {
+        socket.on('map_loaded', async (mapData) => {
             console.log('Map loaded from server:', mapData.name);
             currentMap = mapData;
+            await loadMapBackgrounds(currentMap);
             convertMapToPlatforms();
         });
 
@@ -4432,31 +4688,20 @@
                 cameraY = clampedCamera.y;
 
                 // Draw tiles if map is loaded
-                if (mapCanvas) {
+                if (currentMap && tilesetImage) {
                     const mapWidth = currentMap.width;
                     const mapHeight = currentMap.height;
-                    
-                    // Only draw the visible portion of the pre-rendered map canvas
                     const visibleW = canvas.width / cameraZoom;
                     const visibleH = canvas.height / cameraZoom;
-                    const sourceX = Math.max(0, Math.min(cameraX, Math.max(0, mapCanvas.width - visibleW)));
-                    const sourceY = Math.max(0, Math.min(cameraY, Math.max(0, mapCanvas.height - visibleH)));
-                    const sourceW = Math.min(visibleW, mapCanvas.width);
-                    const sourceH = Math.min(visibleH, mapCanvas.height);
-                    
-                    ctx.drawImage(
-                        mapCanvas,
-                        sourceX, sourceY, sourceW, sourceH,
-                        0, 0, visibleW, visibleH
-                    );
+                    drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH);
 
                     // Debug mode: Show collision boxes and platforms
                     if (debugMode) {
                         const tiles = currentMap.tiles;
                         const startTileX = Math.max(0, Math.floor(cameraX / TILE_SIZE));
-                        const endTileX = Math.min(mapWidth, Math.ceil((cameraX + canvas.width / cameraZoom) / TILE_SIZE));
+                        const endTileX = Math.min(mapWidth, Math.ceil((cameraX + visibleW) / TILE_SIZE));
                         const startTileY = Math.max(0, Math.floor(cameraY / TILE_SIZE));
-                        const endTileY = Math.min(mapHeight, Math.ceil((cameraY + canvas.height / cameraZoom) / TILE_SIZE));
+                        const endTileY = Math.min(mapHeight, Math.ceil((cameraY + visibleH) / TILE_SIZE));
 
                         // Draw collision boxes for each tile
                         const tileCollisions = currentMap.tileCollisions || {};
