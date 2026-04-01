@@ -91,6 +91,7 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   const broadcastIntervalMs = 1000 / 20;
+  let lastFairyBroadcastMs = 0;
 
   setInterval(() => {
     const nowMs = Date.now();
@@ -108,14 +109,18 @@ function startGameLoop(input) {
 
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
-      broadcastState({ io: input.io, state: input.state });
+      const includeFairies = nowMs - lastFairyBroadcastMs >= 250;
+      if (includeFairies) {
+        lastFairyBroadcastMs = nowMs;
+      }
+      broadcastState({ io: input.io, state: input.state, includeFairies });
     }
   }, FRAME_TIME * 1000);
 }
 
 /**
  * Broadcasts current state.
- * @param {{io: import('socket.io').Server, state: any}} input
+ * @param {{io: import('socket.io').Server, state: any, includeFairies?: boolean}} input
  */
 function broadcastState(input) {
   input.state.stateSeq += 1;
@@ -175,7 +180,14 @@ function broadcastState(input) {
     ts,
     seq: input.state.stateSeq,
     players: playersPayload,
-    fairies: input.state.fairies,
+    fairies: input.includeFairies
+      ? input.state.fairies.map((fairy) => ({
+          id: fairy.id,
+          x: round1(fairy.x),
+          y: round1(fairy.y),
+          color: fairy.color,
+        }))
+      : undefined,
     fireballs: fireballsPayload,
     explosions: explosionsPayload,
   });

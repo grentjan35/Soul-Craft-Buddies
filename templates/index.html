@@ -1155,6 +1155,70 @@
         let footstepAudio = null;
         let fallAudio = null;
         let fireballAudio = null;
+        const INPUT_SEND_INTERVAL_MS = 33;
+        let lastInputSendTime = 0;
+        let scheduledInputFlush = null;
+        let lastSentInputsSignature = '';
+        let lastRequestedMapName = null;
+
+        function getInputSignature(nextInputs) {
+            return `${nextInputs.left ? 1 : 0}${nextInputs.right ? 1 : 0}${nextInputs.up ? 1 : 0}`;
+        }
+
+        function flushInputState(force = false) {
+            scheduledInputFlush = null;
+            if (!socket.connected) {
+                return;
+            }
+
+            const signature = getInputSignature(inputs);
+            const now = performance.now();
+            if (!force && signature === lastSentInputsSignature) {
+                return;
+            }
+
+            const elapsed = now - lastInputSendTime;
+            if (!force && elapsed < INPUT_SEND_INTERVAL_MS) {
+                scheduledInputFlush = setTimeout(() => flushInputState(false), INPUT_SEND_INTERVAL_MS - elapsed);
+                return;
+            }
+
+            lastInputSendTime = now;
+            lastSentInputsSignature = signature;
+            socket.emit('input', {
+                left: Boolean(inputs.left),
+                right: Boolean(inputs.right),
+                up: Boolean(inputs.up)
+            });
+        }
+
+        function scheduleInputStateSend(force = false) {
+            if (force) {
+                if (scheduledInputFlush) {
+                    clearTimeout(scheduledInputFlush);
+                    scheduledInputFlush = null;
+                }
+                flushInputState(true);
+                return;
+            }
+
+            if (!scheduledInputFlush) {
+                scheduledInputFlush = setTimeout(() => flushInputState(false), 0);
+            }
+        }
+
+        function syncCurrentMapToServer(force = false) {
+            if (!socket.connected || !currentMap?.name) {
+                return;
+            }
+
+            if (!force && lastRequestedMapName === currentMap.name) {
+                return;
+            }
+
+            lastRequestedMapName = currentMap.name;
+            socket.emit('load_map', { name: currentMap.name });
+        }
 
         function reportClientRuntimeError(payload) {
             const report = {
@@ -1443,7 +1507,7 @@
             // Reset movement inputs
             inputs.left = false;
             inputs.right = false;
-            socket.emit('input', inputs);
+            scheduleInputStateSend(true);
         }
 
         function updateJoystickPosition(touchX, touchY) {
@@ -1472,7 +1536,7 @@
             inputs.left = normalizedHorizontal < -threshold;
             inputs.right = normalizedHorizontal > threshold;
             
-            socket.emit('input', inputs);
+            scheduleInputStateSend(false);
         }
 
         let jumpButtonPressed = false;
@@ -3011,14 +3075,14 @@
 
         socket.on('connect', () => {
             console.log('Connected to server successfully!');
-            if (currentMap) {
-                socket.emit('load_map', { name: currentMap.name });
-            }
+            lastRequestedMapName = null;
+            syncCurrentMapToServer(true);
             // Wait for character assignment before loading assets
             if (!allAssetsLoaded) {
                 // Assets will be loaded after character_assigned event
             } else {
                 socket.emit('player_ready');
+                scheduleInputStateSend(true);
             }
         });
 
@@ -3214,9 +3278,7 @@
                 updateLoadingScreen();
                 
                 await loadMap();
-                if (socket.connected && currentMap) {
-                    socket.emit('load_map', { name: currentMap.name });
-                }
+                syncCurrentMapToServer(true);
                 
                 loadingStage = 'Compiling client context...';
                 loadingProgress = 95;
@@ -4188,6 +4250,9 @@
         let screenShakeOffsetY = 0;
         const FIREBALL_NOISE_SCALE = 0.0016;
         const MAX_DYNAMIC_LIGHTS = 8;
+        const FIREBALL_TRAIL_SAMPLE_INTERVAL_MS = 40;
+        const FIREBALL_TRAIL_MAX_POINTS = 6;
+        const radialSpriteCache = new Map();
         
 
         // Keyboard input handling
@@ -4222,7 +4287,7 @@
                 }
             }
             
-            socket.emit('input', inputs);
+            scheduleInputStateSend(true);
         });
 
         window.addEventListener('keyup', (e) => {
@@ -4233,7 +4298,7 @@
             
             if (e.key === 'ArrowLeft' || e.key === 'a') inputs.left = false;
             if (e.key === 'ArrowRight' || e.key === 'd') inputs.right = false;
-            socket.emit('input', inputs);
+            scheduleInputStateSend(true);
         });
 
         // Chat input handling
@@ -5041,8 +5106,11 @@
                 fireballs[id].vx = sampled.vx ?? fireballMeta.vx;
                 fireballs[id].vy = sampled.vy ?? fireballMeta.vy;
                 fireballs[id].spawn_time_ms = fireballMeta.spawn_time_ms;
-                fireballs[id].trail.push({ x: fireballs[id].x, y: fireballs[id].y, time: renderNowTs });
-                if (fireballs[id].trail.length > 10) {
+                const lastTrailPoint = fireballs[id].trail[fireballs[id].trail.length - 1];
+                if (!lastTrailPoint || renderNowTs - lastTrailPoint.time >= FIREBALL_TRAIL_SAMPLE_INTERVAL_MS) {
+                    fireballs[id].trail.push({ x: fireballs[id].x, y: fireballs[id].y, time: renderNowTs });
+                }
+                if (fireballs[id].trail.length > FIREBALL_TRAIL_MAX_POINTS) {
                     fireballs[id].trail.shift();
                 }
             }
@@ -5389,22 +5457,77 @@
             screenShakeOffsetY = (Math.cos(time * 1.4) + Math.sin(time * 2.9)) * 14 * shakePower;
         }
 
-        function drawFireballGlow(x, y, radius, innerColor, outerColor, alpha = 1) {
-            const gradient = ctx.createRadialGradient(
-                x - cameraX,
-                y - cameraY,
-                radius * 0.15,
-                x - cameraX,
-                y - cameraY,
-                radius
-            );
+        function getRadialSpriteCanvas(type) {
+            const cached = radialSpriteCache.get(type);
+            if (cached) {
+                return cached;
+            }
+
+            const spriteCanvas = document.createElement('canvas');
+            spriteCanvas.width = 128;
+            spriteCanvas.height = 128;
+            const spriteCtx = spriteCanvas.getContext('2d');
+            const center = spriteCanvas.width / 2;
+            const gradient = spriteCtx.createRadialGradient(center, center, center * 0.1, center, center, center);
+
+            if (type === 'smoke') {
+                gradient.addColorStop(0, 'rgba(108, 96, 90, 0.42)');
+                gradient.addColorStop(0.38, 'rgba(66, 58, 54, 0.3)');
+                gradient.addColorStop(0.72, 'rgba(38, 33, 30, 0.18)');
+                gradient.addColorStop(1, 'rgba(20, 16, 14, 0)');
+            } else if (type === 'flash') {
+                gradient.addColorStop(0, 'rgba(255, 255, 245, 1)');
+                gradient.addColorStop(0.18, 'rgba(255, 239, 168, 0.95)');
+                gradient.addColorStop(0.46, 'rgba(255, 155, 52, 0.62)');
+                gradient.addColorStop(0.72, 'rgba(255, 88, 22, 0.22)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            }
+
+            spriteCtx.fillStyle = gradient;
+            spriteCtx.fillRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+            radialSpriteCache.set(type, spriteCanvas);
+            return spriteCanvas;
+        }
+
+        function getGlowSpriteCanvas(innerColor, outerColor, alpha) {
+            const cacheKey = `${innerColor}|${outerColor}|${alpha.toFixed(3)}`;
+            const cached = radialSpriteCache.get(cacheKey);
+            if (cached) {
+                return cached;
+            }
+
+            const spriteCanvas = document.createElement('canvas');
+            spriteCanvas.width = 128;
+            spriteCanvas.height = 128;
+            const spriteCtx = spriteCanvas.getContext('2d');
+            const center = spriteCanvas.width / 2;
+            const gradient = spriteCtx.createRadialGradient(center, center, center * 0.15, center, center, center);
             gradient.addColorStop(0, innerColor.replace('__A__', String(alpha)));
             gradient.addColorStop(0.45, outerColor.replace('__A__', String(alpha * 0.65)));
             gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(x - cameraX, y - cameraY, radius, 0, Math.PI * 2);
-            ctx.fill();
+            spriteCtx.fillStyle = gradient;
+            spriteCtx.fillRect(0, 0, spriteCanvas.width, spriteCanvas.height);
+            radialSpriteCache.set(cacheKey, spriteCanvas);
+            return spriteCanvas;
+        }
+
+        function drawRadialSpriteAt(worldX, worldY, radius, spriteCanvas, alpha = 1, driftX = 0, driftY = 0) {
+            const drawSize = radius * 2;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(
+                spriteCanvas,
+                worldX - cameraX + driftX - radius,
+                worldY - cameraY + driftY - radius,
+                drawSize,
+                drawSize
+            );
+            ctx.restore();
+        }
+
+        function drawFireballGlow(x, y, radius, innerColor, outerColor, alpha = 1) {
+            const spriteCanvas = getGlowSpriteCanvas(innerColor, outerColor, alpha);
+            drawRadialSpriteAt(x, y, radius, spriteCanvas);
         }
 
         function flameNoise(seedA, seedB) {
@@ -5525,22 +5648,7 @@
                 return;
             }
 
-            const gradient = ctx.createRadialGradient(
-                worldX - cameraX + driftX,
-                worldY - cameraY + driftY,
-                radius * 0.12,
-                worldX - cameraX + driftX,
-                worldY - cameraY + driftY,
-                radius
-            );
-            gradient.addColorStop(0, `rgba(108, 96, 90, ${alpha * 0.42})`);
-            gradient.addColorStop(0.38, `rgba(66, 58, 54, ${alpha * 0.3})`);
-            gradient.addColorStop(0.72, `rgba(38, 33, 30, ${alpha * 0.18})`);
-            gradient.addColorStop(1, 'rgba(20, 16, 14, 0)');
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(worldX - cameraX + driftX, worldY - cameraY + driftY, radius, 0, Math.PI * 2);
-            ctx.fill();
+            drawRadialSpriteAt(worldX, worldY, radius, getRadialSpriteCanvas('smoke'), alpha, driftX, driftY);
         }
 
         function drawExplosionLobe(centerX, centerY, radius, alpha, seed) {
@@ -5912,24 +6020,13 @@
                         );
                     }
 
-                    ctx.globalAlpha = flashAlpha;
-                    const flashGradient = ctx.createRadialGradient(
-                        explosion.x - cameraX,
-                        explosion.y - cameraY,
-                        blastRadius * 0.05,
-                        explosion.x - cameraX,
-                        explosion.y - cameraY,
-                        blastRadius * 1.02
+                    drawRadialSpriteAt(
+                        explosion.x,
+                        explosion.y,
+                        blastRadius,
+                        getRadialSpriteCanvas('flash'),
+                        flashAlpha
                     );
-                    flashGradient.addColorStop(0, 'rgba(255, 255, 245, 1)');
-                    flashGradient.addColorStop(0.18, 'rgba(255, 239, 168, 0.95)');
-                    flashGradient.addColorStop(0.46, 'rgba(255, 155, 52, 0.62)');
-                    flashGradient.addColorStop(0.72, 'rgba(255, 88, 22, 0.22)');
-                    flashGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                    ctx.fillStyle = flashGradient;
-                    ctx.beginPath();
-                    ctx.arc(explosion.x - cameraX, explosion.y - cameraY, blastRadius, 0, Math.PI * 2);
-                    ctx.fill();
 
                     if (progress < 0.35) {
                         ctx.globalAlpha = alpha * 0.44;

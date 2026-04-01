@@ -3,12 +3,12 @@ const path = require('path');
 
 const {
   TILE_SIZE,
-  GRID_CELL_SIZE,
   PLAYER_MAX_HEALTH,
   DEAD_BODY_DURATION,
 } = require('./constants');
 
 const { initializeFairies } = require('./fairies/fairySystem');
+const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
 
 /**
  * Loads map JSON if present.
@@ -57,34 +57,6 @@ function tilesToPlatforms(mapData) {
 }
 
 /**
- * Builds spatial partition grid for platforms.
- * @param {{platforms: Array<{x: number, y: number, w: number, h: number}>}} input
- * @returns {Map<string, Array<any>>}
- */
-function buildPlatformGrid(input) {
-  /** @type {Map<string, Array<any>>} */
-  const grid = new Map();
-
-  for (const plat of input.platforms) {
-    const startGx = Math.floor(plat.x / GRID_CELL_SIZE);
-    const endGx = Math.floor((plat.x + plat.w) / GRID_CELL_SIZE);
-    const startGy = Math.floor(plat.y / GRID_CELL_SIZE);
-    const endGy = Math.floor((plat.y + plat.h) / GRID_CELL_SIZE);
-
-    for (let gx = startGx; gx <= endGx; gx += 1) {
-      for (let gy = startGy; gy <= endGy; gy += 1) {
-        const key = `${gx},${gy}`;
-        const list = grid.get(key) ?? [];
-        list.push(plat);
-        grid.set(key, list);
-      }
-    }
-  }
-
-  return grid;
-}
-
-/**
  * Creates initial in-memory state.
  * @param {{config: any}} input
  * @returns {any}
@@ -130,6 +102,7 @@ function createInitialState(input) {
     platforms,
     platformGrid: buildPlatformGrid({ platforms }),
     mapBounds,
+    currentMapName: String(mapData.name ?? 'default'),
     spawnPoints,
     spawnPointIndex: 0,
     fairies: initializeFairies({ platforms }),

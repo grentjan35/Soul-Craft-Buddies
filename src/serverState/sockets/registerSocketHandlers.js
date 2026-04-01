@@ -25,7 +25,21 @@ function registerSocketHandlers(input) {
   socket.on('input', (data) => {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
-    player.inputs = data;
+    const nextInputs = {
+      left: Boolean(data?.left),
+      right: Boolean(data?.right),
+      up: Boolean(data?.up),
+    };
+
+    if (
+      player.inputs.left === nextInputs.left &&
+      player.inputs.right === nextInputs.right &&
+      player.inputs.up === nextInputs.up
+    ) {
+      return;
+    }
+
+    player.inputs = nextInputs;
   });
 
   socket.on('jump', () => {
@@ -243,6 +257,7 @@ function handleLoadMap(input) {
   const { initializeFairies } = require('../state/fairies/fairySystem');
 
   const mapName = String(input.data?.name ?? 'default');
+  const isSameMap = input.state.currentMapName === mapName;
   const mapPath = path.join(input.state.dataDir, `${mapName}.json`);
   if (!fs.existsSync(mapPath)) {
     return;
@@ -291,6 +306,7 @@ function handleLoadMap(input) {
   input.state.platforms = platforms;
   input.state.platformGrid = buildPlatformGrid({ platforms });
   input.state.fairies = initializeFairies({ platforms });
+  input.state.currentMapName = mapName;
   input.state.mapBounds = {
     min_x: 0,
     max_x: mapWidth * TILE_SIZE,
@@ -311,14 +327,21 @@ function handleLoadMap(input) {
     player.on_ground = false;
   }
 
-  input.io.emit('map_loaded', {
+  const payload = {
     name: mapName,
     width: mapWidth,
     height: mapHeight,
     tiles,
     spawnPoints: input.state.spawnPoints,
     backgrounds: Array.isArray(mapData.backgrounds) ? mapData.backgrounds : [],
-  });
+  };
+
+  if (isSameMap) {
+    input.socket.emit('map_loaded', payload);
+    return;
+  }
+
+  input.io.emit('map_loaded', payload);
 }
 
 module.exports = { registerSocketHandlers };
