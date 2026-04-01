@@ -133,8 +133,6 @@ function broadcastState(input) {
       action: p.action,
       direction: p.direction,
       on_ground: p.on_ground,
-      render_width: p.render_width,
-      render_height: p.render_height,
       character: p.character,
       health: p.health,
       is_attacking: p.is_attacking,

@@ -3,10 +3,10 @@ const { GRID_CELL_SIZE } = require('../constants');
 /**
  * Builds spatial partition grid for platforms.
  * @param {{platforms: Array<{x: number, y: number, w: number, h: number}>}} input
- * @returns {Map<string, Array<any>>}
+ * @returns {Map<number, Map<number, Array<any>>>}
  */
 function buildPlatformGrid(input) {
-  /** @type {Map<string, Array<any>>} */
+  /** @type {Map<number, Map<number, Array<any>>>} */
   const grid = new Map();
 
   for (const plat of input.platforms) {
@@ -16,11 +16,16 @@ function buildPlatformGrid(input) {
     const endGy = Math.floor((plat.y + plat.h) / GRID_CELL_SIZE);
 
     for (let gx = startGx; gx <= endGx; gx += 1) {
+      let column = grid.get(gx);
+      if (!column) {
+        column = new Map();
+        grid.set(gx, column);
+      }
+
       for (let gy = startGy; gy <= endGy; gy += 1) {
-        const key = `${gx},${gy}`;
-        const list = grid.get(key) ?? [];
+        const list = column.get(gy) ?? [];
         list.push(plat);
-        grid.set(key, list);
+        column.set(gy, list);
       }
     }
   }
@@ -30,41 +35,32 @@ function buildPlatformGrid(input) {
 
 /**
  * Returns nearby platforms in a 3x3 area.
- * @param {{platformGrid: Map<string, Array<any>>, x: number, y: number}} input
+ * @param {{platformGrid: Map<number, Map<number, Array<any>>>, x: number, y: number}} input
  * @returns {Array<any>}
  */
 function getNearbyPlatforms(input) {
   const gridX = Math.floor(input.x / GRID_CELL_SIZE);
   const gridY = Math.floor(input.y / GRID_CELL_SIZE);
 
-  /** @type {Array<any>} */
-  const nearby = [];
+  /** @type {Set<any>} */
+  const nearby = new Set();
 
   for (let dy = -1; dy <= 1; dy += 1) {
     for (let dx = -1; dx <= 1; dx += 1) {
-      const key = `${gridX + dx},${gridY + dy}`;
-      const list = input.platformGrid.get(key);
+      const column = input.platformGrid.get(gridX + dx);
+      const list = column?.get(gridY + dy);
       if (Array.isArray(list)) {
-        nearby.push(...list);
+        for (const platform of list) {
+          nearby.add(platform);
+        }
       }
     }
   }
 
-  if (nearby.length === 0) {
+  if (nearby.size === 0) {
     return [];
   }
-
-  const seen = new Set();
-  /** @type {Array<any>} */
-  const unique = [];
-  for (const p of nearby) {
-    const k = `${p.x},${p.y},${p.w},${p.h}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    unique.push(p);
-  }
-
-  return unique;
+  return Array.from(nearby);
 }
 
 module.exports = { buildPlatformGrid, getNearbyPlatforms };

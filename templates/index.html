@@ -51,9 +51,11 @@
             z-index: 1;
             background: #000;
             touch-action: none;
+            opacity: 0;
         }
 
         #glCanvas {
+            display: none;
             position: fixed;
             left: 50%;
             top: 50%;
@@ -61,6 +63,7 @@
             height: var(--game-display-height, 100vh);
             transform: translate(-50%, -50%);
             pointer-events: none;
+            z-index: 2;
         }
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
         
@@ -1594,6 +1597,27 @@
             return shader;
         }
 
+        let menuLoopsActive = true;
+        let menuTextureFrameId = 0;
+        let menuRenderFrameId = 0;
+        let menuUiFrameId = 0;
+
+        function stopMenuRendering() {
+            menuLoopsActive = false;
+            if (menuTextureFrameId) {
+                cancelAnimationFrame(menuTextureFrameId);
+                menuTextureFrameId = 0;
+            }
+            if (menuRenderFrameId) {
+                cancelAnimationFrame(menuRenderFrameId);
+                menuRenderFrameId = 0;
+            }
+            if (menuUiFrameId) {
+                cancelAnimationFrame(menuUiFrameId);
+                menuUiFrameId = 0;
+            }
+        }
+
         function initGL() {
             if (!menuGL) {
                 console.error('WebGL not supported');
@@ -1698,11 +1722,14 @@
             
             // Update texture with video frames
             function updateVideoTexture() {
+                if (!menuLoopsActive) {
+                    return;
+                }
                 if (video.readyState >= video.HAVE_ENOUGH_DATA) {
                     menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
                     menuGL.texImage2D(menuGL.TEXTURE_2D, 0, menuGL.RGBA, menuGL.RGBA, menuGL.UNSIGNED_BYTE, video);
                 }
-                requestAnimationFrame(updateVideoTexture);
+                menuTextureFrameId = requestAnimationFrame(updateVideoTexture);
             }
             
             // Start video texture updates
@@ -1731,6 +1758,9 @@
             });
             
             function render() {
+                if (!menuLoopsActive) {
+                    return;
+                }
                 // Resize canvas if needed
                 if (menuCanvas.width !== window.innerWidth || menuCanvas.height !== window.innerHeight) {
                     menuCanvas.width = window.innerWidth;
@@ -1748,7 +1778,7 @@
                 menuGL.clear(menuGL.COLOR_BUFFER_BIT);
                 menuGL.drawArrays(menuGL.TRIANGLES, 0, 6);
                 
-                requestAnimationFrame(render);
+                menuRenderFrameId = requestAnimationFrame(render);
             }
             
             // Start render loop
@@ -1785,6 +1815,9 @@
             });
 
             function animateUI() {
+                if (!menuLoopsActive) {
+                    return;
+                }
                 currX += (targetX - currX) * 0.05;
                 currY += (targetY - currY) * 0.05;
 
@@ -1792,7 +1825,7 @@
                     ui.style.transform = `translate(${currX * 30}px, ${currY * 30}px)`;
                 }
 
-                requestAnimationFrame(animateUI);
+                menuUiFrameId = requestAnimationFrame(animateUI);
             }
             animateUI();
             
@@ -2639,6 +2672,7 @@
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
                 setTimeout(() => {
+                    stopMenuRendering();
                     startScreen.style.display = 'none';
                     loadingScreen.style.display = 'flex'; // Show loading screen
                     
@@ -2678,6 +2712,12 @@
         let program;
         let positionBuffer, texCoordBuffer;
         let texture;
+        let glResolutionLocation;
+        let glTimeLocation;
+        let glLightPosLocation;
+        let glDynamicLightsLocation;
+        let glPositionLocation;
+        let glTexCoordLocation;
 
         function createShader(gl, type, source) {
             const shader = gl.createShader(type);
@@ -2717,6 +2757,13 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+            glResolutionLocation = gl.getUniformLocation(program, "u_resolution");
+            glTimeLocation = gl.getUniformLocation(program, "u_time");
+            glLightPosLocation = gl.getUniformLocation(program, "u_lightPos");
+            glDynamicLightsLocation = gl.getUniformLocation(program, "u_dynamicLights");
+            glPositionLocation = gl.getAttribLocation(program, "a_position");
+            glTexCoordLocation = gl.getAttribLocation(program, "a_texCoord");
         }
 
         function resizeCanvas() {
@@ -2833,9 +2880,13 @@
                 loadingScreen.style.display = 'none';
             }
             
-            // Show game canvas
+            // Keep the 2D canvas alive as an offscreen render/input surface and
+            // show the WebGL canvas as the final visible image.
             if (canvas) {
                 canvas.style.display = 'block';
+            }
+            if (glCanvas) {
+                glCanvas.style.display = 'block';
             }
             
             // Show chat container
@@ -2960,6 +3011,9 @@
 
         socket.on('connect', () => {
             console.log('Connected to server successfully!');
+            if (currentMap) {
+                socket.emit('load_map', { name: currentMap.name });
+            }
             // Wait for character assignment before loading assets
             if (!allAssetsLoaded) {
                 // Assets will be loaded after character_assigned event
@@ -3160,6 +3214,9 @@
                 updateLoadingScreen();
                 
                 await loadMap();
+                if (socket.connected && currentMap) {
+                    socket.emit('load_map', { name: currentMap.name });
+                }
                 
                 loadingStage = 'Compiling client context...';
                 loadingProgress = 95;
@@ -3266,6 +3323,10 @@
         let missingBackgroundAssets = new Set();
         let backgroundCatalogPromise = null;
         let backgroundCompanionMap = {};
+        let foregroundOverlayCache = new Map();
+        let seamBridgeCache = new Map();
+        let activeMapLoadPromise = null;
+        let loadedMapName = null;
         let mapBounds = { minX: 0, maxX: 800, minY: 0, maxY: 600 };
         let spawnPoints = [];
         const BACKGROUND_PARALLAX_STRENGTH = 0.155;
@@ -3401,47 +3462,61 @@
             }
             targetCtx.globalAlpha = 1;
 
-            const fogGradient = targetCtx.createLinearGradient(
-                baseScreenX,
-                baseScreenY,
-                baseScreenX,
-                baseScreenY + clipHeight
-            );
+            const overlayCanvas = getForegroundOverlayCanvas(clipWidth, clipHeight);
+            targetCtx.drawImage(overlayCanvas, baseScreenX, baseScreenY);
+            targetCtx.restore();
+        }
+
+        function getForegroundOverlayCanvas(width, height) {
+            const cacheKey = `${width}x${height}`;
+            const cached = foregroundOverlayCache.get(cacheKey);
+            if (cached) {
+                return cached;
+            }
+
+            const overlayCanvas = document.createElement('canvas');
+            overlayCanvas.width = width;
+            overlayCanvas.height = height;
+            const overlayCtx = overlayCanvas.getContext('2d');
+
+            const fogGradient = overlayCtx.createLinearGradient(0, 0, 0, height);
             fogGradient.addColorStop(0, 'rgba(8, 12, 18, 0.08)');
             fogGradient.addColorStop(0.42, 'rgba(24, 30, 38, 0.14)');
             fogGradient.addColorStop(1, 'rgba(3, 4, 8, 0.34)');
-            targetCtx.fillStyle = fogGradient;
-            targetCtx.fillRect(baseScreenX, baseScreenY, clipWidth, clipHeight);
+            overlayCtx.fillStyle = fogGradient;
+            overlayCtx.fillRect(0, 0, width, height);
 
-            const beamGradient = targetCtx.createLinearGradient(
-                baseScreenX - clipWidth * 0.15,
-                baseScreenY,
-                baseScreenX + clipWidth * 1.05,
-                baseScreenY + clipHeight
+            const beamGradient = overlayCtx.createLinearGradient(
+                -width * 0.15,
+                0,
+                width * 1.05,
+                height
             );
             beamGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
             beamGradient.addColorStop(0.45, 'rgba(120, 150, 175, 0.025)');
             beamGradient.addColorStop(0.55, 'rgba(255, 255, 255, 0.06)');
             beamGradient.addColorStop(0.68, 'rgba(120, 150, 175, 0.02)');
             beamGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            targetCtx.fillStyle = beamGradient;
-            targetCtx.fillRect(baseScreenX, baseScreenY, clipWidth, clipHeight);
+            overlayCtx.fillStyle = beamGradient;
+            overlayCtx.fillRect(0, 0, width, height);
 
-            const vignette = targetCtx.createRadialGradient(
-                baseScreenX + clipWidth / 2,
-                baseScreenY + clipHeight / 2,
-                Math.min(clipWidth, clipHeight) * 0.12,
-                baseScreenX + clipWidth / 2,
-                baseScreenY + clipHeight / 2,
-                Math.max(clipWidth, clipHeight) * 0.84
+            const vignette = overlayCtx.createRadialGradient(
+                width / 2,
+                height / 2,
+                Math.min(width, height) * 0.12,
+                width / 2,
+                height / 2,
+                Math.max(width, height) * 0.84
             );
             vignette.addColorStop(0, 'rgba(0, 0, 0, 0.12)');
             vignette.addColorStop(0.45, 'rgba(0, 0, 0, 0.28)');
             vignette.addColorStop(0.72, 'rgba(0, 0, 0, 0.52)');
             vignette.addColorStop(1, 'rgba(0, 0, 0, 0.82)');
-            targetCtx.fillStyle = vignette;
-            targetCtx.fillRect(baseScreenX, baseScreenY, clipWidth, clipHeight);
-            targetCtx.restore();
+            overlayCtx.fillStyle = vignette;
+            overlayCtx.fillRect(0, 0, width, height);
+
+            foregroundOverlayCache.set(cacheKey, overlayCanvas);
+            return overlayCanvas;
         }
 
         function drawForegroundSeamBridges(targetCtx, placements, cameraOffsetX, cameraOffsetY) {
@@ -3481,48 +3556,60 @@
                 const bridgeWidth = BACKGROUND_SEAM_BRIDGE_WIDTH + seamGap + BACKGROUND_SEAM_BLEED * 2;
 
                 targetCtx.save();
-                if ('filter' in targetCtx) {
-                    targetCtx.filter = 'blur(14px)';
-                }
-
-                const bridgeGradient = targetCtx.createLinearGradient(
+                const bridgeCanvas = getForegroundSeamBridgeCanvas(
+                    Math.ceil(bridgeWidth),
+                    Math.ceil(overlapHeight + BACKGROUND_SEAM_BLEED * 2)
+                );
+                targetCtx.drawImage(
+                    bridgeCanvas,
                     seamCenterX - bridgeWidth / 2,
-                    overlapTop,
-                    seamCenterX + bridgeWidth / 2,
-                    overlapTop
-                );
-                bridgeGradient.addColorStop(0, 'rgba(20, 24, 30, 0)');
-                bridgeGradient.addColorStop(0.2, 'rgba(24, 30, 38, 0.18)');
-                bridgeGradient.addColorStop(0.5, 'rgba(30, 38, 48, 0.36)');
-                bridgeGradient.addColorStop(0.8, 'rgba(24, 30, 38, 0.18)');
-                bridgeGradient.addColorStop(1, 'rgba(20, 24, 30, 0)');
-                targetCtx.fillStyle = bridgeGradient;
-                targetCtx.fillRect(seamCenterX - bridgeWidth / 2, overlapTop, bridgeWidth, overlapHeight);
-
-                const mistGradient = targetCtx.createRadialGradient(
-                    seamCenterX,
-                    overlapTop + overlapHeight * 0.55,
-                    bridgeWidth * 0.06,
-                    seamCenterX,
-                    overlapTop + overlapHeight * 0.55,
-                    bridgeWidth * 0.52
-                );
-                mistGradient.addColorStop(0, 'rgba(118, 136, 156, 0.12)');
-                mistGradient.addColorStop(0.4, 'rgba(64, 78, 94, 0.09)');
-                mistGradient.addColorStop(1, 'rgba(10, 12, 18, 0)');
-                targetCtx.fillStyle = mistGradient;
-                targetCtx.fillRect(
-                    seamCenterX - bridgeWidth / 2,
-                    overlapTop - BACKGROUND_SEAM_BLEED,
-                    bridgeWidth,
-                    overlapHeight + BACKGROUND_SEAM_BLEED * 2
+                    overlapTop - BACKGROUND_SEAM_BLEED
                 );
 
-                if ('filter' in targetCtx) {
-                    targetCtx.filter = 'none';
-                }
                 targetCtx.restore();
             }
+        }
+
+        function getForegroundSeamBridgeCanvas(width, height) {
+            const cacheKey = `${width}x${height}`;
+            const cached = seamBridgeCache.get(cacheKey);
+            if (cached) {
+                return cached;
+            }
+
+            const bridgeCanvas = document.createElement('canvas');
+            bridgeCanvas.width = Math.max(1, width);
+            bridgeCanvas.height = Math.max(1, height);
+            const bridgeCtx = bridgeCanvas.getContext('2d');
+
+            bridgeCtx.filter = 'blur(14px)';
+
+            const bridgeGradient = bridgeCtx.createLinearGradient(0, 0, bridgeCanvas.width, 0);
+            bridgeGradient.addColorStop(0, 'rgba(20, 24, 30, 0)');
+            bridgeGradient.addColorStop(0.2, 'rgba(24, 30, 38, 0.18)');
+            bridgeGradient.addColorStop(0.5, 'rgba(30, 38, 48, 0.36)');
+            bridgeGradient.addColorStop(0.8, 'rgba(24, 30, 38, 0.18)');
+            bridgeGradient.addColorStop(1, 'rgba(20, 24, 30, 0)');
+            bridgeCtx.fillStyle = bridgeGradient;
+            bridgeCtx.fillRect(0, BACKGROUND_SEAM_BLEED, bridgeCanvas.width, Math.max(1, bridgeCanvas.height - BACKGROUND_SEAM_BLEED * 2));
+
+            const mistGradient = bridgeCtx.createRadialGradient(
+                bridgeCanvas.width / 2,
+                bridgeCanvas.height * 0.55,
+                bridgeCanvas.width * 0.06,
+                bridgeCanvas.width / 2,
+                bridgeCanvas.height * 0.55,
+                bridgeCanvas.width * 0.52
+            );
+            mistGradient.addColorStop(0, 'rgba(118, 136, 156, 0.12)');
+            mistGradient.addColorStop(0.4, 'rgba(64, 78, 94, 0.09)');
+            mistGradient.addColorStop(1, 'rgba(10, 12, 18, 0)');
+            bridgeCtx.fillStyle = mistGradient;
+            bridgeCtx.fillRect(0, 0, bridgeCanvas.width, bridgeCanvas.height);
+            bridgeCtx.filter = 'none';
+
+            seamBridgeCache.set(cacheKey, bridgeCanvas);
+            return bridgeCanvas;
         }
 
         function drawForegroundBackdrops(targetCtx, cameraOffsetX, cameraOffsetY) {
@@ -3619,11 +3706,19 @@
         }
         
         // Load map from server
-        async function loadMap() {
+        async function loadMap(forceReload = false) {
+            const urlParams = new URLSearchParams(window.location.search);
+            const mapName = urlParams.get('map') || 'default';
+
+            if (!forceReload && currentMap && loadedMapName === mapName) {
+                return currentMap;
+            }
+            if (!forceReload && activeMapLoadPromise) {
+                return activeMapLoadPromise;
+            }
+
+            activeMapLoadPromise = (async () => {
             try {
-                const urlParams = new URLSearchParams(window.location.search);
-                const mapName = urlParams.get('map') || 'default';
-                
                 console.log(`Loading map: ${mapName}`);
                 
                 const response = await fetch(`/api/current_map?map=${encodeURIComponent(mapName)}`);
@@ -3640,6 +3735,7 @@
                 }
                 
                 currentMap = mapData;
+                loadedMapName = mapName;
                 console.log('Map data loaded:', mapData);
 
                 // Load tileset image using tokenized endpoint for security
@@ -3659,14 +3755,22 @@
                 convertMapToPlatforms();
                 
                 console.log(`Map "${mapData.name}" loaded successfully with ${spawnPoints.length} spawn points`);
+                return currentMap;
             } catch (error) {
                 console.error('Error loading map:', error);
                 // Fallback to default platform
                 PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
                 spawnPoints = [{x: 100, y: 500, id: 0}];
                 currentMap = null;
+                loadedMapName = null;
                 resetChunkedMapRenderer();
+                return null;
+            } finally {
+                activeMapLoadPromise = null;
             }
+            })();
+
+            return activeMapLoadPromise;
         }
         
         let mapChunkBuildQueue = [];
@@ -3682,6 +3786,8 @@
             tileCache.clear();
             mapChunkBuildQueue = [];
             mapChunkQueuedKeys.clear();
+            foregroundOverlayCache.clear();
+            seamBridgeCache.clear();
             mapChunkGeneration += 1;
             if (mapChunkBuildFrameId) {
                 cancelAnimationFrame(mapChunkBuildFrameId);
@@ -4007,9 +4113,6 @@
             resetChunkedMapRenderer();
         }
         
-        // Load map on startup
-        loadMap();
-
         let inputs = { left: false, right: false, up: false };
         
         // Debug mode for collision visualization
@@ -4715,19 +4818,6 @@
             }
         });
 
-        // Load map and notify server when ready
-        async function loadAndNotifyMap() {
-            await loadMap();
-            
-            // Notify server of loaded map
-            if (currentMap) {
-                socket.emit('load_map', { name: currentMap.name });
-            }
-        }
-
-        // Load map on startup and notify server
-        loadAndNotifyMap();
-
         function lerp(start, end, t) {
             return start + (end - start) * t;
         }
@@ -4989,6 +5079,19 @@
                 fireballAudio.startLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport, 0.5);
                 fireballAudio.updateLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport);
             }
+        }
+
+        let lastSpatialAudioUpdateTime = 0;
+        const SPATIAL_AUDIO_INTERVAL_MS = 33;
+
+        function updateSpatialAudio(nowMs) {
+            if (nowMs - lastSpatialAudioUpdateTime < SPATIAL_AUDIO_INTERVAL_MS) {
+                return;
+            }
+
+            lastSpatialAudioUpdateTime = nowMs;
+            updateSpatialFootstepAudio();
+            updateSpatialFireballAudio();
         }
 
         function drawHealthBar(ctx, playerX, playerY, health, cameraX, cameraY) {
@@ -5908,7 +6011,6 @@
             // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
             if (ctx && canvas) {
                 updateInterpolatedRenderState(currentTime);
-                updateSpatialFootstepAudio();
 
                 // Clear main canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -6099,11 +6201,6 @@
                             const renderDims = calculateRenderDimensions(frameW, frameH);
                             
                             // Send dimensions to server if they changed
-                            const prevDims = playerRenderDimensions[sid];
-                            if (!prevDims || prevDims.width !== renderDims.width || prevDims.height !== renderDims.height) {
-                                socket.emit('update_dimensions', { width: renderDims.width, height: renderDims.height });
-                            }
-                            
                             playerRenderDimensions[sid] = renderDims;
 
                             ctx.save();
@@ -6259,7 +6356,7 @@
 
                 // Update dust particles
                 updateDustParticles(dt);
-                updateSpatialFireballAudio();
+                updateSpatialAudio(currentTime);
 
                 for (const sid in dyingPlayers) {
                     const dying = dyingPlayers[sid];
@@ -6457,13 +6554,9 @@
                     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
 
                     // Set uniforms
-                    const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
-                    gl.uniform2f(resolutionLocation, glCanvas.width, glCanvas.height);
+                    gl.uniform2f(glResolutionLocation, glCanvas.width, glCanvas.height);
+                    gl.uniform1f(glTimeLocation, performance.now() / 1000);
 
-                    const timeLocation = gl.getUniformLocation(program, "u_time");
-                    gl.uniform1f(timeLocation, performance.now() / 1000);
-
-                    const lightPosLocation = gl.getUniformLocation(program, "u_lightPos");
                     const localPlayerPos = getPlayerPosition(socket.id);
                     if (localPlayerPos) {
                         // Convert game coordinates to screen coordinates
@@ -6476,16 +6569,15 @@
                         const finalX = screenX;
                         const finalY = screenY;
                         
-                        gl.uniform2f(lightPosLocation, finalX, finalY);
+                        gl.uniform2f(glLightPosLocation, finalX, finalY);
                     } else {
                         // When player position is unavailable (e.g., low-end PC frame drops),
                         // center the light on screen to maintain visibility instead of going black
                         const centerX = glCanvas.width / 2;
                         const centerY = glCanvas.height / 2;
-                        gl.uniform2f(lightPosLocation, centerX, centerY);
+                        gl.uniform2f(glLightPosLocation, centerX, centerY);
                     }
 
-                    const dynamicLightsLocation = gl.getUniformLocation(program, "u_dynamicLights");
                     const dynamicLights = collectDynamicLights();
                     const dynamicLightBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
                     for (let i = 0; i < dynamicLights.length && i < MAX_DYNAMIC_LIGHTS; i++) {
@@ -6495,30 +6587,22 @@
                         dynamicLightBuffer[i * 4 + 2] = light.radius;
                         dynamicLightBuffer[i * 4 + 3] = light.strength;
                     }
-                    gl.uniform4fv(dynamicLightsLocation, dynamicLightBuffer);
+                    gl.uniform4fv(glDynamicLightsLocation, dynamicLightBuffer);
 
                     // Bind buffers
-                    const positionLocation = gl.getAttribLocation(program, "a_position");
-                    gl.enableVertexAttribArray(positionLocation);
+                    gl.enableVertexAttribArray(glPositionLocation);
                     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+                    gl.vertexAttribPointer(glPositionLocation, 2, gl.FLOAT, false, 0, 0);
 
-                    const texCoordLocation = gl.getAttribLocation(program, "a_texCoord");
-                    gl.enableVertexAttribArray(texCoordLocation);
+                    gl.enableVertexAttribArray(glTexCoordLocation);
                     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-                    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+                    gl.vertexAttribPointer(glTexCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
                     // Draw to WebGL canvas
                     gl.clearColor(0, 0, 0, 1);
                     gl.clear(gl.COLOR_BUFFER_BIT);
                     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-                    // Copy WebGL result back to main canvas
-                    ctx.save();
-                    ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-                    ctx.globalCompositeOperation = 'copy';
-                    ctx.drawImage(glCanvas, 0, 0);
-                    ctx.restore();
                 }
             }
 

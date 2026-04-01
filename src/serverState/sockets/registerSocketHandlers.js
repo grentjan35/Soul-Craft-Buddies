@@ -1,4 +1,4 @@
-const { PLAYER_MAX_SIZE, PLAYER_MAX_HEALTH, ATTACK_DURATION, FIREBALL_POWER_MAX } = require('../state/constants');
+const { PLAYER_MAX_HEALTH, ATTACK_DURATION, FIREBALL_POWER_MAX } = require('../state/constants');
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
 
@@ -36,13 +36,6 @@ function registerSocketHandlers(input) {
       player.on_ground = false;
       player.jumps_remaining -= 1;
     }
-  });
-
-  socket.on('update_dimensions', (data) => {
-    const player = state.players.get(socket.id);
-    if (!player) return;
-    player.render_width = typeof data?.width === 'number' ? data.width : PLAYER_MAX_SIZE;
-    player.render_height = typeof data?.height === 'number' ? data.height : PLAYER_MAX_SIZE;
   });
 
   socket.on('chat_message', (data) => {
@@ -164,8 +157,6 @@ function handleConnect(input) {
     action: 'idle',
     direction: 'right',
     frame: 0,
-    render_width: PLAYER_MAX_SIZE,
-    render_height: PLAYER_MAX_SIZE,
     is_ready: false,
     jumps_remaining: 2,
     character,
@@ -266,11 +257,34 @@ function handleLoadMap(input) {
   /** @type {Array<any>} */
   const platforms = [];
   for (let y = 0; y < mapHeight; y += 1) {
-    for (let x = 0; x < mapWidth; x += 1) {
-      const tileType = tiles?.[y]?.[x];
-      if (typeof tileType === 'number' && tileType >= 0) {
-        platforms.push({ x: x * TILE_SIZE, y: y * TILE_SIZE, w: TILE_SIZE, h: TILE_SIZE, tile_type: tileType });
+    let runStartX = -1;
+    let runTileType = -1;
+
+    for (let x = 0; x <= mapWidth; x += 1) {
+      const tileType = x < mapWidth ? tiles?.[y]?.[x] : -1;
+      const isSolid = typeof tileType === 'number' && tileType >= 0;
+
+      if (isSolid && runStartX === -1) {
+        runStartX = x;
+        runTileType = tileType;
+        continue;
       }
+
+      const shouldFlushRun = runStartX !== -1 && (!isSolid || tileType !== runTileType);
+      if (!shouldFlushRun) {
+        continue;
+      }
+
+      platforms.push({
+        x: runStartX * TILE_SIZE,
+        y: y * TILE_SIZE,
+        w: (x - runStartX) * TILE_SIZE,
+        h: TILE_SIZE,
+        tile_type: runTileType,
+      });
+
+      runStartX = isSolid ? x : -1;
+      runTileType = isSolid ? tileType : -1;
     }
   }
 
