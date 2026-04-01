@@ -3393,8 +3393,8 @@
         let spawnPoints = [];
         const BACKGROUND_PARALLAX_STRENGTH = 0.155;
         const BACKGROUND_PARALLAX_OVERSCAN = 1.26;
-        const BACKGROUND_SEAM_BLEED = 40;
-        const BACKGROUND_SEAM_BRIDGE_WIDTH = 120;
+        const BACKGROUND_SEAM_BLEED = 72;
+        const BACKGROUND_SEAM_BRIDGE_WIDTH = 220;
 
         function getForegroundAssetCandidates(backgroundAssetName) {
             if (typeof backgroundAssetName !== 'string') {
@@ -3581,36 +3581,43 @@
             return overlayCanvas;
         }
 
-        function drawForegroundSeamBridges(targetCtx, placements, cameraOffsetX, cameraOffsetY) {
+        function drawLayerSeamBridges(targetCtx, placements, resolveBitmap, positionResolver = null) {
             if (!Array.isArray(placements) || placements.length < 2) {
                 return;
             }
 
             const sortedPlacements = placements
-                .filter((placement) => placement?.foregroundBitmap)
+                .filter((placement) => resolveBitmap(placement))
                 .slice()
                 .sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0));
 
             for (let i = 0; i < sortedPlacements.length - 1; i++) {
                 const leftPlacement = sortedPlacements[i];
                 const rightPlacement = sortedPlacements[i + 1];
-                const leftBitmap = leftPlacement.foregroundBitmap;
-                const rightBitmap = rightPlacement.foregroundBitmap;
+                const leftBitmap = resolveBitmap(leftPlacement);
+                const rightBitmap = resolveBitmap(rightPlacement);
                 if (!leftBitmap || !rightBitmap) {
                     continue;
                 }
 
-                const leftX = (Number(leftPlacement.x) || 0) - cameraOffsetX;
-                const leftY = (Number(leftPlacement.y) || 0) - cameraOffsetY;
-                const rightX = (Number(rightPlacement.x) || 0) - cameraOffsetX;
-                const rightY = (Number(rightPlacement.y) || 0) - cameraOffsetY;
+                const leftPosition = positionResolver
+                    ? positionResolver(leftPlacement, leftBitmap)
+                    : { x: Number(leftPlacement.x) || 0, y: Number(leftPlacement.y) || 0 };
+                const rightPosition = positionResolver
+                    ? positionResolver(rightPlacement, rightBitmap)
+                    : { x: Number(rightPlacement.x) || 0, y: Number(rightPlacement.y) || 0 };
+
+                const leftX = leftPosition.x;
+                const leftY = leftPosition.y;
+                const rightX = rightPosition.x;
+                const rightY = rightPosition.y;
                 const leftRight = leftX + leftBitmap.width;
                 const seamCenterX = (leftRight + rightX) / 2;
-                const overlapTop = Math.max(leftY, rightY);
-                const overlapBottom = Math.min(leftY + leftBitmap.height, rightY + rightBitmap.height);
-                const overlapHeight = overlapBottom - overlapTop;
+                const seamTop = Math.min(leftY, rightY);
+                const seamBottom = Math.max(leftY + leftBitmap.height, rightY + rightBitmap.height);
+                const seamHeight = seamBottom - seamTop;
 
-                if (overlapHeight <= 0) {
+                if (seamHeight <= 0) {
                     continue;
                 }
 
@@ -3620,16 +3627,39 @@
                 targetCtx.save();
                 const bridgeCanvas = getForegroundSeamBridgeCanvas(
                     Math.ceil(bridgeWidth),
-                    Math.ceil(overlapHeight + BACKGROUND_SEAM_BLEED * 2)
+                    Math.ceil(seamHeight + BACKGROUND_SEAM_BLEED * 2)
                 );
                 targetCtx.drawImage(
                     bridgeCanvas,
                     seamCenterX - bridgeWidth / 2,
-                    overlapTop - BACKGROUND_SEAM_BLEED
+                    seamTop - BACKGROUND_SEAM_BLEED
                 );
-
                 targetCtx.restore();
             }
+        }
+
+        function drawForegroundSeamBridges(targetCtx, placements, cameraOffsetX, cameraOffsetY) {
+            drawLayerSeamBridges(
+                targetCtx,
+                placements,
+                (placement) => placement?.foregroundBitmap,
+                (placement) => ({
+                    x: (Number(placement.x) || 0) - cameraOffsetX,
+                    y: (Number(placement.y) || 0) - cameraOffsetY
+                })
+            );
+        }
+
+        function drawBackgroundSeamBridges(targetCtx, placements, worldStartX, worldStartY, offsetX = 0, offsetY = 0, destOffsetX = 0, destOffsetY = 0) {
+            drawLayerSeamBridges(
+                targetCtx,
+                placements,
+                (placement) => backgroundImageCache[placement?.asset],
+                (placement) => ({
+                    x: destOffsetX + (Number(placement.x) || 0) - worldStartX + offsetX,
+                    y: destOffsetY + (Number(placement.y) || 0) - worldStartY + offsetY
+                })
+            );
         }
 
         function getForegroundSeamBridgeCanvas(width, height) {
@@ -3648,9 +3678,9 @@
 
             const bridgeGradient = bridgeCtx.createLinearGradient(0, 0, bridgeCanvas.width, 0);
             bridgeGradient.addColorStop(0, 'rgba(20, 24, 30, 0)');
-            bridgeGradient.addColorStop(0.2, 'rgba(24, 30, 38, 0.18)');
-            bridgeGradient.addColorStop(0.5, 'rgba(30, 38, 48, 0.36)');
-            bridgeGradient.addColorStop(0.8, 'rgba(24, 30, 38, 0.18)');
+            bridgeGradient.addColorStop(0.16, 'rgba(24, 30, 38, 0.26)');
+            bridgeGradient.addColorStop(0.5, 'rgba(30, 38, 48, 0.52)');
+            bridgeGradient.addColorStop(0.84, 'rgba(24, 30, 38, 0.26)');
             bridgeGradient.addColorStop(1, 'rgba(20, 24, 30, 0)');
             bridgeCtx.fillStyle = bridgeGradient;
             bridgeCtx.fillRect(0, BACKGROUND_SEAM_BLEED, bridgeCanvas.width, Math.max(1, bridgeCanvas.height - BACKGROUND_SEAM_BLEED * 2));
@@ -3663,8 +3693,8 @@
                 bridgeCanvas.height * 0.55,
                 bridgeCanvas.width * 0.52
             );
-            mistGradient.addColorStop(0, 'rgba(118, 136, 156, 0.12)');
-            mistGradient.addColorStop(0.4, 'rgba(64, 78, 94, 0.09)');
+            mistGradient.addColorStop(0, 'rgba(118, 136, 156, 0.18)');
+            mistGradient.addColorStop(0.4, 'rgba(64, 78, 94, 0.14)');
             mistGradient.addColorStop(1, 'rgba(10, 12, 18, 0)');
             bridgeCtx.fillStyle = mistGradient;
             bridgeCtx.fillRect(0, 0, bridgeCanvas.width, bridgeCanvas.height);
@@ -3945,6 +3975,17 @@
                     bitmap.height
                 );
             });
+
+            drawBackgroundSeamBridges(
+                targetCtx,
+                backgrounds,
+                worldStartX,
+                worldStartY,
+                offsetX,
+                offsetY,
+                destOffsetX,
+                destOffsetY
+            );
         }
 
         function buildMapChunk(chunkX, chunkY) {
@@ -4239,6 +4280,8 @@
         let authoritativeFireballs = {};
         let explosions = {};
         let burnMarks = [];
+        let attachedPlayerBurns = [];
+        const spriteFrameAlphaCache = new Map();
         let mousePosition = { x: 0, y: 0 };
         const FIREBALL_SIZE = 34;
         const FIREBALL_RADIUS = FIREBALL_SIZE / 2;
@@ -4871,7 +4914,7 @@
 
         // Handle player hit event from server
         socket.on('player_hit', (data) => {
-            const { sid, damage, health, is_dying } = data;
+            const { sid, damage, health, is_dying, x, y } = data;
             console.log(`Player ${sid} hit for ${damage} damage, health: ${health}`);
             
             // Update player health if we have state for them
@@ -4880,6 +4923,10 @@
             }
             if (playerState[sid]) {
                 playerState[sid].health = health;
+            }
+
+            if (typeof x === 'number' && typeof y === 'number') {
+                createAttachedPlayerBurn(sid, x, y, EXPLOSION_RADIUS);
             }
         });
 
@@ -5297,6 +5344,201 @@
             };
         }
 
+        function getPlayerFrameRenderInfo(sid) {
+            const state = playerState[sid];
+            if (!state) return null;
+            const action = state.action || 'idle';
+            const direction = state.direction || 'right';
+            const playerCharacter = state.character || 'spartan';
+            const playerAssets = playerCharacterAssets[playerCharacter];
+            const playerMetadata = characterMetadataCache[playerCharacter];
+            if (!playerAssets || !playerAssets[action] || !playerMetadata || !playerMetadata[action]) {
+                return null;
+            }
+
+            const meta = playerMetadata[action];
+            const [cols, rows] = meta.grid.split('x').map(Number);
+            const totalFrames = meta.frames;
+            const frameState = playerAnimFrames[sid];
+            const frameIdx = frameState ? Math.min(frameState.frame, totalFrames - 1) : 0;
+            const frameW = playerAssets[action].width / cols;
+            const frameH = playerAssets[action].height / rows;
+            const renderDims = playerRenderDimensions[sid] || calculateRenderDimensions(frameW, frameH);
+
+            return {
+                state,
+                direction,
+                playerCharacter,
+                action,
+                image: playerAssets[action],
+                frameIdx,
+                frameX: (frameIdx % cols) * frameW,
+                frameY: Math.floor(frameIdx / cols) * frameH,
+                frameW,
+                frameH,
+                renderDims
+            };
+        }
+
+        function getSpriteFrameAlpha(frameInfo) {
+            const cacheKey = `${frameInfo.playerCharacter}|${frameInfo.action}|${frameInfo.frameIdx}`;
+            const cached = spriteFrameAlphaCache.get(cacheKey);
+            if (cached) return cached;
+
+            const sampleCanvas = document.createElement('canvas');
+            sampleCanvas.width = Math.max(1, Math.round(frameInfo.frameW));
+            sampleCanvas.height = Math.max(1, Math.round(frameInfo.frameH));
+            const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+            sampleCtx.drawImage(
+                frameInfo.image,
+                frameInfo.frameX,
+                frameInfo.frameY,
+                frameInfo.frameW,
+                frameInfo.frameH,
+                0,
+                0,
+                sampleCanvas.width,
+                sampleCanvas.height
+            );
+
+            const imageData = sampleCtx.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+            const result = { width: sampleCanvas.width, height: sampleCanvas.height, data: imageData.data };
+            spriteFrameAlphaCache.set(cacheKey, result);
+            return result;
+        }
+
+        function findNearestOpaquePixel(alphaFrame, x, y, maxRadius = 10) {
+            const targetX = Math.max(0, Math.min(alphaFrame.width - 1, Math.round(x)));
+            const targetY = Math.max(0, Math.min(alphaFrame.height - 1, Math.round(y)));
+
+            for (let radius = 0; radius <= maxRadius; radius++) {
+                const minX = Math.max(0, targetX - radius);
+                const maxX = Math.min(alphaFrame.width - 1, targetX + radius);
+                const minY = Math.max(0, targetY - radius);
+                const maxY = Math.min(alphaFrame.height - 1, targetY + radius);
+                for (let py = minY; py <= maxY; py++) {
+                    for (let px = minX; px <= maxX; px++) {
+                        const alphaIndex = (py * alphaFrame.width + px) * 4 + 3;
+                        if (alphaFrame.data[alphaIndex] > 24) {
+                            return { x: px, y: py };
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        function createAttachedPlayerBurn(sid, impactX, impactY, sourceRadius = EXPLOSION_RADIUS) {
+            const frameInfo = getPlayerFrameRenderInfo(sid);
+            if (!frameInfo) return;
+
+            const spriteLeft = frameInfo.state.x - frameInfo.renderDims.width / 2;
+            const spriteTop = frameInfo.state.y - frameInfo.renderDims.height / 2;
+            const localRenderX = frameInfo.direction === 'left'
+                ? frameInfo.renderDims.width - (impactX - spriteLeft)
+                : impactX - spriteLeft;
+            const localRenderY = impactY - spriteTop;
+            const sampleX = (localRenderX / Math.max(1, frameInfo.renderDims.width)) * frameInfo.frameW;
+            const sampleY = (localRenderY / Math.max(1, frameInfo.renderDims.height)) * frameInfo.frameH;
+            const alphaFrame = getSpriteFrameAlpha(frameInfo);
+            const opaque = findNearestOpaquePixel(alphaFrame, sampleX, sampleY, 12);
+            if (!opaque) return;
+
+            const existing = attachedPlayerBurns.find((burn) => burn.sid === sid);
+            if (existing) {
+                existing.u = opaque.x / Math.max(1, frameInfo.frameW);
+                existing.v = opaque.y / Math.max(1, frameInfo.frameH);
+                existing.impactU = existing.u;
+                existing.impactV = existing.v;
+                existing.radius = Math.max(existing.radius, Math.max(18, sourceRadius * 0.62));
+                existing.startTime = Date.now();
+                existing.duration = Math.min(2600, existing.duration + 520);
+                existing.angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.28;
+                return;
+            }
+
+            attachedPlayerBurns.push({
+                id: `${sid}_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+                sid,
+                u: opaque.x / Math.max(1, frameInfo.frameW),
+                v: opaque.y / Math.max(1, frameInfo.frameH),
+                impactU: opaque.x / Math.max(1, frameInfo.frameW),
+                impactV: opaque.y / Math.max(1, frameInfo.frameH),
+                radius: Math.max(18, sourceRadius * 0.62),
+                startTime: Date.now(),
+                duration: 2000,
+                angle: -Math.PI / 2 + (Math.random() - 0.5) * 0.28
+            });
+        }
+
+        function resolveAttachedBurnAnchor(frameInfo, burn) {
+            const alphaFrame = getSpriteFrameAlpha(frameInfo);
+            const desiredX = Math.max(0, Math.min(alphaFrame.width - 1, Math.round((burn.impactU ?? burn.u) * alphaFrame.width)));
+            const desiredY = Math.max(0, Math.min(alphaFrame.height - 1, Math.round((burn.impactV ?? burn.v) * alphaFrame.height)));
+            const currentX = Math.max(0, Math.min(alphaFrame.width - 1, Math.round(burn.u * alphaFrame.width)));
+            const currentY = Math.max(0, Math.min(alphaFrame.height - 1, Math.round(burn.v * alphaFrame.height)));
+            const currentAlphaIndex = (currentY * alphaFrame.width + currentX) * 4 + 3;
+            let opaque = alphaFrame.data[currentAlphaIndex] > 24
+                ? { x: currentX, y: currentY }
+                : findNearestOpaquePixel(alphaFrame, desiredX, desiredY, 14) || findNearestOpaquePixel(alphaFrame, currentX, currentY, 18);
+
+            if (!opaque) {
+                return null;
+            }
+
+            burn.u = opaque.x / Math.max(1, alphaFrame.width);
+            burn.v = opaque.y / Math.max(1, alphaFrame.height);
+
+            const spriteLeft = frameInfo.state.x - frameInfo.renderDims.width / 2;
+            const spriteTop = frameInfo.state.y - frameInfo.renderDims.height / 2;
+            const localRenderX = frameInfo.direction === 'left'
+                ? frameInfo.renderDims.width * (1 - burn.u)
+                : frameInfo.renderDims.width * burn.u;
+            const localRenderY = frameInfo.renderDims.height * burn.v;
+
+            return {
+                x: spriteLeft + localRenderX,
+                y: spriteTop + localRenderY
+            };
+        }
+
+        function drawAttachedPlayerBurnsForPlayer(sid, now) {
+            attachedPlayerBurns = attachedPlayerBurns.filter((burn) => now - burn.startTime < burn.duration && playerState[burn.sid]);
+            const burn = attachedPlayerBurns.find((entry) => entry.sid === sid);
+            if (!burn) return;
+
+            const frameInfo = getPlayerFrameRenderInfo(sid);
+            if (!frameInfo) return;
+            const anchor = resolveAttachedBurnAnchor(frameInfo, burn);
+            if (!anchor) return;
+            const progress = Math.max(0, Math.min(1, (now - burn.startTime) / burn.duration));
+            const alpha = (1 - progress) * 0.9;
+            const flameRadius = burn.radius * (0.82 + (1 - progress) * 0.18);
+            const flickerTime = now * 0.0016 + stableStringNoise(burn.id) * 10;
+            const sway = Math.sin(flickerTime * 1.6 + stableStringNoise(burn.sid) * 5) * 0.18;
+            const flameAngle = (burn.angle ?? -Math.PI / 2) + sway;
+
+            drawFireballGlow(anchor.x, anchor.y - flameRadius * 0.16, flameRadius * 1.55, 'rgba(255, 220, 130, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.36);
+            drawPixelFlameBody(
+                anchor.x + Math.sin(flickerTime * 5.4) * 1.3,
+                anchor.y - flameRadius * 0.24 - Math.abs(Math.cos(flickerTime * 4.1)) * 1.1,
+                flameAngle + Math.sin(flickerTime) * 0.08,
+                flameRadius * 0.56,
+                alpha * 0.96,
+                flickerTime,
+                {
+                    cellScale: 0.16,
+                    tailLength: 0.72,
+                    noseLength: 0.24,
+                    width: 0.34,
+                    alpha: 0.88,
+                    emberChance: 0.08,
+                    palette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8']
+                }
+            );
+        }
+
         // Dust particle system functions
         function createDustParticles(x, y, type) {
             // Remove old particles if we're at the limit
@@ -5693,14 +5935,72 @@
             });
         }
 
+        function findNearestSurfaceAnchor(x, y, searchDistance = 96) {
+            let bestAnchor = null;
+            let bestDistance = Infinity;
+
+            for (const platform of PLATFORMS) {
+                if (
+                    x < platform.x - searchDistance ||
+                    x > platform.x + platform.w + searchDistance ||
+                    y < platform.y - searchDistance ||
+                    y > platform.y + platform.h + searchDistance
+                ) {
+                    continue;
+                }
+
+                const candidates = [
+                    { x: Math.max(platform.x, Math.min(platform.x + platform.w, x)), y: platform.y, angle: -Math.PI / 2 },
+                    { x: Math.max(platform.x, Math.min(platform.x + platform.w, x)), y: platform.y + platform.h, angle: Math.PI / 2 },
+                    { x: platform.x, y: Math.max(platform.y, Math.min(platform.y + platform.h, y)), angle: Math.PI },
+                    { x: platform.x + platform.w, y: Math.max(platform.y, Math.min(platform.y + platform.h, y)), angle: 0 }
+                ];
+
+                for (const candidate of candidates) {
+                    const distance = Math.hypot(candidate.x - x, candidate.y - y);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestAnchor = candidate;
+                    }
+                }
+            }
+
+            if (!bestAnchor || bestDistance > searchDistance) {
+                return null;
+            }
+
+            return bestAnchor;
+        }
+
         function createBurnMark(x, y, sourceRadius = EXPLOSION_RADIUS) {
+            const anchor = findNearestSurfaceAnchor(x, y, Math.max(80, sourceRadius * 2.4));
+            if (!anchor) {
+                return;
+            }
+
+            const existing = burnMarks.find((mark) => Math.hypot(mark.x - anchor.x, mark.y - anchor.y) < Math.max(18, sourceRadius * 0.75));
+            if (existing) {
+                existing.x = existing.x * 0.72 + anchor.x * 0.28;
+                existing.y = existing.y * 0.72 + anchor.y * 0.28;
+                existing.radius = Math.max(existing.radius, Math.max(28, sourceRadius * 0.95));
+                existing.startTime = Date.now();
+                existing.duration = Math.min(6200, existing.duration + 900);
+                existing.baseAngle = anchor.angle;
+                existing.angle = anchor.angle + (Math.random() - 0.5) * 0.62;
+                existing.secondaryLean = (Math.random() - 0.5) * 0.44;
+                return;
+            }
+
             burnMarks.push({
                 id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-                x,
-                y,
+                x: anchor.x,
+                y: anchor.y,
                 radius: Math.max(28, sourceRadius * 0.95),
                 startTime: Date.now(),
-                duration: 2600
+                duration: 4400,
+                baseAngle: anchor.angle,
+                angle: anchor.angle + (Math.random() - 0.5) * 0.62,
+                secondaryLean: (Math.random() - 0.5) * 0.44
             });
 
             if (burnMarks.length > 18) {
@@ -5722,10 +6022,25 @@
                 const flameRadius = mark.radius * (0.7 + (1 - progress) * 0.25);
                 const flickerTime = now * 0.0018 + stableStringNoise(mark.id) * 10;
                 const flickerX = Math.sin(flickerTime * 5.2) * 2.8;
-                const flickerY = Math.cos(flickerTime * 4.4) * 1.8;
+                const flameLift = Math.abs(Math.cos(flickerTime * 4.4)) * 1.8;
+                const sway = Math.sin(flickerTime * 1.2) * 0.18;
+                const baseAngle = mark.baseAngle ?? -Math.PI / 2;
+                const riseAngle = baseAngle;
+                const riseX = Math.cos(riseAngle);
+                const riseY = Math.sin(riseAngle);
+                const tangentX = -riseY;
+                const tangentY = riseX;
+                const primaryAngle = (mark.angle ?? baseAngle) + sway;
+                const secondaryAngle = riseAngle + (mark.secondaryLean ?? 0) + Math.cos(flickerTime * 0.9) * 0.12;
+                const glowX = mark.x + riseX * flameRadius * 0.12;
+                const glowY = mark.y + riseY * flameRadius * 0.12;
+                const primaryX = mark.x + riseX * flameRadius * 0.34 + tangentX * flickerX;
+                const primaryY = mark.y + riseY * (flameRadius * 0.34 + flameLift) + tangentY * flickerX;
+                const secondaryX = mark.x + riseX * flameRadius * 0.26 - tangentX * flickerX * 0.4;
+                const secondaryY = mark.y + riseY * flameRadius * 0.26 - tangentY * flickerX * 0.4;
 
-                drawFireballGlow(mark.x, mark.y, flameRadius * 2.4, 'rgba(255, 214, 120, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.45);
-                drawPixelFlameBody(mark.x + flickerX, mark.y + flickerY, -Math.PI / 2 + Math.sin(flickerTime * 1.2) * 0.18, flameRadius * 0.8, alpha * 0.92, flickerTime, {
+                drawFireballGlow(glowX, glowY, flameRadius * 2.1, 'rgba(255, 214, 120, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.42);
+                drawPixelFlameBody(primaryX, primaryY, primaryAngle, flameRadius * 0.8, alpha * 0.92, flickerTime, {
                     cellScale: 0.16,
                     tailLength: 0.82,
                     noseLength: 0.3,
@@ -5734,7 +6049,7 @@
                     emberChance: 0.12,
                     palette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8']
                 });
-                drawPixelFlameBody(mark.x - flickerX * 0.4, mark.y - flameRadius * 0.08, -Math.PI / 2, flameRadius * 0.46, alpha * 0.56, flickerTime + 1.7, {
+                drawPixelFlameBody(secondaryX, secondaryY, secondaryAngle, flameRadius * 0.46, alpha * 0.56, flickerTime + 1.7, {
                     cellScale: 0.18,
                     tailLength: 0.72,
                     noseLength: 0.24,
@@ -5745,8 +6060,18 @@
                 });
 
                 const smokeAlpha = Math.max(0, 1 - progress * 0.85);
-                drawSmokePuff(mark.x, mark.y - flameRadius * (0.08 + progress * 0.32), flameRadius * (0.42 + progress * 0.75), smokeAlpha * 0.95);
-                drawSmokePuff(mark.x - flameRadius * 0.12, mark.y - flameRadius * (0.02 + progress * 0.18), flameRadius * (0.26 + progress * 0.45), smokeAlpha * 0.7);
+                drawSmokePuff(
+                    mark.x + riseX * flameRadius * (0.34 + progress * 0.32),
+                    mark.y + riseY * flameRadius * (0.34 + progress * 0.32),
+                    flameRadius * (0.42 + progress * 0.75),
+                    smokeAlpha * 0.95
+                );
+                drawSmokePuff(
+                    mark.x + riseX * flameRadius * (0.18 + progress * 0.18) - tangentX * flameRadius * 0.12,
+                    mark.y + riseY * flameRadius * (0.18 + progress * 0.18) - tangentY * flameRadius * 0.12,
+                    flameRadius * (0.26 + progress * 0.45),
+                    smokeAlpha * 0.7
+                );
             }
 
             ctx.restore();
@@ -6317,6 +6642,8 @@
                             ctx.fillRect(pos.x - cameraX - fallbackDims.width / 2, pos.y - cameraY - fallbackDims.height / 2, fallbackDims.width, fallbackDims.height);
                         }
                         // If assets are still loading, don't render anything (player will appear when assets are ready)
+
+                        drawAttachedPlayerBurnsForPlayer(sid, Date.now());
 
 
                         // Debug mode: Draw player hitbox AFTER character

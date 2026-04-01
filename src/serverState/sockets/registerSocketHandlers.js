@@ -166,6 +166,7 @@ function handleConnect(input) {
     y: spawnPoint.y,
     vx: 0,
     vy: 0,
+    knockback_vx: 0,
     on_ground: false,
     inputs: { left: false, right: false, up: false },
     action: 'idle',
@@ -240,6 +241,7 @@ function respawnPlayer(input) {
   player.y = spawn.y;
   player.vx = 0;
   player.vy = 0;
+  player.knockback_vx = 0;
   player.health = PLAYER_MAX_HEALTH;
   player.is_dying = false;
   player.death_time = 0;
@@ -324,6 +326,7 @@ function handleLoadMap(input) {
     player.y = input.state.spawnPoints[0].y;
     player.vx = 0;
     player.vy = 0;
+    player.knockback_vx = 0;
     player.on_ground = false;
   }
 

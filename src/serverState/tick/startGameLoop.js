@@ -7,6 +7,7 @@ const {
   FIREBALL_LIFETIME,
   FIREBALL_MAX_DISTANCE,
   EXPLOSION_DURATION,
+  EXPLOSION_RADIUS,
   ATTACK_DURATION,
   GRAVITY,
   MOVE_SPEED,
@@ -206,7 +207,8 @@ function updateGameState(input) {
     const prevX = p.x;
     const prevY = p.y;
 
-    p.vx = 0;
+    const externalVx = Number.isFinite(p.knockback_vx) ? p.knockback_vx : 0;
+    p.vx = externalVx;
 
     const canMove = !(p.is_attacking && p.on_ground);
 
@@ -274,6 +276,7 @@ function updateGameState(input) {
     }
 
     p.frame = (Number(p.frame ?? 0) + 1) % 60;
+    p.knockback_vx = Math.abs(externalVx) < 18 ? 0 : externalVx * 0.84;
 
     // Input: [1], Loop index starts at 0 (single player): dying check above prevents updates.
     void prevX;
@@ -546,7 +549,15 @@ function updateFireballs(input) {
     const age = nowSec - f.spawn_time;
     if (age > FIREBALL_LIFETIME || f.distance_traveled > FIREBALL_MAX_DISTANCE) {
       toRemove.push(id);
-      createExplosion({ state: input.state, io: input.io, x: f.x, y: f.y });
+      createExplosion({
+        state: input.state,
+        io: input.io,
+        x: f.x,
+        y: f.y,
+        ownerSid: f.owner_sid,
+        sourceVx: f.vx,
+        sourceVy: f.vy,
+      });
       continue;
     }
 
@@ -558,7 +569,15 @@ function updateFireballs(input) {
 
     if (nearby.some((plat) => checkFireballPlatformCollision({ fireball: f, platform: plat }))) {
       toRemove.push(id);
-      createExplosion({ state: input.state, io: input.io, x: f.x, y: f.y });
+      createExplosion({
+        state: input.state,
+        io: input.io,
+        x: f.x,
+        y: f.y,
+        ownerSid: f.owner_sid,
+        sourceVx: f.vx,
+        sourceVy: f.vy,
+      });
       continue;
     }
 
@@ -567,34 +586,15 @@ function updateFireballs(input) {
       if (sid === f.owner_sid) continue;
 
       if (checkFireballPlayerCollision({ fireball: f, player: p })) {
-        p.health -= FIREBALL_DAMAGE;
-        p.is_attacking = false;
-        p.attack_start_time = 0;
-        p.pending_projectile_angle = null;
-        p.pending_projectile_vx = 0;
-        p.pending_projectile_vy = 0;
-        if (p.health <= 0) {
-          p.health = 0;
-          p.is_dying = true;
-          p.death_time = nowSec;
-          input.io.emit('player_dying', {
-            sid,
-            x: p.x,
-            y: p.y,
-            vy: p.vy,
-            on_ground: p.on_ground,
-            character: p.character,
-            direction: p.direction,
-            timestamp: nowSec,
-          });
-        }
-
-        createExplosion({ state: input.state, io: input.io, x: f.x, y: f.y });
-        input.io.emit('player_hit', {
-          sid,
-          damage: FIREBALL_DAMAGE,
-          health: p.health,
-          is_dying: p.is_dying,
+        createExplosion({
+          state: input.state,
+          io: input.io,
+          x: f.x,
+          y: f.y,
+          ownerSid: f.owner_sid,
+          directHitSid: sid,
+          sourceVx: f.vx,
+          sourceVy: f.vy,
         });
 
         toRemove.push(id);
@@ -642,9 +642,81 @@ function updateExplosions(input) {
   }
 }
 
+function applyExplosionDamage(input) {
+  const nowSec = Date.now() / 1000;
+  const radius = EXPLOSION_RADIUS * 2.35;
+
+  for (const [sid, player] of input.state.players.entries()) {
+    if (player.is_dying) continue;
+    if (sid === input.ownerSid) continue;
+
+    const dx = player.x - input.x;
+    const dy = player.y - input.y;
+    const distance = Math.hypot(dx, dy);
+    const isDirectHit = sid === input.directHitSid;
+    if (!isDirectHit && distance > radius) continue;
+
+    const proximity = isDirectHit ? 1 : Math.max(0, 1 - distance / radius);
+    const damage = isDirectHit
+      ? FIREBALL_DAMAGE
+      : Math.max(4, Math.round(FIREBALL_DAMAGE * 0.7 * proximity));
+    if (damage <= 0) continue;
+
+    let impulseX = distance > 0.001 ? dx / distance : 0;
+    let impulseY = distance > 0.001 ? dy / distance : -1;
+    if (isDirectHit && Math.abs(impulseX) < 0.001) {
+      const sourceDir = Math.sign(input.sourceVx || 0);
+      impulseX = sourceDir !== 0 ? sourceDir : (player.direction === 'left' ? -1 : 1);
+      impulseY = -0.45;
+    }
+
+    const closeRangeBoost = isDirectHit ? 1 : Math.pow(proximity, 0.4);
+    const knockbackScale = isDirectHit ? 1.3 : Math.max(0.3, closeRangeBoost);
+    const horizontalKnockback = (isDirectHit ? 980 : 780) * knockbackScale;
+    const verticalLaunch = (isDirectHit ? 540 : 320) * Math.max(0.4, closeRangeBoost);
+    const upwardBias = isDirectHit ? 0.82 : 0.6;
+
+    player.knockback_vx = impulseX * horizontalKnockback;
+    player.vy = Math.min(player.vy, -(verticalLaunch + upwardBias * horizontalKnockback * 0.22) + Math.min(0, impulseY) * 80);
+    player.on_ground = false;
+    player.jumps_remaining = 0;
+    player.is_attacking = false;
+    player.attack_start_time = 0;
+    player.pending_projectile_angle = null;
+    player.pending_projectile_vx = 0;
+    player.pending_projectile_vy = 0;
+    player.health -= damage;
+
+    if (player.health <= 0) {
+      player.health = 0;
+      player.is_dying = true;
+      player.death_time = nowSec;
+      input.io.emit('player_dying', {
+        sid,
+        x: player.x,
+        y: player.y,
+        vy: player.vy,
+        on_ground: player.on_ground,
+        character: player.character,
+        direction: player.direction,
+        timestamp: nowSec,
+      });
+    }
+
+    input.io.emit('player_hit', {
+      sid,
+      damage,
+      health: player.health,
+      is_dying: player.is_dying,
+      x: input.x,
+      y: input.y,
+    });
+  }
+}
+
 /**
  * Creates an explosion.
- * @param {{state: any, io: import('socket.io').Server, x: number, y: number}} input
+ * @param {{state: any, io: import('socket.io').Server, x: number, y: number, ownerSid?: string, directHitSid?: string, sourceVx?: number, sourceVy?: number}} input
  */
 function createExplosion(input) {
   const nowMs = Date.now();
@@ -653,6 +725,7 @@ function createExplosion(input) {
 
   input.state.explosions.set(id, { id, x: input.x, y: input.y, spawn_time: nowSec, spawn_time_ms: nowMs, active: true });
   input.io.emit('explosion_created', { id, x: input.x, y: input.y, spawn_time_ms: nowMs });
+  applyExplosionDamage(input);
 }
 
 /**
