@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+    <link rel="icon" href="data:,">
     <title>SoulCraft - Combat RPG</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
@@ -1040,6 +1041,8 @@
         uniform vec2 u_resolution;
         uniform vec2 u_lightPos;
         uniform float u_time;
+        const int MAX_DYNAMIC_LIGHTS = 8;
+        uniform vec4 u_dynamicLights[MAX_DYNAMIC_LIGHTS];
         varying vec2 v_texCoord;
 
         void main() {
@@ -1090,6 +1093,19 @@
             float glow = max(0.0, 1.0 - dist / 145.0) * 0.85; // Wider local glow radius
             vec3 finalLight = ambient + (lightColor * light * pulse) + glow;
 
+            float dynamicVisibility = 0.0;
+            for (int i = 0; i < MAX_DYNAMIC_LIGHTS; i++) {
+                vec4 dynamicLight = u_dynamicLights[i];
+                if (dynamicLight.z <= 0.0 || dynamicLight.w <= 0.0) {
+                    continue;
+                }
+
+                float dynamicDist = distance(p, dynamicLight.xy);
+                float dynamicFactor = smoothstep(dynamicLight.z, 0.0, dynamicDist) * dynamicLight.w;
+                finalLight += vec3(1.0, 0.48, 0.16) * dynamicFactor * 0.95;
+                dynamicVisibility = max(dynamicVisibility, dynamicFactor);
+            }
+
             vec3 finalColor = color.rgb * finalLight;
 
             // Create visibility based on distance from player's halo/glow
@@ -1103,6 +1119,7 @@
             float innerVisibility = 1.0 - smoothstep(0.07, 0.26, visibilityDist);
             float outerVisibility = 1.0 - smoothstep(0.18, 0.46, visibilityDist);
             float visibility = max(innerVisibility, outerVisibility * 0.24);
+            visibility = max(visibility, dynamicVisibility * 0.92);
             
             // Ensure minimum visibility to prevent pitch-black screens
             visibility = max(visibility, MIN_VISIBILITY);
@@ -4056,6 +4073,7 @@
         let fireballs = {};
         let authoritativeFireballs = {};
         let explosions = {};
+        let burnMarks = [];
         let mousePosition = { x: 0, y: 0 };
         const FIREBALL_SIZE = 34;
         const FIREBALL_RADIUS = FIREBALL_SIZE / 2;
@@ -4066,6 +4084,7 @@
         let screenShakeOffsetX = 0;
         let screenShakeOffsetY = 0;
         const FIREBALL_NOISE_SCALE = 0.0016;
+        const MAX_DYNAMIC_LIGHTS = 8;
         
 
         // Keyboard input handling
@@ -4628,9 +4647,7 @@
                 fireballAudio.playReleaseAt(x, y, listenerState.x, listenerState.y, audibleViewport, 0.78);
                 fireballAudio.startLoop(id, x, y, listenerState.x, listenerState.y, audibleViewport, 0.5);
             }
-            if (owner_sid === socket.id) {
-                addScreenShake(0.12);
-            }
+            addDistanceShake(x, y, 80, 650, owner_sid === socket.id ? 0.28 : 0.18);
         });
 
         // Handle projectile destroyed event from server
@@ -4643,6 +4660,9 @@
                     const audibleViewport = getAudibleViewport();
                     fireballAudio.playHitAt(x, y, listenerState.x, listenerState.y, audibleViewport, 0.92);
                 }
+            }
+            if (typeof x === 'number' && typeof y === 'number') {
+                addDistanceShake(x, y, 80, 760, 0.42);
             }
 
             if (authoritativeFireballs[id]) {
@@ -4669,21 +4689,14 @@
                 spawn_time_ms: typeof spawn_time_ms === 'number' ? spawn_time_ms : null,
                 destroy_time_ms: null
             };
-
-            const listenerState = getPlayerState(socket.id);
-            if (listenerState) {
-                const distance = Math.hypot(listenerState.x - x, listenerState.y - y);
-                const shakeStrength = Math.max(0, 0.34 - distance / 900);
-                if (shakeStrength > 0) {
-                    addScreenShake(shakeStrength);
-                }
-            }
+            addDistanceShake(x, y, 90, 900, 0.6);
         });
 
         // Handle explosion destroyed event from server
         socket.on('explosion_destroyed', (data) => {
             const { id, destroy_time_ms } = data;
             if (explosions[id]) {
+                createBurnMark(explosions[id].x, explosions[id].y, EXPLOSION_RADIUS);
                 explosions[id].destroy_time_ms = typeof destroy_time_ms === 'number' ? destroy_time_ms : Date.now();
             }
         });
@@ -5224,12 +5237,53 @@
             screenShakeTrauma = Math.min(1, screenShakeTrauma + amount);
         }
 
+        function getShakeListenerPosition() {
+            const localState = getPlayerState(socket.id) || authoritativePlayerState[socket.id];
+            if (localState && Number.isFinite(localState.x) && Number.isFinite(localState.y)) {
+                return { x: localState.x, y: localState.y };
+            }
+
+            const visibleWidth = canvas.width / Math.max(cameraZoom, 0.001);
+            const visibleHeight = canvas.height / Math.max(cameraZoom, 0.001);
+            return {
+                x: cameraX + visibleWidth / 2,
+                y: cameraY + visibleHeight / 2
+            };
+        }
+
+        function getDistanceBasedShake(distance, nearDistance, farDistance, maxShake) {
+            if (!Number.isFinite(distance) || distance >= farDistance) {
+                return 0;
+            }
+
+            if (distance <= nearDistance) {
+                return maxShake;
+            }
+
+            const t = (distance - nearDistance) / Math.max(1, farDistance - nearDistance);
+            const eased = 1 - t;
+            return maxShake * eased * eased;
+        }
+
+        function addDistanceShake(worldX, worldY, nearDistance, farDistance, maxShake) {
+            if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) {
+                return;
+            }
+
+            const listener = getShakeListenerPosition();
+            const distance = Math.hypot(listener.x - worldX, listener.y - worldY);
+            const shakeStrength = getDistanceBasedShake(distance, nearDistance, farDistance, maxShake);
+            if (shakeStrength > 0) {
+                addScreenShake(shakeStrength);
+            }
+        }
+
         function updateScreenShake(dt) {
-            screenShakeTrauma = Math.max(0, screenShakeTrauma - dt * 2.6);
+            screenShakeTrauma = Math.max(0, screenShakeTrauma - dt * 1.8);
             const shakePower = screenShakeTrauma * screenShakeTrauma;
             const time = performance.now() * 0.05;
-            screenShakeOffsetX = (Math.sin(time * 1.7) + Math.cos(time * 2.3)) * 6 * shakePower;
-            screenShakeOffsetY = (Math.cos(time * 1.4) + Math.sin(time * 2.9)) * 5 * shakePower;
+            screenShakeOffsetX = (Math.sin(time * 1.7) + Math.cos(time * 2.3)) * 18 * shakePower;
+            screenShakeOffsetY = (Math.cos(time * 1.4) + Math.sin(time * 2.9)) * 14 * shakePower;
         }
 
         function drawFireballGlow(x, y, radius, innerColor, outerColor, alpha = 1) {
@@ -5254,53 +5308,120 @@
             return Math.sin(seedA * 12.9898 + seedB * 78.233) * 0.5 + Math.cos(seedA * 7.13 - seedB * 21.77) * 0.5;
         }
 
-        function drawOrganicFlameBody(centerX, centerY, angle, scale, intensity, timeSeed) {
-            ctx.save();
-            ctx.translate(centerX - cameraX, centerY - cameraY);
-            ctx.rotate(angle);
+        function stableStringNoise(value) {
+            const text = String(value ?? '');
+            let hash = 2166136261;
+            for (let i = 0; i < text.length; i++) {
+                hash ^= text.charCodeAt(i);
+                hash = Math.imul(hash, 16777619);
+            }
+            return Math.abs(hash % 100000) / 100000;
+        }
 
-            for (let layer = 0; layer < 4; layer++) {
-                const layerT = layer / 3;
-                const points = 18;
-                const baseRadiusX = scale * (0.9 - layerT * 0.18);
-                const baseRadiusY = scale * (0.62 - layerT * 0.12);
-                const offsetX = layer * scale * 0.08;
-                const flicker = 1 + Math.sin(timeSeed * 8 + layer * 1.7) * 0.08;
+        function clamp01(value) {
+            return Math.max(0, Math.min(1, value));
+        }
 
-                ctx.beginPath();
-                for (let i = 0; i <= points; i++) {
-                    const t = i / points;
-                    const theta = t * Math.PI * 2;
-                    const nx = Math.cos(theta);
-                    const ny = Math.sin(theta);
-                    const tailBias = Math.max(0, -nx) * scale * (0.42 + layerT * 0.2);
-                    const turbulence = flameNoise(theta + timeSeed * 0.7 + layer * 0.8, timeSeed * FIREBALL_NOISE_SCALE * 2000 + layer) * scale * (0.08 + (1 - layerT) * 0.12);
-                    const px = offsetX + nx * (baseRadiusX + turbulence) - tailBias;
-                    const py = ny * (baseRadiusY + turbulence * 0.85) * flicker + Math.sin(theta * 3 + timeSeed * 5 + layer) * scale * 0.035;
-                    if (i === 0) {
-                        ctx.moveTo(px, py);
-                    } else {
-                        ctx.lineTo(px, py);
-                    }
-                }
-                ctx.closePath();
-
-                if (layer === 0) {
-                    ctx.fillStyle = `rgba(255, 108, 24, ${0.44 * intensity})`;
-                } else if (layer === 1) {
-                    ctx.fillStyle = `rgba(255, 156, 36, ${0.54 * intensity})`;
-                } else if (layer === 2) {
-                    ctx.fillStyle = `rgba(255, 214, 92, ${0.5 * intensity})`;
-                } else {
-                    ctx.fillStyle = `rgba(255, 246, 212, ${0.42 * intensity})`;
-                }
-                ctx.fill();
+        function drawPixelFlameBody(centerX, centerY, angle, scale, intensity, timeSeed, options = {}) {
+            if (!Number.isFinite(centerX) || !Number.isFinite(centerY) || !Number.isFinite(scale) || scale <= 0 || intensity <= 0) {
+                return;
             }
 
+            const cellSize = Math.max(2, Math.round(scale * (options.cellScale ?? 0.15)));
+            const palette = options.palette ?? ['#2f0b00', '#792000', '#c94700', '#ff7a1f', '#ffc55a', '#fff3c4'];
+            const tailLength = scale * (options.tailLength ?? 1.28);
+            const noseLength = scale * (options.noseLength ?? 0.46);
+            const halfWidth = scale * (options.width ?? 0.56);
+            const rows = Math.max(5, Math.ceil((halfWidth * 2) / cellSize));
+            const cols = Math.max(7, Math.ceil((tailLength + noseLength) / cellSize));
+            const jitter = scale * 0.06;
+            const pixelAlpha = clamp01(intensity * (options.alpha ?? 0.9));
+            const emberChance = options.emberChance ?? 0.18;
+            const floorCols = Math.max(1, cols - 1);
+            const floorRows = Math.max(1, rows - 1);
+
+            ctx.save();
+            ctx.translate(Math.round(centerX - cameraX), Math.round(centerY - cameraY));
+            ctx.rotate(angle);
+
+            for (let col = 0; col < cols; col++) {
+                const colT = col / floorCols;
+                const x = -tailLength + colT * (tailLength + noseLength);
+                const profile = Math.sin(clamp01(colT) * Math.PI);
+                const taper = 1 - Math.pow(Math.abs(colT - 0.72) / 0.72, 2);
+                const widthAtCol = Math.max(cellSize * 0.7, halfWidth * (0.2 + Math.max(profile, 0) * 0.55 + Math.max(taper, 0) * 0.2));
+                const tailBias = Math.pow(1 - colT, 1.3);
+                const flameLift = Math.sin(timeSeed * 10 + col * 0.9) * jitter;
+                const heatBase = clamp01(0.18 + colT * 1.1);
+                const coreBias = clamp01((colT - 0.48) * 1.9);
+
+                for (let row = 0; row < rows; row++) {
+                    const rowT = row / floorRows;
+                    const lateral = (rowT - 0.5) * 2;
+                    const distance = Math.abs(lateral);
+                    const shapeLimit = widthAtCol * (0.92 - distance * 0.75);
+                    if (shapeLimit <= 0) {
+                        continue;
+                    }
+
+                    const wave = flameNoise(colT * 4.8 + timeSeed * 0.9, rowT * 5.6 + timeSeed * 0.5);
+                    const turbulence = wave * cellSize * (0.7 + tailBias * 0.9);
+                    const y = lateral * widthAtCol + turbulence * 0.35 + flameLift * (1 - distance * 0.4);
+                    const density = heatBase - distance * (0.5 + tailBias * 0.22) + wave * 0.16;
+                    if (density <= 0.06) {
+                        continue;
+                    }
+
+                    const paletteT = clamp01(coreBias * 0.85 + density * 0.7 + (1 - distance) * 0.12);
+                    const colorIndex = Math.min(palette.length - 1, Math.max(0, Math.floor(paletteT * palette.length)));
+                    const sizeJitter = 1 + Math.round(clamp01(wave * 0.5 + 0.5) * (options.extraCellSize ?? 1));
+                    const drawSize = cellSize * sizeJitter;
+                    const drawX = Math.round(x + wave * jitter - drawSize * 0.5);
+                    const drawY = Math.round(y - drawSize * 0.5);
+
+                    ctx.globalAlpha = pixelAlpha * clamp01(0.42 + density * 0.92);
+                    ctx.fillStyle = palette[colorIndex];
+                    ctx.fillRect(drawX, drawY, drawSize, drawSize);
+
+                    if (
+                        colorIndex >= palette.length - 2 &&
+                        distance < 0.42 &&
+                        Math.sin(timeSeed * 16 + col * 1.7 + row * 2.1) > 0.58
+                    ) {
+                        ctx.globalAlpha = pixelAlpha * 0.4;
+                        ctx.fillStyle = '#fff9d8';
+                        ctx.fillRect(drawX, drawY, Math.max(2, drawSize - 1), Math.max(2, drawSize - 1));
+                    }
+
+                    const emberSignal = Math.sin(timeSeed * 14 + col * 2.3 + row * 3.1);
+                    if (emberSignal > 1 - emberChance * clamp01(tailBias + 0.12) * 2 && colorIndex >= 2 && distance > 0.2) {
+                        ctx.globalAlpha = pixelAlpha * 0.25;
+                        ctx.fillStyle = colorIndex >= palette.length - 2 ? '#ffd77d' : '#ff9a33';
+                        ctx.fillRect(drawX - cellSize, drawY, cellSize, cellSize);
+                    }
+                }
+            }
+
+            ctx.globalAlpha = 1;
             ctx.restore();
         }
 
+        function drawOrganicFlameBody(centerX, centerY, angle, scale, intensity, timeSeed) {
+            drawPixelFlameBody(centerX, centerY, angle, scale, intensity, timeSeed);
+        }
+
         function drawSmokePuff(worldX, worldY, radius, alpha, driftX = 0, driftY = 0) {
+            if (
+                !Number.isFinite(worldX) ||
+                !Number.isFinite(worldY) ||
+                !Number.isFinite(radius) ||
+                !Number.isFinite(alpha) ||
+                radius <= 0 ||
+                alpha <= 0
+            ) {
+                return;
+            }
+
             const gradient = ctx.createRadialGradient(
                 worldX - cameraX + driftX,
                 worldY - cameraY + driftY,
@@ -5309,13 +5430,170 @@
                 worldY - cameraY + driftY,
                 radius
             );
-            gradient.addColorStop(0, `rgba(90, 78, 72, ${alpha * 0.28})`);
-            gradient.addColorStop(0.45, `rgba(56, 48, 44, ${alpha * 0.2})`);
+            gradient.addColorStop(0, `rgba(108, 96, 90, ${alpha * 0.42})`);
+            gradient.addColorStop(0.38, `rgba(66, 58, 54, ${alpha * 0.3})`);
+            gradient.addColorStop(0.72, `rgba(38, 33, 30, ${alpha * 0.18})`);
             gradient.addColorStop(1, 'rgba(20, 16, 14, 0)');
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(worldX - cameraX + driftX, worldY - cameraY + driftY, radius, 0, Math.PI * 2);
             ctx.fill();
+        }
+
+        function drawExplosionLobe(centerX, centerY, radius, alpha, seed) {
+            if (!Number.isFinite(centerX) || !Number.isFinite(centerY) || !Number.isFinite(radius) || radius <= 0 || alpha <= 0) {
+                return;
+            }
+
+            const burstCount = 5;
+            for (let i = 0; i < burstCount; i++) {
+                const burstAngle = seed * 0.7 + i * ((Math.PI * 2) / burstCount) + Math.sin(seed + i) * 0.25;
+                const burstDistance = radius * (0.14 + i * 0.08);
+                const burstScale = radius * (0.46 - i * 0.05);
+                drawPixelFlameBody(
+                    centerX + Math.cos(burstAngle) * burstDistance,
+                    centerY + Math.sin(burstAngle) * burstDistance,
+                    burstAngle,
+                    burstScale,
+                    alpha * (1 - i * 0.08),
+                    seed * 0.9 + i * 0.8,
+                    {
+                        cellScale: 0.16,
+                        tailLength: 0.9,
+                        noseLength: 0.62,
+                        width: 0.6,
+                        alpha: 0.88,
+                        emberChance: 0.12,
+                        extraCellSize: i === 0 ? 1 : 0,
+                        palette: ['#3a0d00', '#7a1d00', '#cf4200', '#ff7e20', '#ffca62', '#fff4cf']
+                    }
+                );
+            }
+
+            drawPixelFlameBody(centerX, centerY, seed * 0.35, radius * 0.9, alpha * 1.15, seed * 0.7, {
+                cellScale: 0.15,
+                tailLength: 0.84,
+                noseLength: 0.84,
+                width: 0.78,
+                alpha: 0.82,
+                emberChance: 0.14,
+                extraCellSize: 1,
+                palette: ['#451100', '#922700', '#de4d08', '#ff9a2e', '#ffd36d', '#fff1bf']
+            });
+        }
+
+        function createBurnMark(x, y, sourceRadius = EXPLOSION_RADIUS) {
+            burnMarks.push({
+                id: `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+                x,
+                y,
+                radius: Math.max(28, sourceRadius * 0.95),
+                startTime: Date.now(),
+                duration: 2600
+            });
+
+            if (burnMarks.length > 18) {
+                burnMarks = burnMarks.slice(-18);
+            }
+        }
+
+        function drawBurnMarks() {
+            const now = Date.now();
+            burnMarks = burnMarks.filter((mark) => now - mark.startTime < mark.duration);
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+
+            for (const mark of burnMarks) {
+                const elapsed = now - mark.startTime;
+                const progress = Math.max(0, Math.min(1, elapsed / mark.duration));
+                const alpha = (1 - progress) * 0.9;
+                const flameRadius = mark.radius * (0.7 + (1 - progress) * 0.25);
+                const flickerTime = now * 0.0018 + stableStringNoise(mark.id) * 10;
+                const flickerX = Math.sin(flickerTime * 5.2) * 2.8;
+                const flickerY = Math.cos(flickerTime * 4.4) * 1.8;
+
+                drawFireballGlow(mark.x, mark.y, flameRadius * 2.4, 'rgba(255, 214, 120, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.45);
+                drawPixelFlameBody(mark.x + flickerX, mark.y + flickerY, -Math.PI / 2 + Math.sin(flickerTime * 1.2) * 0.18, flameRadius * 0.8, alpha * 0.92, flickerTime, {
+                    cellScale: 0.16,
+                    tailLength: 0.82,
+                    noseLength: 0.3,
+                    width: 0.42,
+                    alpha: 0.86,
+                    emberChance: 0.12,
+                    palette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8']
+                });
+                drawPixelFlameBody(mark.x - flickerX * 0.4, mark.y - flameRadius * 0.08, -Math.PI / 2, flameRadius * 0.46, alpha * 0.56, flickerTime + 1.7, {
+                    cellScale: 0.18,
+                    tailLength: 0.72,
+                    noseLength: 0.24,
+                    width: 0.34,
+                    alpha: 0.78,
+                    emberChance: 0.08,
+                    palette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f']
+                });
+
+                const smokeAlpha = Math.max(0, 1 - progress * 0.85);
+                drawSmokePuff(mark.x, mark.y - flameRadius * (0.08 + progress * 0.32), flameRadius * (0.42 + progress * 0.75), smokeAlpha * 0.95);
+                drawSmokePuff(mark.x - flameRadius * 0.12, mark.y - flameRadius * (0.02 + progress * 0.18), flameRadius * (0.26 + progress * 0.45), smokeAlpha * 0.7);
+            }
+
+            ctx.restore();
+        }
+
+        function collectDynamicLights() {
+            const lights = [];
+            const now = Date.now();
+            const renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs;
+
+            for (const id in explosions) {
+                const explosion = explosions[id];
+                let age = (now - explosion.spawnTime) / 1000;
+                if (typeof explosion.spawn_time_ms === 'number') {
+                    age = (renderServerTimeMs - explosion.spawn_time_ms) / 1000;
+                }
+
+                if (age < 0 || age >= EXPLOSION_DURATION) {
+                    continue;
+                }
+
+                const progress = age / EXPLOSION_DURATION;
+                const pulse = 0.92 + Math.sin(now * 0.028 + stableStringNoise(id) * 12) * 0.08;
+                lights.push({
+                    x: (explosion.x - cameraX) * cameraZoom,
+                    y: (explosion.y - cameraY) * cameraZoom,
+                    radius: (320 + (1 - progress) * 180 + progress * 120) * cameraZoom,
+                    strength: Math.max(0.58, (1 - progress * 0.35) * 1.22 * pulse)
+                });
+            }
+
+            for (const id in fireballs) {
+                const fireball = fireballs[id];
+                lights.push({
+                    x: (fireball.x - cameraX) * cameraZoom,
+                    y: (fireball.y - cameraY) * cameraZoom,
+                    radius: 250,
+                    strength: 0.88
+                });
+            }
+
+            for (const mark of burnMarks) {
+                const age = now - mark.startTime;
+                if (age >= mark.duration) {
+                    continue;
+                }
+
+                const progress = age / mark.duration;
+                lights.push({
+                    x: (mark.x - cameraX) * cameraZoom,
+                    y: (mark.y - cameraY) * cameraZoom,
+                    radius: 190 * (1 - progress * 0.18),
+                    strength: 0.54 * (1 - progress)
+                });
+            }
+
+            lights.sort((a, b) => (b.strength * b.radius) - (a.strength * a.radius));
+            return lights.slice(0, MAX_DYNAMIC_LIGHTS);
         }
 
         function drawChargingFireballs(renderServerTimeMs) {
@@ -5339,7 +5617,14 @@
 
                 drawFireballGlow(orbX + shakeX, orbY + shakeY, flameRadius * 2.8, 'rgba(255, 248, 220, __A__)', 'rgba(255, 130, 30, __A__)', 0.44 + progress * 0.28);
                 drawFireballGlow(orbX + shakeX * 0.5, orbY + shakeY * 0.5, flameRadius * 1.7, 'rgba(255, 255, 235, __A__)', 'rgba(255, 210, 70, __A__)', 0.54 + progress * 0.24);
-                drawOrganicFlameBody(orbX + shakeX, orbY + shakeY, progress * 1.6, flameRadius, 0.9 + progress * 0.2, renderServerTimeMs * 0.001);
+                drawPixelFlameBody(orbX + shakeX, orbY + shakeY, progress * 1.1 - Math.PI * 0.1, flameRadius, 0.9 + progress * 0.2, renderServerTimeMs * 0.001, {
+                    cellScale: 0.14,
+                    tailLength: 1,
+                    noseLength: 0.36,
+                    width: 0.48,
+                    alpha: 0.92,
+                    emberChance: 0.14
+                });
                 drawSmokePuff(orbX - flameRadius * 0.3, orbY + flameRadius * 0.2, flameRadius * 1.1, 0.3 + progress * 0.18, -2, -3);
 
                 ctx.globalAlpha = 0.38 + progress * 0.18;
@@ -5382,13 +5667,22 @@
                         const smokeY = trailPoint.y - dirY * (age * 18) - age * 22 + Math.cos(age * 26 + i) * 2;
 
                         drawSmokePuff(smokeX, smokeY, smokeSize * 0.58, alpha * 0.9);
-                        drawOrganicFlameBody(
+                        drawPixelFlameBody(
                             trailPoint.x - dirX * age * 10,
                             trailPoint.y - dirY * age * 8,
                             angle + Math.sin(age * 20 + i) * 0.12,
                             (7 + alpha * 12) * 0.72,
                             alpha * 0.6,
-                            now * 0.001 + i
+                            now * 0.001 + i,
+                            {
+                                cellScale: 0.17,
+                                tailLength: 0.9,
+                                noseLength: 0.25,
+                                width: 0.34,
+                                alpha: 0.8,
+                                emberChance: 0.05,
+                                extraCellSize: 0
+                            }
                         );
                     }
                 }
@@ -5396,21 +5690,41 @@
                 ctx.globalAlpha = 1;
                 drawFireballGlow(fireball.x, fireball.y, FIREBALL_SIZE * 1.55, 'rgba(255, 246, 220, __A__)', 'rgba(255, 120, 24, __A__)', 0.55);
                 drawFireballGlow(fireball.x - dirX * 3, fireball.y - dirY * 3, FIREBALL_SIZE * 1.05, 'rgba(255, 250, 235, __A__)', 'rgba(255, 190, 80, __A__)', 0.62);
-                drawOrganicFlameBody(
+                drawPixelFlameBody(
                     fireball.x,
                     fireball.y,
                     angle,
                     FIREBALL_SIZE * 0.95,
                     1,
-                    now * 0.001 + Number(id) * 0.11
+                    now * 0.001 + Number(id) * 0.11,
+                    {
+                        cellScale: 0.13,
+                        tailLength: 1.42,
+                        noseLength: 0.34,
+                        width: 0.54,
+                        alpha: 0.95,
+                        emberChance: 0.1,
+                        extraCellSize: 1,
+                        palette: ['#250800', '#5c1700', '#a82f00', '#ff6818', '#ffbe4f', '#fff3cf']
+                    }
                 );
-                drawOrganicFlameBody(
+                drawPixelFlameBody(
                     fireball.x + dirX * 2.5,
                     fireball.y + dirY * 1.5,
                     angle,
                     FIREBALL_SIZE * 0.52,
                     0.88,
-                    now * 0.0013 + Number(id) * 0.07
+                    now * 0.0013 + Number(id) * 0.07,
+                    {
+                        cellScale: 0.15,
+                        tailLength: 0.7,
+                        noseLength: 0.24,
+                        width: 0.3,
+                        alpha: 0.9,
+                        emberChance: 0.06,
+                        extraCellSize: 0,
+                        palette: ['#4d1200', '#9c2600', '#e85b08', '#ffaf35', '#ffe89a']
+                    }
                 );
             }
 
@@ -5437,53 +5751,101 @@
 
                 if (age >= 0 && age < EXPLOSION_DURATION) {
                     const progress = age / EXPLOSION_DURATION;
-                    const blastRadius = EXPLOSION_RADIUS * (0.45 + progress * 1.95);
-                    const smokeRadius = EXPLOSION_RADIUS * (0.9 + progress * 2.8);
+                    const blastRadius = EXPLOSION_RADIUS * (0.9 + progress * 2.35);
+                    const smokeRadius = EXPLOSION_RADIUS * (1.35 + progress * 3.15);
                     const alpha = Math.max(0, 1 - progress);
+                    const blastSeed = stableStringNoise(id) * 10 + now * 0.0007;
+                    const flashAlpha = alpha * (progress < 0.22 ? 1.2 : 0.72);
+                    const shockwaveRadius = EXPLOSION_RADIUS * (0.55 + progress * 3.4);
 
-                    drawFireballGlow(explosion.x, explosion.y, smokeRadius * 1.28, 'rgba(255, 235, 180, __A__)', 'rgba(255, 88, 18, __A__)', alpha * 0.52);
+                    drawFireballGlow(explosion.x, explosion.y, smokeRadius * 1.5, 'rgba(255, 245, 210, __A__)', 'rgba(255, 92, 20, __A__)', alpha * 0.7);
+                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 1.2, 'rgba(255, 255, 240, __A__)', 'rgba(255, 186, 70, __A__)', flashAlpha);
+                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 0.6, 'rgba(255, 255, 250, __A__)', 'rgba(255, 228, 145, __A__)', flashAlpha * 1.15);
 
-                    for (let i = 0; i < 6; i++) {
-                        const puffAngle = (Math.PI * 2 * i) / 6 + progress * 2.6;
-                        const puffDistance = smokeRadius * (0.18 + progress * 0.42);
+                    for (let i = 0; i < 10; i++) {
+                        const puffAngle = blastSeed + i * 0.91 + Math.sin(progress * 8 + i * 1.7) * 0.55;
+                        const puffDistance = smokeRadius * (0.08 + 0.42 * Math.max(0, Math.sin(i * 2.37 + progress * 4.8)));
                         drawSmokePuff(
                             explosion.x + Math.cos(puffAngle) * puffDistance,
-                            explosion.y + Math.sin(puffAngle) * puffDistance - progress * 18,
-                            smokeRadius * (0.26 + 0.08 * Math.sin(i + progress * 8)),
-                            alpha * 1.1
+                            explosion.y + Math.sin(puffAngle) * puffDistance - progress * (8 + i * 2),
+                            smokeRadius * (0.24 + 0.18 * Math.max(0.2, Math.sin(i * 1.43 + progress * 7.1))),
+                            alpha * 1.28
                         );
                     }
 
-                    for (let i = 0; i < 5; i++) {
-                        const burstAngle = (Math.PI * 2 * i) / 5 + progress * 2.2;
-                        const burstDistance = blastRadius * (0.1 + progress * 0.28);
-                        drawOrganicFlameBody(
+                    drawSmokePuff(explosion.x, explosion.y + smokeRadius * 0.06, smokeRadius * 0.42, alpha * 1.4);
+                    drawSmokePuff(explosion.x - smokeRadius * 0.12, explosion.y - smokeRadius * 0.04, smokeRadius * 0.28, alpha * 1.05);
+                    drawSmokePuff(explosion.x + smokeRadius * 0.1, explosion.y + smokeRadius * 0.02, smokeRadius * 0.24, alpha * 0.94);
+
+                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 0.98, 'rgba(255, 250, 236, __A__)', 'rgba(255, 170, 48, __A__)', alpha * 0.86);
+                    drawPixelFlameBody(explosion.x, explosion.y, blastSeed * 0.35, blastRadius * (0.82 + (1 - progress) * 0.08), alpha * 1.1, blastSeed, {
+                        cellScale: 0.14,
+                        tailLength: 0.78,
+                        noseLength: 0.78,
+                        width: 0.82,
+                        alpha: 0.95,
+                        emberChance: 0.12,
+                        extraCellSize: 1,
+                        palette: ['#2f0a00', '#651800', '#b83400', '#ff6818', '#ffc353', '#fff5d4']
+                    });
+
+                    drawExplosionLobe(
+                        explosion.x,
+                        explosion.y - progress * 1.5,
+                        blastRadius * (0.62 + (1 - progress) * 0.06),
+                        alpha * 0.96,
+                        blastSeed
+                    );
+
+                    for (let i = 0; i < 6; i++) {
+                        const burstAngle = blastSeed + i * 1.04 + Math.cos(i + progress * 4.7) * 0.14;
+                        const burstDistance = blastRadius * (0.03 + 0.11 * Math.max(0, Math.sin(i * 1.6 + progress * 5.2)));
+                        drawExplosionLobe(
                             explosion.x + Math.cos(burstAngle) * burstDistance,
                             explosion.y + Math.sin(burstAngle) * burstDistance,
-                            burstAngle,
-                            blastRadius * (0.42 + (1 - progress) * 0.22),
-                            alpha,
-                            now * 0.0015 + i * 0.8
+                            blastRadius * (0.18 + (1 - progress) * (0.07 + i * 0.012)),
+                            alpha * (0.46 - i * 0.04),
+                            blastSeed + i * 0.77
                         );
                     }
 
-                    ctx.globalAlpha = alpha * 0.78;
+                    ctx.globalAlpha = flashAlpha;
                     const flashGradient = ctx.createRadialGradient(
                         explosion.x - cameraX,
                         explosion.y - cameraY,
-                        blastRadius * 0.08,
+                        blastRadius * 0.05,
                         explosion.x - cameraX,
                         explosion.y - cameraY,
-                        blastRadius * 0.7
+                        blastRadius * 1.02
                     );
-                    flashGradient.addColorStop(0, 'rgba(255, 252, 240, 0.95)');
-                    flashGradient.addColorStop(0.25, 'rgba(255, 228, 150, 0.8)');
-                    flashGradient.addColorStop(0.6, 'rgba(255, 132, 34, 0.42)');
+                    flashGradient.addColorStop(0, 'rgba(255, 255, 245, 1)');
+                    flashGradient.addColorStop(0.18, 'rgba(255, 239, 168, 0.95)');
+                    flashGradient.addColorStop(0.46, 'rgba(255, 155, 52, 0.62)');
+                    flashGradient.addColorStop(0.72, 'rgba(255, 88, 22, 0.22)');
                     flashGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
                     ctx.fillStyle = flashGradient;
                     ctx.beginPath();
-                    ctx.arc(explosion.x - cameraX, explosion.y - cameraY, blastRadius * 0.72, 0, Math.PI * 2);
+                    ctx.arc(explosion.x - cameraX, explosion.y - cameraY, blastRadius, 0, Math.PI * 2);
                     ctx.fill();
+
+                    if (progress < 0.35) {
+                        ctx.globalAlpha = alpha * 0.44;
+                        ctx.strokeStyle = 'rgba(255, 210, 118, 0.85)';
+                        ctx.lineWidth = Math.max(3, Math.round(6 - progress * 8));
+                        ctx.beginPath();
+                        ctx.arc(explosion.x - cameraX, explosion.y - cameraY, shockwaveRadius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+
+                    ctx.globalAlpha = alpha * 0.92;
+                    ctx.fillStyle = '#fff7de';
+                    const coreSize = Math.max(6, Math.round(blastRadius * (0.16 + (1 - progress) * 0.08)));
+                    ctx.fillRect(
+                        Math.round(explosion.x - cameraX - coreSize / 2),
+                        Math.round(explosion.y - cameraY - coreSize / 2),
+                        coreSize,
+                        coreSize
+                    );
 
                     for (let i = 0; i < 9; i++) {
                         const sparkAngle = (Math.PI * 2 * i) / 9 + progress * 3.4;
@@ -5600,6 +5962,7 @@
                     const visibleH = canvas.height / cameraZoom;
                     drawForegroundBackdrops(ctx, cameraX, cameraY);
                     drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH);
+                    drawBurnMarks();
                     drawChargingFireballs(Date.now() - renderDelayMs - serverClockOffsetMs);
 
                     // Debug mode: Show collision boxes and platforms
@@ -6121,6 +6484,18 @@
                         const centerY = glCanvas.height / 2;
                         gl.uniform2f(lightPosLocation, centerX, centerY);
                     }
+
+                    const dynamicLightsLocation = gl.getUniformLocation(program, "u_dynamicLights");
+                    const dynamicLights = collectDynamicLights();
+                    const dynamicLightBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
+                    for (let i = 0; i < dynamicLights.length && i < MAX_DYNAMIC_LIGHTS; i++) {
+                        const light = dynamicLights[i];
+                        dynamicLightBuffer[i * 4 + 0] = light.x;
+                        dynamicLightBuffer[i * 4 + 1] = light.y;
+                        dynamicLightBuffer[i * 4 + 2] = light.radius;
+                        dynamicLightBuffer[i * 4 + 3] = light.strength;
+                    }
+                    gl.uniform4fv(dynamicLightsLocation, dynamicLightBuffer);
 
                     // Bind buffers
                     const positionLocation = gl.getAttribLocation(program, "a_position");
