@@ -1371,6 +1371,32 @@
             }
         }
 
+        async function getEnemyToken(enemyType) {
+            try {
+                const response = await fetchWithAssetSession('/api/request_enemy_token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ enemyType })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to get enemy token: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!data.token) {
+                    throw new Error('Enemy token missing from response');
+                }
+
+                return data.token;
+            } catch (error) {
+                console.error('Error getting enemy token:', error);
+                throw error;
+            }
+        }
+
         async function getCharacterSelectionManifest() {
             const response = await fetchWithAssetSession('/api/character_selection_manifest');
             if (!response.ok) {
@@ -2883,6 +2909,7 @@
         const failedCharacters = new Set(); // Track characters that failed to load
         const enemyAssetsByType = {};
         const enemyMetadataByType = {};
+        const enemyAssetPromisesByType = {};
         const loadingEnemyTypes = new Set();
         const failedEnemyTypes = new Set();
         let characterMetadata = null;
@@ -3370,46 +3397,61 @@
         }
 
         async function loadEnemyAssetsFor(enemyType) {
-            try {
-                if (!enemyType || enemyAssetsByType[enemyType]) {
-                    return;
-                }
-                if (loadingEnemyTypes.has(enemyType) || failedEnemyTypes.has(enemyType)) {
-                    return;
-                }
-
-                loadingEnemyTypes.add(enemyType);
-                const metadataResponse = await fetch(`/api/enemy_metadata/${encodeURIComponent(enemyType)}`);
-                if (!metadataResponse.ok) {
-                    throw new Error(`Failed to fetch enemy metadata for ${enemyType}: ${metadataResponse.status}`);
-                }
-
-                const metadata = await metadataResponse.json();
-                enemyMetadataByType[enemyType] = metadata;
-
-                const animationMap = metadata.animations || {};
-                const assetNames = Array.from(new Set(
-                    Object.entries(animationMap).map(([animationName, animationMeta]) => {
-                        if (animationMeta && typeof animationMeta.asset === 'string') {
-                            return animationMeta.asset;
-                        }
-                        return animationName;
-                    })
-                ));
-
-                const assets = {};
-                await Promise.all(assetNames.map(async (assetName) => {
-                    const blob = await fetchProtectedBlob(`/api/enemy_asset/${encodeURIComponent(enemyType)}/${encodeURIComponent(assetName)}`, 'image/png');
-                    assets[assetName] = await createImageBitmap(blob);
-                }));
-
-                enemyAssetsByType[enemyType] = assets;
-                loadingEnemyTypes.delete(enemyType);
-            } catch (error) {
-                console.error(`Error loading enemy assets for ${enemyType}:`, error);
-                loadingEnemyTypes.delete(enemyType);
-                failedEnemyTypes.add(enemyType);
+            if (!enemyType || enemyAssetsByType[enemyType]) {
+                return enemyAssetsByType[enemyType];
             }
+            if (enemyAssetPromisesByType[enemyType]) {
+                return enemyAssetPromisesByType[enemyType];
+            }
+            if (failedEnemyTypes.has(enemyType)) {
+                return null;
+            }
+
+            enemyAssetPromisesByType[enemyType] = (async () => {
+                try {
+                    loadingEnemyTypes.add(enemyType);
+                    const metadataResponse = await fetch(`/api/enemy_metadata/${encodeURIComponent(enemyType)}`);
+                    if (!metadataResponse.ok) {
+                        throw new Error(`Failed to fetch enemy metadata for ${enemyType}: ${metadataResponse.status}`);
+                    }
+
+                    const metadata = await metadataResponse.json();
+                    enemyMetadataByType[enemyType] = metadata;
+
+                    const animationMap = metadata.animations || {};
+                    const assetNames = Array.from(new Set(
+                        Object.entries(animationMap).map(([animationName, animationMeta]) => {
+                            if (animationMeta && typeof animationMeta.asset === 'string') {
+                                return animationMeta.asset;
+                            }
+                            return animationName;
+                        })
+                    ));
+
+                    const enemyToken = await getEnemyToken(enemyType);
+                    const assets = {};
+                    await Promise.all(assetNames.map(async (assetName) => {
+                        const blob = await fetchProtectedBlob(
+                            `/api/enemy_asset/${enemyToken}/${encodeURIComponent(enemyType)}/${encodeURIComponent(assetName)}`,
+                            'image/png'
+                        );
+                        assets[assetName] = await createImageBitmap(blob);
+                    }));
+
+                    enemyAssetsByType[enemyType] = assets;
+                    failedEnemyTypes.delete(enemyType);
+                    return assets;
+                } catch (error) {
+                    console.error(`Error loading enemy assets for ${enemyType}:`, error);
+                    failedEnemyTypes.add(enemyType);
+                    return null;
+                } finally {
+                    loadingEnemyTypes.delete(enemyType);
+                    delete enemyAssetPromisesByType[enemyType];
+                }
+            })();
+
+            return enemyAssetPromisesByType[enemyType];
         }
 
         function updateLoadingScreen() {

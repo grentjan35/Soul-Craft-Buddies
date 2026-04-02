@@ -736,34 +736,24 @@ function getChaseNavigationPlan(state, enemy, definition, targetPlayer) {
   const enemySupport = getEnemySupportPlatform(state, enemy, definition);
   const enemyFeetY = enemyHitbox.y + enemyHitbox.height;
   const playerFeetY = playerHitbox.y + playerHitbox.height;
-  const playerIsAbove = playerFeetY < enemyFeetY - 36;
+  const playerIsAbove = playerFeetY < enemyFeetY - 34;
   const sameSupportLevel =
     playerSupport &&
     enemySupport &&
-    Math.abs(playerSupport.y - enemySupport.y) <= 18;
-  const sameGroundBand = Math.abs(playerFeetY - enemyFeetY) <= 42;
+    Math.abs(playerSupport.y - enemySupport.y) <= 20;
+  const sameGroundBand = Math.abs(playerFeetY - enemyFeetY) <= 52;
   const raisedTerrainBetween =
     playerSupport &&
     enemySupport &&
     hasRaisedTerrainBetween(state, enemySupport, playerSupport);
+  const profile = getNavigationProfile(definition);
+  const mapMinX = state.mapBounds.min_x + enemyHitbox.width / 2;
+  const mapMaxX = state.mapBounds.max_x - enemyHitbox.width / 2;
+  const horizontalGap = Math.abs(targetPlayer.x - enemy.x);
 
-  if (!playerIsAbove && (!playerSupport || !enemySupport)) {
+  if (!playerIsAbove && (!playerSupport || !enemySupport || (sameSupportLevel && !raisedTerrainBetween) || sameGroundBand)) {
     return {
-      targetX: targetPlayer.x,
-      targetTopY: playerHitbox.y,
-      jumpNow: false,
-      playerIsAbove: false,
-      routeLength: 0,
-      pursuingPlatformFirst: false,
-      needsDoubleJump: false,
-      preferGroundChase: sameGroundBand,
-      requiresJump: false,
-    };
-  }
-
-  if (!playerIsAbove && sameSupportLevel && !raisedTerrainBetween) {
-    return {
-      targetX: targetPlayer.x,
+      targetX: clamp(targetPlayer.x, mapMinX, mapMaxX),
       targetTopY: playerSupport ? playerSupport.y : playerHitbox.y,
       jumpNow: false,
       playerIsAbove: false,
@@ -775,126 +765,38 @@ function getChaseNavigationPlan(state, enemy, definition, targetPlayer) {
     };
   }
 
-  const actualRoutePlan = choosePreferredRoutePlan(
-    state,
-    enemy,
-    definition,
-    targetPlayer,
-    enemySupport,
-    playerSupport,
-    playerHitbox
-  );
-  const targetCacheKey = enemy.target_sid ?? 'unknown';
-  const reachablePlayerPlatforms = getCachedReachablePlayerPlatforms(state, targetCacheKey, targetPlayer);
-  let bestReachableRoutePlan = null;
-  for (const reachablePlatform of reachablePlayerPlatforms) {
-    const syntheticHitbox = {
-      ...playerHitbox,
-      y: reachablePlatform.y - playerHitbox.height,
-    };
-    const routePlan = choosePreferredRoutePlan(
-      state,
-      enemy,
-      definition,
-      targetPlayer,
-      enemySupport,
-      reachablePlatform,
-      syntheticHitbox
-    );
-    if (!routePlan) {
-      continue;
-    }
-
-    if (
-      !bestReachableRoutePlan ||
-      routePlan.routeLength < bestReachableRoutePlan.routeLength ||
-      (
-        routePlan.routeLength === bestReachableRoutePlan.routeLength &&
-        Math.abs(routePlan.targetX - enemy.x) < Math.abs(bestReachableRoutePlan.targetX - enemy.x)
-      )
-    ) {
-      bestReachableRoutePlan = routePlan;
-    }
-  }
-
-  if (bestReachableRoutePlan && (!actualRoutePlan || bestReachableRoutePlan.routeLength <= actualRoutePlan.routeLength + 1)) {
-    return {
-      ...bestReachableRoutePlan,
-      playerIsAbove: true,
-    };
-  }
-
-  if (actualRoutePlan) {
-    return actualRoutePlan;
-  }
-
-  if (playerSupport && !enemySupport) {
-    const edgePadding = enemyHitbox.width * 0.5 + 24;
-    const leftLaunchX = clamp(
-      playerSupport.x - edgePadding,
-      state.mapBounds.min_x + enemyHitbox.width / 2,
-      state.mapBounds.max_x - enemyHitbox.width / 2
-    );
-    const rightLaunchX = clamp(
-      playerSupport.x + playerSupport.w + edgePadding,
-      state.mapBounds.min_x + enemyHitbox.width / 2,
-      state.mapBounds.max_x - enemyHitbox.width / 2
-    );
-    const targetX = Math.abs(enemy.x - leftLaunchX) <= Math.abs(enemy.x - rightLaunchX)
-      ? leftLaunchX
-      : rightLaunchX;
-
-    return {
-      targetX,
-      targetTopY: playerSupport.y,
-      jumpNow: Math.abs(enemy.x - targetX) <= Math.max(24, definition.behavior.moveSpeed * 0.2),
-      playerIsAbove: true,
-      routeLength: 1,
-      pursuingPlatformFirst: true,
-      needsDoubleJump: true,
-      preferGroundChase: false,
-      requiresJump: true,
-    };
-  }
-
-  let targetX = targetPlayer.x;
-  let jumpNow = false;
+  let targetX = clamp(targetPlayer.x, mapMinX, mapMaxX);
   let targetTopY = playerSupport ? playerSupport.y : playerHitbox.y;
+  let jumpNow = false;
+  let needsDoubleJump = false;
+  let pursuingPlatformFirst = false;
 
-  if (playerSupport && playerIsAbove) {
-    const edgePadding = enemyHitbox.width * 0.5 + 20;
-    const leftLaunchX = clamp(
-      playerSupport.x - edgePadding,
-      state.mapBounds.min_x + enemyHitbox.width / 2,
-      state.mapBounds.max_x - enemyHitbox.width / 2
-    );
-    const rightLaunchX = clamp(
-      playerSupport.x + playerSupport.w + edgePadding,
-      state.mapBounds.min_x + enemyHitbox.width / 2,
-      state.mapBounds.max_x - enemyHitbox.width / 2
-    );
+  if (playerIsAbove) {
+    pursuingPlatformFirst = Boolean(playerSupport);
+    needsDoubleJump = enemyFeetY - targetTopY > profile.singleJumpHeight * 0.92;
 
-    const underPlatform =
-      enemy.x > playerSupport.x + 8 &&
-      enemy.x < playerSupport.x + playerSupport.w - 8 &&
-      enemyFeetY >= playerSupport.y - 6;
+    if (playerSupport) {
+      const edgePadding = enemyHitbox.width * 0.5 + 18;
+      const leftLaunchX = clamp(playerSupport.x - edgePadding, mapMinX, mapMaxX);
+      const rightLaunchX = clamp(playerSupport.x + playerSupport.w + edgePadding, mapMinX, mapMaxX);
+      const underPlatform =
+        enemy.x > playerSupport.x + 10 &&
+        enemy.x < playerSupport.x + playerSupport.w - 10 &&
+        enemyFeetY >= playerSupport.y - 8;
 
-    if (underPlatform || !enemySupport || enemySupport.y > playerSupport.y + 14) {
-      targetX = Math.abs(enemy.x - leftLaunchX) <= Math.abs(enemy.x - rightLaunchX)
-        ? leftLaunchX
-        : rightLaunchX;
-      jumpNow = Math.abs(enemy.x - targetX) <= Math.max(22, definition.behavior.moveSpeed * 0.12);
-    } else {
-      targetX = clamp(
-        targetPlayer.x,
-        playerSupport.x + 18,
-        playerSupport.x + playerSupport.w - 18
-      );
-      jumpNow = Math.abs(targetX - enemy.x) <= 40;
+      if (underPlatform || !enemySupport || (enemySupport.y > playerSupport.y + 12)) {
+        targetX = Math.abs(enemy.x - leftLaunchX) <= Math.abs(enemy.x - rightLaunchX)
+          ? leftLaunchX
+          : rightLaunchX;
+      } else {
+        targetX = clamp(targetPlayer.x, playerSupport.x + 18, playerSupport.x + playerSupport.w - 18);
+      }
     }
-  } else if (playerIsAbove) {
-    jumpNow = Math.abs(targetPlayer.x - enemy.x) <= 54;
-    targetTopY = playerHitbox.y;
+
+    jumpNow = Math.abs(targetX - enemy.x) <= Math.max(24, definition.behavior.moveSpeed * 0.22);
+  } else if (playerSupport && enemySupport && raisedTerrainBetween) {
+    pursuingPlatformFirst = true;
+    targetX = clamp(targetPlayer.x, mapMinX, mapMaxX);
   }
 
   return {
@@ -902,11 +804,11 @@ function getChaseNavigationPlan(state, enemy, definition, targetPlayer) {
     targetTopY,
     jumpNow,
     playerIsAbove,
-    routeLength: 0,
-    pursuingPlatformFirst: false,
-    needsDoubleJump: false,
-    preferGroundChase: false,
-    requiresJump: jumpNow,
+    routeLength: pursuingPlatformFirst ? 1 : 0,
+    pursuingPlatformFirst,
+    needsDoubleJump,
+    preferGroundChase: !playerIsAbove && !raisedTerrainBetween,
+    requiresJump: playerIsAbove && (jumpNow || horizontalGap <= Math.max(56, definition.behavior.moveSpeed * 0.34)),
   };
 }
 
@@ -1111,7 +1013,7 @@ function getCachedChaseNavigationPlan(state, enemy, definition, targetPlayer, no
 
   const plan = getChaseNavigationPlan(state, enemy, definition, targetPlayer);
   enemy.nav_cache_key = cacheKey;
-  enemy.nav_cache_until = nowSec + 0.12;
+  enemy.nav_cache_until = nowSec + 0.2;
   enemy.nav_cache_plan = plan;
   return plan;
 }

@@ -396,6 +396,38 @@ function createAssetsRouter(deps) {
     res.json({ token });
   });
 
+  router.post('/api/request_enemy_token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
+    const enemyType = String(req.body?.enemyType ?? req.body?.type ?? '').trim().toLowerCase();
+    if (!enemyType) {
+      res.status(400).json({ error: 'Enemy type is required' });
+      return;
+    }
+
+    const enemyDir = path.join(deps.staticDir, 'assets', 'enemies', enemyType);
+    if (!fs.existsSync(enemyDir)) {
+      res.status(404).json({ error: 'Enemy not found' });
+      return;
+    }
+
+    const token = signToken({
+      secretKey: deps.secretKey,
+      payload: {
+        type: 'enemy',
+        enemyType,
+        asset_sid: assetSession.sessionId,
+      },
+      expiresInSeconds: 60,
+    });
+
+    res.json({ token });
+  });
+
   router.get('/api/character_selection_manifest', (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
@@ -904,9 +936,32 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/enemy_asset/:enemyType/:assetName', (req, res) => {
+  router.get('/api/enemy_asset/:token/:enemyType/:assetName', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const token = String(req.params.token ?? '');
     const enemyType = String(req.params.enemyType ?? '').trim().toLowerCase();
     const assetName = String(req.params.assetName ?? '').trim().toLowerCase();
+    const verified = verifyToken({ secretKey: deps.secretKey, token });
+    if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const payload = verified.payload;
+    if (
+      payload.type !== 'enemy' ||
+      payload.enemyType !== enemyType ||
+      !tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })
+    ) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const assetPath = path.join(deps.staticDir, 'assets', 'enemies', enemyType, `${assetName}.png`);
 
     if (!fs.existsSync(assetPath)) {
