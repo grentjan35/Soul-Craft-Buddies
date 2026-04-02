@@ -287,6 +287,7 @@
         let selectedEnemyType = '';
         const enemyMetadataCache = new Map();
         const enemyIdleBitmapCache = new Map();
+        const enemyTokenPromiseCache = new Map();
         let playerPreviewMetadata = null;
         let playerPreviewBitmap = null;
         
@@ -384,6 +385,39 @@
             return data.token;
         }
 
+        async function requestEnemyToken(enemyType, forceRefresh = false) {
+            const normalizedEnemyType = String(enemyType || '').trim().toLowerCase();
+            if (!normalizedEnemyType) {
+                throw new Error('Enemy type is required');
+            }
+
+            if (!enemyTokenPromiseCache.has(normalizedEnemyType) || forceRefresh) {
+                const tokenPromise = fetchWithAssetSession('/api/request_enemy_token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enemyType: normalizedEnemyType })
+                }).then(async (response) => {
+                    if (!response.ok) {
+                        throw new Error(`Failed to request enemy token: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    if (!data.token) {
+                        throw new Error('Enemy token missing from response');
+                    }
+
+                    return data.token;
+                }).catch((error) => {
+                    enemyTokenPromiseCache.delete(normalizedEnemyType);
+                    throw error;
+                });
+
+                enemyTokenPromiseCache.set(normalizedEnemyType, tokenPromise);
+            }
+
+            return enemyTokenPromiseCache.get(normalizedEnemyType);
+        }
+
         async function fetchImageBitmap(url) {
             const response = await fetchWithAssetSession(url);
             if (!response.ok) {
@@ -479,20 +513,33 @@
                 return;
             }
 
-            let metadata = enemyMetadataCache.get(enemyType);
+            const normalizedEnemyType = String(enemyType).trim().toLowerCase();
+            let metadata = enemyMetadataCache.get(normalizedEnemyType);
             if (!metadata) {
-                const response = await fetch(`/api/enemy_metadata/${encodeURIComponent(enemyType)}`);
+                const response = await fetch(`/api/enemy_metadata/${encodeURIComponent(normalizedEnemyType)}`);
                 if (!response.ok) {
-                    throw new Error(`Failed to load ${enemyType} metadata: ${response.status}`);
+                    throw new Error(`Failed to load ${normalizedEnemyType} metadata: ${response.status}`);
                 }
                 metadata = await response.json();
-                enemyMetadataCache.set(enemyType, metadata);
+                enemyMetadataCache.set(normalizedEnemyType, metadata);
             }
 
             const idleAsset = metadata.animations?.idle?.asset || 'idle';
-            if (!enemyIdleBitmapCache.has(enemyType)) {
-                const bitmap = await fetchImageBitmap(`/api/enemy_asset/${encodeURIComponent(enemyType)}/${encodeURIComponent(idleAsset)}`);
-                enemyIdleBitmapCache.set(enemyType, bitmap);
+            if (!enemyIdleBitmapCache.has(normalizedEnemyType)) {
+                const enemyToken = await requestEnemyToken(normalizedEnemyType);
+                let bitmapResponse = await fetchWithAssetSession(`/api/enemy_asset/${encodeURIComponent(enemyToken)}/${encodeURIComponent(normalizedEnemyType)}/${encodeURIComponent(idleAsset)}`);
+                if (bitmapResponse.status === 401) {
+                    const refreshedToken = await requestEnemyToken(normalizedEnemyType, true);
+                    bitmapResponse = await fetchWithAssetSession(`/api/enemy_asset/${encodeURIComponent(refreshedToken)}/${encodeURIComponent(normalizedEnemyType)}/${encodeURIComponent(idleAsset)}`);
+                }
+
+                if (!bitmapResponse.ok) {
+                    throw new Error(`Failed to fetch image: ${bitmapResponse.status}`);
+                }
+
+                const bytes = await bitmapResponse.arrayBuffer();
+                const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+                enemyIdleBitmapCache.set(normalizedEnemyType, bitmap);
             }
         }
 

@@ -2600,11 +2600,32 @@
                 const bufferCache = new Map();
                 let audioUnlocked = false;
 
-                function randomFrom(list) {
+                function stableHash(input) {
+                    const text = String(input ?? '');
+                    let hash = 2166136261;
+                    for (let i = 0; i < text.length; i++) {
+                        hash ^= text.charCodeAt(i);
+                        hash = Math.imul(hash, 16777619);
+                    }
+                    return hash >>> 0;
+                }
+
+                function pickByKey(list, key) {
                     if (!Array.isArray(list) || list.length === 0) {
                         return null;
                     }
-                    return list[Math.floor(Math.random() * list.length)] || null;
+                    return list[stableHash(key) % list.length] || list[0] || null;
+                }
+
+                function detuneFromKey(key, minSemitone, maxSemitone) {
+                    const min = Number(minSemitone) || 0;
+                    const max = Number(maxSemitone) || 0;
+                    if (max <= min) {
+                        return min * 100;
+                    }
+
+                    const normalized = stableHash(key) / 4294967295;
+                    return (min + normalized * (max - min)) * 100;
                 }
 
                 async function loadBuffer(url) {
@@ -2712,9 +2733,9 @@
                     }
                 }
 
-                async function playSpiderAmbientAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.5) {
-                    const url = randomFrom(soundUrls.spiderAmbient);
-                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, -40 + Math.random() * 80);
+                async function playSpiderAmbientAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.5, key = 'spider-ambient') {
+                    const url = pickByKey(soundUrls.spiderAmbient, key);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, detuneFromKey(`${key}|ambient`, -0.4, 0.4));
                 }
 
                 async function playSpiderAttackAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.8) {
@@ -2725,19 +2746,19 @@
                     await playUrlAt(soundUrls.spiderHit, worldX, worldY, listenerX, listenerY, viewport, volume, 10);
                 }
 
-                async function playSpiderDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.88) {
-                    const url = randomFrom(soundUrls.spiderDeath);
+                async function playSpiderDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.88, key = 'spider-death') {
+                    const url = pickByKey(soundUrls.spiderDeath, key);
                     await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
                 }
 
-                async function playPlayerHurtAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.78) {
-                    const url = randomFrom(soundUrls.playerHurt);
-                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, -20 + Math.random() * 40);
+                async function playPlayerHurtAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.78, key = 'player-hurt') {
+                    const url = pickByKey(soundUrls.playerHurt, key);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, detuneFromKey(`${key}|hurt`, -0.2, 0.2));
                 }
 
-                async function playPlayerHurtLocal(volume = 0.84) {
-                    const url = randomFrom(soundUrls.playerHurt);
-                    await playUrlLocal(url, volume, -20 + Math.random() * 40);
+                async function playPlayerHurtLocal(volume = 0.84, key = 'player-hurt-local') {
+                    const url = pickByKey(soundUrls.playerHurt, key);
+                    await playUrlLocal(url, volume, detuneFromKey(`${key}|hurt`, -0.2, 0.2));
                 }
 
                 return {
@@ -4661,6 +4682,7 @@
         const FOOTSTEP_FRAME_INTERVAL = 5;
         const footstepFrameCounters = {};
         const previousFootstepPlayerStates = {};
+        const HIT_FLASH_DURATION_MS = 180;
         
         // Fireball system
         let fireballs = {};
@@ -5443,14 +5465,15 @@
             if (playerState[sid]) {
                 playerState[sid].health = health;
             }
-            playerHitFlashUntilMs[sid] = Date.now() + 110;
+            playerHitFlashUntilMs[sid] = Date.now() + HIT_FLASH_DURATION_MS;
 
             const listenerState = getPlayerState(socket.id);
             const hitPlayerState = playerState[sid] || authoritativePlayerState[sid] || null;
             if (combatAudio && listenerState && hitPlayerState) {
                 const audibleViewport = getAudibleViewport();
+                const hurtSoundKey = `${sid}|${damage}|${health}|${is_dying ? 1 : 0}`;
                 if (sid === socket.id) {
-                    combatAudio.playPlayerHurtLocal(0.9);
+                    combatAudio.playPlayerHurtLocal(0.94, hurtSoundKey);
                 } else {
                     combatAudio.playPlayerHurtAt(
                         hitPlayerState.x,
@@ -5458,7 +5481,8 @@
                         listenerState.x,
                         listenerState.y,
                         audibleViewport,
-                        0.76
+                        0.76,
+                        hurtSoundKey
                     );
                 }
             }
@@ -5886,7 +5910,7 @@
                         );
 
                     if (tookDamage) {
-                        enemyHitFlashUntilMs[enemyId] = nowMs + 110;
+                        enemyHitFlashUntilMs[enemyId] = nowMs + HIT_FLASH_DURATION_MS;
                         combatAudio.playSpiderHitAt(
                             currentState.x,
                             currentState.y,
@@ -5904,7 +5928,8 @@
                             listenerState.x,
                             listenerState.y,
                             audibleViewport,
-                            0.9
+                            0.9,
+                            `${enemyId}|${currentState.death_time_ms ?? nowMs}|death`
                         );
                         ambientState.nextAt = nowMs + ambientCooldownBaseMs;
                     } else if (startedAttack) {
@@ -5948,7 +5973,8 @@
                         listenerState.x,
                         listenerState.y,
                         audibleViewport,
-                        0.52
+                        0.52,
+                        `${enemyId}|${currentState.state_started_at_ms ?? 0}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
                     );
                     ambientState.nextAt = nowMs + ambientCooldownBaseMs + Math.random() * 3800;
                 }
@@ -6234,14 +6260,14 @@
             return canvas;
         }
 
-        function getHitFlashAlpha(hitFlashUntilMs, nowMs, durationMs = 110) {
+        function getHitFlashAlpha(hitFlashUntilMs, nowMs, durationMs = HIT_FLASH_DURATION_MS) {
             if (!Number.isFinite(hitFlashUntilMs) || hitFlashUntilMs <= nowMs) {
                 return 0;
             }
 
             const remaining = hitFlashUntilMs - nowMs;
             const normalized = Math.max(0, Math.min(1, remaining / durationMs));
-            return 0.18 + normalized * 0.62;
+            return Math.max(0, Math.min(1, 0.34 + normalized * 0.66));
         }
 
         function drawSpriteFrameWithHitFlash(input) {
