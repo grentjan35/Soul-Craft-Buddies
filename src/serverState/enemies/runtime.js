@@ -1623,6 +1623,7 @@ function serializeEnemiesForState(state) {
       alive: enemy.alive,
       death_time_ms: enemy.death_time ? Math.round(enemy.death_time * 1000) : 0,
       respawn_at_ms: enemy.respawn_at ? Math.round(enemy.respawn_at * 1000) : 0,
+      target_sid: enemy.target_sid || null,
     };
   }
 

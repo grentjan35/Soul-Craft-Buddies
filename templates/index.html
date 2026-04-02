@@ -5084,7 +5084,8 @@
                         brain_state: enemyPos.brain_state,
                         state_started_at_ms: enemyPos.state_started_at_ms,
                         death_time_ms: enemyPos.death_time_ms,
-                        respawn_at_ms: enemyPos.respawn_at_ms
+                        respawn_at_ms: enemyPos.respawn_at_ms,
+                        target_sid: enemyPos.target_sid ?? null
                     };
 
                     authoritativeEnemyState[enemyId] = nextEnemyState;
@@ -5103,7 +5104,8 @@
                         brain_state: enemyPos.brain_state,
                         state_started_at_ms: enemyPos.state_started_at_ms,
                         death_time_ms: enemyPos.death_time_ms,
-                        respawn_at_ms: enemyPos.respawn_at_ms
+                        respawn_at_ms: enemyPos.respawn_at_ms,
+                        target_sid: enemyPos.target_sid ?? null
                     });
                     enemyState[enemyId] = {
                         ...(enemyState[enemyId] || {}),
@@ -5667,7 +5669,8 @@
                     brain_state: sampled.brain_state ?? authoritativeEnemyState[enemyId].brain_state,
                     state_started_at_ms: sampled.state_started_at_ms ?? authoritativeEnemyState[enemyId].state_started_at_ms,
                     death_time_ms: sampled.death_time_ms ?? authoritativeEnemyState[enemyId].death_time_ms,
-                    respawn_at_ms: sampled.respawn_at_ms ?? authoritativeEnemyState[enemyId].respawn_at_ms
+                    respawn_at_ms: sampled.respawn_at_ms ?? authoritativeEnemyState[enemyId].respawn_at_ms,
+                    target_sid: sampled.target_sid ?? authoritativeEnemyState[enemyId].target_sid ?? null
                 };
             }
         }
@@ -5902,6 +5905,10 @@
                         currentState.health < previousState.health;
                     const justDied = previousState.alive && !currentState.alive;
                     const landedThisFrame = previousState.alive && !previousState.on_ground && currentState.on_ground;
+                    const justDetectedPlayer =
+                        currentState.alive &&
+                        !previousState.target_sid &&
+                        Boolean(currentState.target_sid);
                     const startedAttack =
                         currentState.alive &&
                         (
@@ -5932,7 +5939,7 @@
                             `${enemyId}|${currentState.death_time_ms ?? nowMs}|death`
                         );
                         ambientState.nextAt = nowMs + ambientCooldownBaseMs;
-                    } else if (startedAttack) {
+                    } else if (justDetectedPlayer || startedAttack) {
                         combatAudio.playSpiderAttackAt(
                             currentState.x,
                             currentState.y,
@@ -6012,7 +6019,8 @@
                     action: currentState.action,
                     brain_state: currentState.brain_state,
                     on_ground: currentState.on_ground,
-                    x: currentState.x
+                    x: currentState.x,
+                    target_sid: currentState.target_sid ?? null
                 };
             }
 
