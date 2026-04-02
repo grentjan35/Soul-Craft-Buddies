@@ -1,0 +1,70 @@
+{
+  "id": "spider",
+  "type": "spider",
+  "displayName": "Spider",
+  "scale": 0.18,
+  "frameSize": {
+    "w": 446,
+    "h": 390
+  },
+  "hitbox": {
+    "x": 63,
+    "y": 175,
+    "w": 297,
+    "h": 202
+  },
+  "normalized": {
+    "x": 0.141256,
+    "y": 0.448718,
+    "w": 0.665919,
+    "h": 0.517949
+  },
+  "stats": {
+    "maxHealth": 4,
+    "contactDamage": 25,
+    "respawnDelayMs": 6000
+  },
+  "behavior": {
+    "detectionRadius": 620,
+    "leashRadius": 900,
+    "wanderRadius": 220,
+    "moveSpeed": 145,
+    "telegraphDurationMs": 420,
+    "lungeDurationMs": 520,
+    "attackCooldownMs": 1450,
+    "attackRange": 210,
+    "lungeSpeed": 560,
+    "lungeLift": 760,
+    "jumpForce": 1000,
+    "stuckJumpDelayMs": 360,
+    "doubleJumpDelayMs": 760,
+    "despawnAfterDeathMs": 1400
+  },
+  "animations": {
+    "idle": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "idle"
+    },
+    "run": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "run"
+    },
+    "attack": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "attack"
+    },
+    "death": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "death"
+    },
+    "prepare": {
+      "frames": 4,
+      "grid": "3x3",
+      "asset": "attack"
+    }
+  }
+}

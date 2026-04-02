@@ -1,6 +1,7 @@
 const { PLAYER_MAX_HEALTH, ATTACK_DURATION, FIREBALL_POWER_MAX } = require('../state/constants');
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
+const { resetEnemiesForState } = require('../enemies/runtime');
 
 /**
  * Registers all Socket.IO event handlers for a connected client.
@@ -256,7 +257,10 @@ function handleLoadMap(input) {
   const path = require('path');
   const { TILE_SIZE } = require('../state/constants');
   const { buildPlatformGrid } = require('../state/platformGrid/buildPlatformGrid');
+  const { buildPlatformNavigation } = require('../state/platformNavigation/buildPlatformNavigation');
+  const { buildPlatformsFromMap } = require('../state/platforms/buildPlatformsFromMap');
   const { initializeFairies } = require('../state/fairies/fairySystem');
+  const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
 
   const mapName = String(input.data?.name ?? 'default');
   const isSameMap = input.state.currentMapName === mapName;
@@ -270,43 +274,11 @@ function handleLoadMap(input) {
   const tiles = mapData.tiles;
   const mapWidth = mapData.width;
   const mapHeight = mapData.height;
-
-  /** @type {Array<any>} */
-  const platforms = [];
-  for (let y = 0; y < mapHeight; y += 1) {
-    let runStartX = -1;
-    let runTileType = -1;
-
-    for (let x = 0; x <= mapWidth; x += 1) {
-      const tileType = x < mapWidth ? tiles?.[y]?.[x] : -1;
-      const isSolid = typeof tileType === 'number' && tileType >= 0;
-
-      if (isSolid && runStartX === -1) {
-        runStartX = x;
-        runTileType = tileType;
-        continue;
-      }
-
-      const shouldFlushRun = runStartX !== -1 && (!isSolid || tileType !== runTileType);
-      if (!shouldFlushRun) {
-        continue;
-      }
-
-      platforms.push({
-        x: runStartX * TILE_SIZE,
-        y: y * TILE_SIZE,
-        w: (x - runStartX) * TILE_SIZE,
-        h: TILE_SIZE,
-        tile_type: runTileType,
-      });
-
-      runStartX = isSolid ? x : -1;
-      runTileType = isSolid ? tileType : -1;
-    }
-  }
+  const platforms = buildPlatformsFromMap(mapData);
 
   input.state.platforms = platforms;
   input.state.platformGrid = buildPlatformGrid({ platforms });
+  input.state.platformNavigation = buildPlatformNavigation({ platforms });
   input.state.fairies = initializeFairies({ platforms });
   input.state.currentMapName = mapName;
   input.state.mapBounds = {
@@ -319,6 +291,9 @@ function handleLoadMap(input) {
   input.state.spawnPoints = Array.isArray(mapData.spawnPoints)
     ? mapData.spawnPoints
     : [{ x: 100, y: 500, id: 0 }];
+  input.state.enemyDefinitions = loadEnemyCatalog({ staticDir: input.state.config.staticDir });
+  input.state.enemySpawns = normalizeEnemySpawns(mapData.enemies, input.state.enemyDefinitions);
+  resetEnemiesForState({ state: input.state });
 
   const player = input.state.players.get(input.socket.id);
   if (player && input.state.spawnPoints.length > 0) {
@@ -337,6 +312,7 @@ function handleLoadMap(input) {
     tiles,
     spawnPoints: input.state.spawnPoints,
     backgrounds: Array.isArray(mapData.backgrounds) ? mapData.backgrounds : [],
+    enemies: input.state.enemySpawns,
   };
 
   if (isSameMap) {

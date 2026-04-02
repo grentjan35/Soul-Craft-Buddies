@@ -2881,6 +2881,10 @@
         const characterMetadataCache = {}; // Cache metadata for multiple characters
         const loadingCharacters = new Set(); // Track characters currently being loaded
         const failedCharacters = new Set(); // Track characters that failed to load
+        const enemyAssetsByType = {};
+        const enemyMetadataByType = {};
+        const loadingEnemyTypes = new Set();
+        const failedEnemyTypes = new Set();
         let characterMetadata = null;
         let assignedCharacter = null;
         let allAssetsLoaded = false;
@@ -2896,6 +2900,7 @@
         let loadingAnimationId = null;
         let gameReadyToStart = false;
         let loadingCompleteTriggered = false;
+        let playerReadySent = false;
 
         /**
          * Checks if assets and the loading UI have both completed.
@@ -2959,7 +2964,10 @@
             }
             
             // Emit player_ready to server
-            socket.emit('player_ready');
+            if (socket.connected && !playerReadySent) {
+                socket.emit('player_ready');
+                playerReadySent = true;
+            }
             
             console.log('Game started - loading completed');
         }
@@ -3048,6 +3056,7 @@
             gameReadyToStart = false;
             loadingCompleteTriggered = false;
             loadingCompleteSoundPlayed = false;
+            playerReadySent = false;
             if (loadingAnimationId) {
                 cancelAnimationFrame(loadingAnimationId);
             }
@@ -3077,11 +3086,9 @@
             console.log('Connected to server successfully!');
             lastRequestedMapName = null;
             syncCurrentMapToServer(true);
-            // Wait for character assignment before loading assets
-            if (!allAssetsLoaded) {
-                // Assets will be loaded after character_assigned event
-            } else {
-                socket.emit('player_ready');
+            // Never announce readiness here; only do that after the loading UI
+            // has genuinely completed and finishLoading() runs.
+            if (playerReadySent) {
                 scheduleInputStateSend(true);
             }
         });
@@ -3359,6 +3366,49 @@
                 console.error(`Error loading assets for character ${characterName}:`, error);
                 loadingCharacters.delete(characterName);
                 failedCharacters.add(characterName);
+            }
+        }
+
+        async function loadEnemyAssetsFor(enemyType) {
+            try {
+                if (!enemyType || enemyAssetsByType[enemyType]) {
+                    return;
+                }
+                if (loadingEnemyTypes.has(enemyType) || failedEnemyTypes.has(enemyType)) {
+                    return;
+                }
+
+                loadingEnemyTypes.add(enemyType);
+                const metadataResponse = await fetch(`/api/enemy_metadata/${encodeURIComponent(enemyType)}`);
+                if (!metadataResponse.ok) {
+                    throw new Error(`Failed to fetch enemy metadata for ${enemyType}: ${metadataResponse.status}`);
+                }
+
+                const metadata = await metadataResponse.json();
+                enemyMetadataByType[enemyType] = metadata;
+
+                const animationMap = metadata.animations || {};
+                const assetNames = Array.from(new Set(
+                    Object.entries(animationMap).map(([animationName, animationMeta]) => {
+                        if (animationMeta && typeof animationMeta.asset === 'string') {
+                            return animationMeta.asset;
+                        }
+                        return animationName;
+                    })
+                ));
+
+                const assets = {};
+                await Promise.all(assetNames.map(async (assetName) => {
+                    const blob = await fetchProtectedBlob(`/api/enemy_asset/${encodeURIComponent(enemyType)}/${encodeURIComponent(assetName)}`, 'image/png');
+                    assets[assetName] = await createImageBitmap(blob);
+                }));
+
+                enemyAssetsByType[enemyType] = assets;
+                loadingEnemyTypes.delete(enemyType);
+            } catch (error) {
+                console.error(`Error loading enemy assets for ${enemyType}:`, error);
+                loadingEnemyTypes.delete(enemyType);
+                failedEnemyTypes.add(enemyType);
             }
         }
 
@@ -3838,6 +3888,14 @@
                 }
 
                 await loadMapBackgrounds(mapData);
+                if (Array.isArray(mapData.enemies) && mapData.enemies.length > 0) {
+                    await Promise.all(
+                        mapData.enemies
+                            .map((enemy) => enemy?.type)
+                            .filter((enemyType, index, array) => typeof enemyType === 'string' && array.indexOf(enemyType) === index)
+                            .map((enemyType) => loadEnemyAssetsFor(enemyType))
+                    );
+                }
 
                 // Load spawn points from map
                 spawnPoints = mapData.spawnPoints || [];
@@ -4245,6 +4303,11 @@
         const playerState = {};
         const authoritativePlayerState = {};
         const playerSnapshots = {};
+        const enemyState = {};
+        const authoritativeEnemyState = {};
+        const enemySnapshots = {};
+        const fairySnapshots = {};
+        const authoritativeFairyState = {};
         const MAX_SNAPSHOT_AGE_MS = 1000;
         const MIN_INTERPOLATION_DELAY_MS = 40;
         const MAX_INTERPOLATION_DELAY_MS = 200;
@@ -4254,8 +4317,10 @@
         let serverClockOffsetMs = 0;
         // Store rendered dimensions for each player (aspect-ratio-preserving)
         const playerRenderDimensions = {};
+        const enemyRenderDimensions = {};
         // Store animation frames for each player to prevent sync issues
         const playerAnimFrames = {};
+        const enemyAnimFrames = {};
         // Store dying players for death animation and fade-out
         const dyingPlayers = {};
         // Store fairy data from server
@@ -4296,10 +4361,18 @@
         const FIREBALL_TRAIL_SAMPLE_INTERVAL_MS = 40;
         const FIREBALL_TRAIL_MAX_POINTS = 6;
         const radialSpriteCache = new Map();
+        let enemyHitboxDebugEnabled = false;
         
 
         // Keyboard input handling
         window.addEventListener('keydown', (e) => {
+            if (e.shiftKey && (e.key === 'H' || e.key === 'h')) {
+                enemyHitboxDebugEnabled = !enemyHitboxDebugEnabled;
+                debugMode = enemyHitboxDebugEnabled;
+                e.preventDefault();
+                return;
+            }
+
             // Disable movement keys when chat is active
             if (chatActive) {
                 console.log('Movement blocked - chat is active');
@@ -4505,7 +4578,15 @@
             // FIX: Guard against processing state before assets are ready
             if (!allAssetsLoaded || !characterMetadata) return;
             
-            const { ts, seq, players: serverPlayers, fairies: serverFairies, fireballs: serverFireballs, explosions: serverExplosions } = serverState;
+            const {
+                ts,
+                seq,
+                players: serverPlayers,
+                enemies: serverEnemies,
+                fairies: serverFairies,
+                fireballs: serverFireballs,
+                explosions: serverExplosions
+            } = serverState;
             const receivedAt = performance.now();
 
             recordPacketReceiveTime(receivedAt);
@@ -4635,10 +4716,109 @@
                     action: currentState.action
                 };
             }
+
+            if (serverEnemies) {
+                for (const [enemyId, enemyPos] of Object.entries(serverEnemies)) {
+                    if (enemyPos.type && !enemyAssetsByType[enemyPos.type]) {
+                        loadEnemyAssetsFor(enemyPos.type);
+                    }
+
+                    const nextEnemyState = {
+                        id: enemyId,
+                        type: enemyPos.type,
+                        x: enemyPos.x,
+                        y: enemyPos.y,
+                        vx: enemyPos.vx,
+                        vy: enemyPos.vy,
+                        action: enemyPos.action,
+                        direction: enemyPos.direction,
+                        on_ground: enemyPos.on_ground,
+                        health: enemyPos.health,
+                        max_health: enemyPos.max_health,
+                        alive: enemyPos.alive,
+                        brain_state: enemyPos.brain_state,
+                        state_started_at_ms: enemyPos.state_started_at_ms,
+                        death_time_ms: enemyPos.death_time_ms,
+                        respawn_at_ms: enemyPos.respawn_at_ms
+                    };
+
+                    authoritativeEnemyState[enemyId] = nextEnemyState;
+                    appendSnapshot(enemySnapshots, enemyId, {
+                        ts: receivedAt,
+                        x: enemyPos.x,
+                        y: enemyPos.y,
+                        vx: enemyPos.vx,
+                        vy: enemyPos.vy,
+                        action: enemyPos.action,
+                        direction: enemyPos.direction,
+                        on_ground: enemyPos.on_ground,
+                        health: enemyPos.health,
+                        max_health: enemyPos.max_health,
+                        alive: enemyPos.alive,
+                        brain_state: enemyPos.brain_state,
+                        state_started_at_ms: enemyPos.state_started_at_ms,
+                        death_time_ms: enemyPos.death_time_ms,
+                        respawn_at_ms: enemyPos.respawn_at_ms
+                    });
+                    enemyState[enemyId] = {
+                        ...(enemyState[enemyId] || {}),
+                        ...nextEnemyState
+                    };
+                }
+
+                for (const enemyId in enemyState) {
+                    if (!serverEnemies[enemyId]) {
+                        delete enemyState[enemyId];
+                        delete authoritativeEnemyState[enemyId];
+                        delete enemySnapshots[enemyId];
+                        delete enemyAnimFrames[enemyId];
+                        delete enemyRenderDimensions[enemyId];
+                    }
+                }
+            } else {
+                for (const enemyId in enemyState) {
+                    delete enemyState[enemyId];
+                    delete authoritativeEnemyState[enemyId];
+                    delete enemySnapshots[enemyId];
+                    delete enemyAnimFrames[enemyId];
+                    delete enemyRenderDimensions[enemyId];
+                }
+            }
             
             // Update fairy data from server
             if (serverFairies) {
-                fairies = serverFairies;
+                const activeFairyIds = new Set();
+                for (const fairy of serverFairies) {
+                    if (!fairy || typeof fairy.id === 'undefined') {
+                        continue;
+                    }
+
+                    const fairyId = String(fairy.id);
+                    activeFairyIds.add(fairyId);
+                    authoritativeFairyState[fairyId] = {
+                        id: fairy.id,
+                        x: fairy.x,
+                        y: fairy.y,
+                        vx: fairy.vx,
+                        vy: fairy.vy,
+                        color: fairy.color
+                    };
+                    appendSnapshot(fairySnapshots, fairyId, {
+                        ts: receivedAt,
+                        x: fairy.x,
+                        y: fairy.y,
+                        vx: fairy.vx,
+                        vy: fairy.vy,
+                        color: fairy.color
+                    });
+                }
+
+                for (const fairyId in authoritativeFairyState) {
+                    if (!activeFairyIds.has(fairyId)) {
+                        delete authoritativeFairyState[fairyId];
+                        delete fairySnapshots[fairyId];
+                    }
+                }
             }
             
             // Update fireball data from server
@@ -4721,7 +4901,20 @@
         socket.on('map_loaded', async (mapData) => {
             console.log('Map loaded from server:', mapData.name);
             currentMap = mapData;
+            fairies = [];
+            for (const fairyId in authoritativeFairyState) {
+                delete authoritativeFairyState[fairyId];
+                delete fairySnapshots[fairyId];
+            }
             await loadMapBackgrounds(currentMap);
+            if (Array.isArray(currentMap.enemies) && currentMap.enemies.length > 0) {
+                await Promise.all(
+                    currentMap.enemies
+                        .map((enemy) => enemy?.type)
+                        .filter((enemyType, index, array) => typeof enemyType === 'string' && array.indexOf(enemyType) === index)
+                        .map((enemyType) => loadEnemyAssetsFor(enemyType))
+                );
+            }
             convertMapToPlatforms();
         });
 
@@ -4926,7 +5119,7 @@
             }
 
             if (typeof x === 'number' && typeof y === 'number') {
-                createAttachedPlayerBurn(sid, x, y, EXPLOSION_RADIUS);
+                createAttachedPlayerBurn(sid, x, y, EXPLOSION_RADIUS, 'blood');
             }
         });
 
@@ -5083,6 +5276,55 @@
             }
         }
 
+        function updateInterpolatedEnemyStates(renderNowTs) {
+            const renderTs = renderNowTs - renderDelayMs;
+
+            for (const enemyId in authoritativeEnemyState) {
+                const sampled = sampleSnapshots(enemySnapshots[enemyId], renderTs, { useHermitePosition: true });
+                if (!sampled) continue;
+
+                enemyState[enemyId] = {
+                    ...authoritativeEnemyState[enemyId],
+                    x: sampled.x,
+                    y: sampled.y,
+                    vx: typeof sampled.vx === 'number' ? sampled.vx : authoritativeEnemyState[enemyId].vx,
+                    vy: typeof sampled.vy === 'number' ? sampled.vy : authoritativeEnemyState[enemyId].vy,
+                    action: sampled.action ?? authoritativeEnemyState[enemyId].action,
+                    direction: sampled.direction ?? authoritativeEnemyState[enemyId].direction,
+                    on_ground: typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativeEnemyState[enemyId].on_ground,
+                    health: sampled.health ?? authoritativeEnemyState[enemyId].health,
+                    max_health: sampled.max_health ?? authoritativeEnemyState[enemyId].max_health,
+                    alive: typeof sampled.alive === 'boolean' ? sampled.alive : authoritativeEnemyState[enemyId].alive,
+                    brain_state: sampled.brain_state ?? authoritativeEnemyState[enemyId].brain_state,
+                    state_started_at_ms: sampled.state_started_at_ms ?? authoritativeEnemyState[enemyId].state_started_at_ms,
+                    death_time_ms: sampled.death_time_ms ?? authoritativeEnemyState[enemyId].death_time_ms,
+                    respawn_at_ms: sampled.respawn_at_ms ?? authoritativeEnemyState[enemyId].respawn_at_ms
+                };
+            }
+        }
+
+        function updateInterpolatedFairies(renderNowTs) {
+            const renderTs = renderNowTs - renderDelayMs;
+            const nextFairies = [];
+
+            for (const fairyId in authoritativeFairyState) {
+                const sampled = sampleSnapshots(fairySnapshots[fairyId], renderTs, { useHermitePosition: true });
+                const fairyMeta = authoritativeFairyState[fairyId];
+                if (!sampled || !fairyMeta) continue;
+
+                nextFairies.push({
+                    id: fairyMeta.id,
+                    x: sampled.x,
+                    y: sampled.y,
+                    vx: typeof sampled.vx === 'number' ? sampled.vx : fairyMeta.vx,
+                    vy: typeof sampled.vy === 'number' ? sampled.vy : fairyMeta.vy,
+                    color: sampled.color ?? fairyMeta.color
+                });
+            }
+
+            fairies = nextFairies;
+        }
+
         function sampleFireballAtServerTime(fireball, renderServerTimeMs) {
             if (!fireball || typeof fireball.spawn_time_ms !== 'number') {
                 return null;
@@ -5174,6 +5416,8 @@
 
         function updateInterpolatedRenderState(renderNowTs) {
             updateInterpolatedPlayerStates(renderNowTs);
+            updateInterpolatedEnemyStates(renderNowTs);
+            updateInterpolatedFairies(renderNowTs);
             updateInterpolatedFireballs(renderNowTs);
         }
 
@@ -5209,27 +5453,31 @@
             updateSpatialFireballAudio();
         }
 
-        function drawHealthBar(ctx, playerX, playerY, health, cameraX, cameraY) {
-            if (health >= PLAYER_MAX_HEALTH) return;
-            
+        function drawEntityHealthBar(ctx, entityX, entityY, health, maxHealth, cameraX, cameraY, yOffset = 70) {
+            if (!(maxHealth > 0) || health >= maxHealth) return;
+
             const barWidth = 50;
             const barHeight = 6;
-            const barX = playerX - barWidth / 2;
-            const barY = playerY - 70; // Moved up to be above the name
-            
+            const barX = entityX - barWidth / 2;
+            const barY = entityY - yOffset;
+
             // Background (red)
             ctx.fillStyle = "rgba(255, 0, 0, 0.7)";
             ctx.fillRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
-            
+
             // Health (green)
-            const healthPercent = health / PLAYER_MAX_HEALTH;
+            const healthPercent = Math.max(0, Math.min(1, health / maxHealth));
             ctx.fillStyle = "rgba(0, 255, 0, 0.9)";
             ctx.fillRect(barX - cameraX, barY - cameraY, barWidth * healthPercent, barHeight);
-            
+
             // Border
             ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
             ctx.lineWidth = 1;
             ctx.strokeRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
+        }
+
+        function drawHealthBar(ctx, playerX, playerY, health, cameraX, cameraY) {
+            drawEntityHealthBar(ctx, playerX, playerY, health, PLAYER_MAX_HEALTH, cameraX, cameraY, 70);
         }
 
         function getPlayerState(playerId) {
@@ -5380,6 +5628,103 @@
             };
         }
 
+        function getEnemyFrameRenderInfo(enemyId) {
+            const state = enemyState[enemyId];
+            if (!state) return null;
+
+            const enemyType = state.type;
+            const metadata = enemyMetadataByType[enemyType];
+            const assets = enemyAssetsByType[enemyType];
+            if (!metadata || !assets) {
+                return null;
+            }
+
+            const action = state.action || 'idle';
+            const animationMeta = metadata.animations?.[action] || metadata.animations?.idle;
+            if (!animationMeta) {
+                return null;
+            }
+
+            const assetName = animationMeta.asset || action;
+            const image = assets[assetName];
+            if (!image) {
+                return null;
+            }
+
+            const [cols, rows] = animationMeta.grid.split('x').map(Number);
+            const totalFrames = animationMeta.frames;
+
+            if (!enemyAnimFrames[enemyId]) {
+                enemyAnimFrames[enemyId] = { frame: 0, action, lastUpdate: Date.now() };
+            }
+
+            if (enemyAnimFrames[enemyId].action !== action) {
+                enemyAnimFrames[enemyId].action = action;
+                enemyAnimFrames[enemyId].frame = 0;
+                enemyAnimFrames[enemyId].lastUpdate = Date.now();
+            }
+
+            const now = Date.now();
+            const timeSinceLastUpdate = now - enemyAnimFrames[enemyId].lastUpdate;
+            const actionAnimSpeed =
+                action === 'run' ? 0.4 :
+                action === 'attack' ? 0.32 :
+                action === 'prepare' ? 0.3 :
+                0.25;
+            const frameDuration = 16 / actionAnimSpeed;
+            if (timeSinceLastUpdate >= frameDuration) {
+                if (action === 'death' || action === 'prepare') {
+                    enemyAnimFrames[enemyId].frame = Math.min(totalFrames - 1, enemyAnimFrames[enemyId].frame + 1);
+                } else {
+                    enemyAnimFrames[enemyId].frame = (enemyAnimFrames[enemyId].frame + 1) % Math.max(1, totalFrames);
+                }
+                enemyAnimFrames[enemyId].lastUpdate = now;
+            }
+
+            const frameIdx = enemyAnimFrames[enemyId].frame;
+            const frameW = image.width / cols;
+            const frameH = image.height / rows;
+            const renderDims = {
+                width: frameW * (metadata.scale || 0.24),
+                height: frameH * (metadata.scale || 0.24)
+            };
+            enemyRenderDimensions[enemyId] = renderDims;
+
+            return {
+                state,
+                image,
+                frameIdx,
+                frameX: (frameIdx % cols) * frameW,
+                frameY: Math.floor(frameIdx / cols) * frameH,
+                frameW,
+                frameH,
+                renderDims
+            };
+        }
+
+        function getEnemyHitboxRect(state) {
+            const metadata = enemyMetadataByType[state?.type];
+            if (!metadata) {
+                return null;
+            }
+
+            const frameWidth = metadata.frameSize?.w ?? 64;
+            const frameHeight = metadata.frameSize?.h ?? 64;
+            const scale = metadata.scale || 0.24;
+            const normalized = metadata.normalized || { x: 0.2, y: 0.35, w: 0.6, h: 0.5 };
+            const renderWidth = frameWidth * scale;
+            const renderHeight = frameHeight * scale;
+            const hitboxX = state.x - renderWidth / 2 + renderWidth * normalized.x;
+            const hitboxY = state.y - renderHeight / 2 + renderHeight * normalized.y;
+
+            return {
+                x: hitboxX,
+                y: hitboxY,
+                w: renderWidth * normalized.w,
+                h: renderHeight * normalized.h
+            };
+        }
+
         function getSpriteFrameAlpha(frameInfo) {
             const cacheKey = `${frameInfo.playerCharacter}|${frameInfo.action}|${frameInfo.frameIdx}`;
             const cached = spriteFrameAlphaCache.get(cacheKey);
@@ -5429,7 +5774,7 @@
             return null;
         }
 
-        function createAttachedPlayerBurn(sid, impactX, impactY, sourceRadius = EXPLOSION_RADIUS) {
+        function createAttachedPlayerBurn(sid, impactX, impactY, sourceRadius = EXPLOSION_RADIUS, effect = 'burn') {
             const frameInfo = getPlayerFrameRenderInfo(sid);
             if (!frameInfo) return;
 
@@ -5447,6 +5792,7 @@
 
             const existing = attachedPlayerBurns.find((burn) => burn.sid === sid);
             if (existing) {
+                existing.effect = effect;
                 existing.u = opaque.x / Math.max(1, frameInfo.frameW);
                 existing.v = opaque.y / Math.max(1, frameInfo.frameH);
                 existing.impactU = existing.u;
@@ -5468,7 +5814,8 @@
                 radius: Math.max(18, sourceRadius * 0.62),
                 startTime: Date.now(),
                 duration: 2000,
-                angle: -Math.PI / 2 + (Math.random() - 0.5) * 0.28
+                angle: -Math.PI / 2 + (Math.random() - 0.5) * 0.28,
+                effect
             });
         }
 
@@ -5518,6 +5865,29 @@
             const flickerTime = now * 0.0016 + stableStringNoise(burn.id) * 10;
             const sway = Math.sin(flickerTime * 1.6 + stableStringNoise(burn.sid) * 5) * 0.18;
             const flameAngle = (burn.angle ?? -Math.PI / 2) + sway;
+
+            if (burn.effect === 'blood') {
+                const bloodRadius = flameRadius * 0.78;
+                drawFireballGlow(anchor.x, anchor.y, bloodRadius * 1.15, 'rgba(255, 130, 130, __A__)', 'rgba(125, 0, 0, __A__)', alpha * 0.22);
+
+                ctx.save();
+                ctx.translate(anchor.x - cameraX, anchor.y - cameraY);
+                ctx.rotate(flameAngle);
+                ctx.globalAlpha = alpha * 0.92;
+                ctx.fillStyle = '#7d0000';
+                ctx.fillRect(-bloodRadius * 0.58, -bloodRadius * 0.14, bloodRadius * 1.16, Math.max(3, bloodRadius * 0.2));
+                ctx.fillStyle = '#b10f18';
+                ctx.fillRect(-bloodRadius * 0.38, -bloodRadius * 0.1, bloodRadius * 0.76, Math.max(2, bloodRadius * 0.14));
+                ctx.fillStyle = '#d94b56';
+                for (let i = 0; i < 4; i++) {
+                    const t = i / 3;
+                    const px = -bloodRadius * 0.72 + t * bloodRadius * 1.42 + Math.sin(flickerTime * 3 + i) * 1.6;
+                    const py = (Math.cos(flickerTime * 2.4 + i) * 0.2 - 0.1) * bloodRadius;
+                    ctx.fillRect(px, py, Math.max(2, bloodRadius * 0.14), Math.max(2, bloodRadius * 0.14));
+                }
+                ctx.restore();
+                return;
+            }
 
             drawFireballGlow(anchor.x, anchor.y - flameRadius * 0.16, flameRadius * 1.55, 'rgba(255, 220, 130, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.36);
             drawPixelFlameBody(
@@ -6600,47 +6970,22 @@
 
                     // Debug mode: Show collision boxes and platforms
                     if (debugMode) {
-                        const tiles = currentMap.tiles;
-                        const startTileX = Math.max(0, Math.floor(cameraX / TILE_SIZE));
-                        const endTileX = Math.min(mapWidth, Math.ceil((cameraX + visibleW) / TILE_SIZE));
-                        const startTileY = Math.max(0, Math.floor(cameraY / TILE_SIZE));
-                        const endTileY = Math.min(mapHeight, Math.ceil((cameraY + visibleH) / TILE_SIZE));
+                        let visiblePlatformCount = 0;
 
-                        // Draw collision boxes for each tile
-                        const tileCollisions = currentMap.tileCollisions || {};
-                        let totalCollisionBoxes = 0;
-                        for (let y = startTileY; y < endTileY; y++) {
-                            for (let x = startTileX; x < endTileX; x++) {
-                                const tileIndex = tiles[y][x];
-                                if (tileIndex >= 0) {
-                                    const collisionBoxes = tileCollisions[tileIndex] || [{x: 0, y: 0, w: TILE_SIZE, h: TILE_SIZE}];
-                                    totalCollisionBoxes += collisionBoxes.length;
-                                    for (const box of collisionBoxes) {
-                                        ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-                                        ctx.strokeStyle = '#00ff00';
-                                        ctx.lineWidth = 2;
-                                        ctx.fillRect(
-                                            x * TILE_SIZE + box.x - cameraX,
-                                            y * TILE_SIZE + box.y - cameraY,
-                                            box.w,
-                                            box.h
-                                        );
-                                        ctx.strokeRect(
-                                            x * TILE_SIZE + box.x - cameraX,
-                                            y * TILE_SIZE + box.y - cameraY,
-                                            box.w,
-                                            box.h
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Draw platforms (server collision boxes)
+                        // Draw merged platforms (same shape the server collides against)
                         ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
                         ctx.strokeStyle = '#0066ff';
                         ctx.lineWidth = 2;
                         PLATFORMS.forEach(p => {
+                            if (
+                                p.x + p.w < cameraX ||
+                                p.x > cameraX + visibleW ||
+                                p.y + p.h < cameraY ||
+                                p.y > cameraY + visibleH
+                            ) {
+                                return;
+                            }
+                            visiblePlatformCount += 1;
                             ctx.fillRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
                             ctx.strokeRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
                         });
@@ -6654,16 +6999,16 @@
                         ctx.fillText(`Debug Mode: ON`, 10, 20);
                         ctx.strokeText(`Platforms: ${PLATFORMS.length}`, 10, 40);
                         ctx.fillText(`Platforms: ${PLATFORMS.length}`, 10, 40);
-                        ctx.strokeText(`Collision Boxes: ${totalCollisionBoxes}`, 10, 60);
-                        ctx.fillText(`Collision Boxes: ${totalCollisionBoxes}`, 10, 60);
-                        ctx.strokeText(`Green: Tile Collision Boxes (AABB)`, 10, 80);
-                        ctx.fillText(`Green: Tile Collision Boxes (AABB)`, 10, 80);
-                        ctx.strokeText(`Blue: Server Platforms (AABB)`, 10, 100);
-                        ctx.fillText(`Blue: Server Platforms (AABB)`, 10, 100);
-                        ctx.strokeText(`Yellow: Player Hitboxes (AABB)`, 10, 120);
-                        ctx.fillText(`Yellow: Player Hitboxes (AABB)`, 10, 120);
-                        ctx.strokeText(`Collision Type: Rectangle-based (NOT pixel-perfect)`, 10, 140);
-                        ctx.fillText(`Collision Type: Rectangle-based (NOT pixel-perfect)`, 10, 140);
+                        ctx.strokeText(`Visible Merged Platforms: ${visiblePlatformCount}`, 10, 60);
+                        ctx.fillText(`Visible Merged Platforms: ${visiblePlatformCount}`, 10, 60);
+                        ctx.strokeText(`Blue: Merged Platform Collision (AABB)`, 10, 80);
+                        ctx.fillText(`Blue: Merged Platform Collision (AABB)`, 10, 80);
+                        ctx.strokeText(`Yellow: Player Hitboxes (AABB)`, 10, 100);
+                        ctx.fillText(`Yellow: Player Hitboxes (AABB)`, 10, 100);
+                        ctx.strokeText(`Red: Enemy Hitboxes (AABB)`, 10, 120);
+                        ctx.fillText(`Red: Enemy Hitboxes (AABB)`, 10, 120);
+                        ctx.strokeText(`Collision Type: Rectangle-based (merged ledges)`, 10, 140);
+                        ctx.fillText(`Collision Type: Rectangle-based (merged ledges)`, 10, 140);
                     }
                     
                 } else if (PLATFORMS.length > 0) {
@@ -6672,6 +7017,85 @@
                     PLATFORMS.forEach(p => {
                         ctx.fillRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
                     });
+                }
+
+                // Draw Enemies with server authoritative positions and camera offset
+                for (const enemyId in enemyState) {
+                    const state = enemyState[enemyId];
+                    if (!state) {
+                        continue;
+                    }
+
+                    const frameInfo = getEnemyFrameRenderInfo(enemyId);
+                    if (frameInfo) {
+                        let enemyOpacity = 1;
+                        if (!state.alive && typeof state.respawn_at_ms === 'number' && state.respawn_at_ms > 0) {
+                            const fadeWindowMs = 900;
+                            const timeRemainingMs = state.respawn_at_ms - Date.now();
+                            if (timeRemainingMs <= fadeWindowMs) {
+                                enemyOpacity = Math.max(0, Math.min(1, timeRemainingMs / fadeWindowMs));
+                            }
+                        }
+
+                        ctx.save();
+                        ctx.globalAlpha = enemyOpacity;
+                        if (state.direction === 'left') {
+                            ctx.translate(state.x - cameraX, state.y - cameraY);
+                            ctx.scale(-1, 1);
+                            ctx.drawImage(
+                                frameInfo.image,
+                                frameInfo.frameX,
+                                frameInfo.frameY,
+                                frameInfo.frameW,
+                                frameInfo.frameH,
+                                -frameInfo.renderDims.width / 2,
+                                -frameInfo.renderDims.height / 2,
+                                frameInfo.renderDims.width,
+                                frameInfo.renderDims.height
+                            );
+                        } else {
+                            ctx.drawImage(
+                                frameInfo.image,
+                                frameInfo.frameX,
+                                frameInfo.frameY,
+                                frameInfo.frameW,
+                                frameInfo.frameH,
+                                state.x - cameraX - frameInfo.renderDims.width / 2,
+                                state.y - cameraY - frameInfo.renderDims.height / 2,
+                                frameInfo.renderDims.width,
+                                frameInfo.renderDims.height
+                            );
+                        }
+                        ctx.restore();
+                    } else if (failedEnemyTypes.has(state.type)) {
+                        ctx.fillStyle = '#c24747';
+                        ctx.fillRect(state.x - cameraX - 28, state.y - cameraY - 28, 56, 56);
+                    }
+
+                    if (debugMode) {
+                        const enemyHitbox = getEnemyHitboxRect(state);
+                        if (enemyHitbox) {
+                            ctx.fillStyle = 'rgba(255, 92, 92, 0.35)';
+                            ctx.strokeStyle = '#ff6b6b';
+                            ctx.lineWidth = 3;
+                            ctx.fillRect(
+                                enemyHitbox.x - cameraX,
+                                enemyHitbox.y - cameraY,
+                                enemyHitbox.w,
+                                enemyHitbox.h
+                            );
+                            ctx.strokeRect(
+                                enemyHitbox.x - cameraX,
+                                enemyHitbox.y - cameraY,
+                                enemyHitbox.w,
+                                enemyHitbox.h
+                            );
+                        }
+                    }
+
+                    const maxHealth = typeof state.max_health === 'number' ? state.max_health : 4;
+                    const health = typeof state.health === 'number' ? state.health : maxHealth;
+                    drawEntityHealthBar(ctx, state.x, state.y, health, maxHealth, cameraX, cameraY, 62);
                 }
 
                 // Draw Players with server authoritative positions and camera offset

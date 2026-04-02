@@ -58,6 +58,21 @@
         .stack-item strong { display: block; margin-bottom: 4px; }
         .stack-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
         .empty-state { color: #888; font-size: 13px; padding: 8px 0; }
+        .inline-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(8, 8, 20, 0.78); display: none; align-items: center; justify-content: center; padding: 24px; z-index: 3000; }
+        .modal-overlay.active { display: flex; }
+        .modal-card { width: min(860px, 96vw); background: #232336; border: 1px solid #4d4d70; border-radius: 14px; box-shadow: 0 22px 64px rgba(0, 0, 0, 0.38); padding: 20px; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+        .modal-header h3 { margin: 0; }
+        .modal-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; }
+        .modal-preview { background: linear-gradient(180deg, #111624, #1b2236); border: 1px solid #3f4967; border-radius: 10px; padding: 12px; }
+        .modal-sidebar { display: grid; gap: 12px; align-content: start; }
+        .scale-inputs { display: grid; gap: 8px; }
+        .scale-inputs input[type="range"] { width: 100%; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+        .modal-note { color: #aeb8d8; font-size: 13px; line-height: 1.4; }
+        .enemy-badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: rgba(255, 92, 92, 0.14); color: #ffd4d4; font-size: 12px; }
+        #enemyScalePreviewCanvas { width: 100%; height: auto; image-rendering: pixelated; display: block; }
     </style>
 </head>
 <body>
@@ -119,9 +134,25 @@
                 </div>
                 <div id="spawnPalettePanel" style="display: none;">
                     <h3>Spawn Tool</h3>
+                    <div class="control-group" style="margin-bottom: 12px;">
+                        <label>Placement Type</label>
+                        <select id="spawnPlacementMode" onchange="setSpawnPlacementMode(this.value)">
+                            <option value="player">Player Spawn</option>
+                            <option value="enemy">Enemy Spawn</option>
+                        </select>
+                    </div>
+                    <div class="control-group" style="margin-bottom: 12px;">
+                        <label>Enemies</label>
+                        <select id="enemyTypeSelect" onchange="setSelectedEnemyType(this.value)"></select>
+                    </div>
+                    <div class="inline-row" style="margin-bottom: 12px;">
+                        <button type="button" onclick="openEnemyScaleModal()">Set Enemy Size</button>
+                        <span class="enemy-badge" id="enemyScaleBadge">Scale: --</span>
+                    </div>
                     <div class="info">
-                        <p>Left click: Place spawn point</p>
-                        <p>Right click: Remove nearby spawn point</p>
+                        <p>Player Spawn mode: left click places a player spawn point.</p>
+                        <p>Enemy Spawn mode: left click places the selected enemy.</p>
+                        <p>Right click removes the nearest spawn of the active placement type.</p>
                         <p>Shift+drag or Middle click: Pan</p>
                         <p>Ctrl+scroll: Zoom</p>
                     </div>
@@ -186,6 +217,38 @@
         <div id="status" class="status" style="display: none;"></div>
     </div>
 
+    <div id="enemyScaleModal" class="modal-overlay" onclick="dismissEnemyScaleModal(event)">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Set Enemy Size</h3>
+                <button type="button" class="danger" onclick="closeEnemyScaleModal()">Close</button>
+            </div>
+            <div class="modal-grid">
+                <div class="modal-preview">
+                    <canvas id="enemyScalePreviewCanvas" width="560" height="300"></canvas>
+                </div>
+                <div class="modal-sidebar">
+                    <div class="control-group">
+                        <label>Enemy Type</label>
+                        <select id="enemyScaleEnemySelect" onchange="handleEnemyScaleSelectionChange(this.value)"></select>
+                    </div>
+                    <div class="scale-inputs">
+                        <label>Scale Multiplier</label>
+                        <input type="range" id="enemyScaleRange" min="0.05" max="1" step="0.01" oninput="syncEnemyScaleInputs(this.value, 'range')">
+                        <input type="number" id="enemyScaleNumber" min="0.05" max="1" step="0.01" oninput="syncEnemyScaleInputs(this.value, 'number')">
+                    </div>
+                    <div class="modal-note">
+                        Spartan idle is used as the player reference. Save writes the selected enemy's global scale back into its metadata file.
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" onclick="closeEnemyScaleModal()" class="danger">Cancel</button>
+                <button type="button" onclick="saveEnemyScale()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const TILE_SIZE = 32;
         const BACKGROUND_REFERENCE_ASSET = 'background_1.png';
@@ -218,6 +281,14 @@
         const backgroundImageCache = new Map();
         let nextBackgroundId = 1;
         let editorBackgroundPreviewFront = false;
+        let spawnPlacementMode = 'player';
+        let enemyCatalog = [];
+        let enemySpawns = [];
+        let selectedEnemyType = '';
+        const enemyMetadataCache = new Map();
+        const enemyIdleBitmapCache = new Map();
+        let playerPreviewMetadata = null;
+        let playerPreviewBitmap = null;
         
         // View controls for panning and zooming
         let viewOffset = { x: 0, y: 0 };
@@ -351,6 +422,7 @@
                 const environmentToken = await requestEnvironmentToken();
                 tilesetImage = await fetchImageBitmap(`/api/tileset/${environmentToken}`);
                 await loadBackgroundCatalog(environmentToken);
+                await loadEnemyCatalogData();
 
                 initPalette();
                 initMapData();
@@ -361,6 +433,282 @@
             } catch (error) {
                 console.error('Error loading editor assets:', error);
                 showStatus(`Error loading editor assets: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadEnemyCatalogData() {
+            const response = await fetch('/api/enemies');
+            if (!response.ok) {
+                throw new Error(`Failed to load enemies: ${response.status}`);
+            }
+
+            enemyCatalog = await response.json();
+            enemyCatalog.forEach((entry) => {
+                enemyMetadataCache.set(entry.type, entry);
+            });
+
+            if (!selectedEnemyType && enemyCatalog.length > 0) {
+                selectedEnemyType = enemyCatalog[0].type;
+            }
+
+            renderEnemySelectors();
+            updateEnemyScaleBadge();
+            await loadPlayerPreviewResources();
+
+            if (selectedEnemyType) {
+                await loadEnemyPreviewResources(selectedEnemyType);
+            }
+        }
+
+        async function loadPlayerPreviewResources() {
+            if (playerPreviewMetadata && playerPreviewBitmap) {
+                return;
+            }
+
+            const response = await fetch('/api/character_metadata/spartan');
+            if (!response.ok) {
+                throw new Error(`Failed to load player preview metadata: ${response.status}`);
+            }
+
+            playerPreviewMetadata = await response.json();
+            playerPreviewBitmap = await fetchImageBitmap('/api/character_preview_asset/spartan/idle');
+        }
+
+        async function loadEnemyPreviewResources(enemyType) {
+            if (!enemyType) {
+                return;
+            }
+
+            let metadata = enemyMetadataCache.get(enemyType);
+            if (!metadata) {
+                const response = await fetch(`/api/enemy_metadata/${encodeURIComponent(enemyType)}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load ${enemyType} metadata: ${response.status}`);
+                }
+                metadata = await response.json();
+                enemyMetadataCache.set(enemyType, metadata);
+            }
+
+            const idleAsset = metadata.animations?.idle?.asset || 'idle';
+            if (!enemyIdleBitmapCache.has(enemyType)) {
+                const bitmap = await fetchImageBitmap(`/api/enemy_asset/${encodeURIComponent(enemyType)}/${encodeURIComponent(idleAsset)}`);
+                enemyIdleBitmapCache.set(enemyType, bitmap);
+            }
+        }
+
+        function renderEnemySelectors() {
+            const mainSelect = document.getElementById('enemyTypeSelect');
+            const modalSelect = document.getElementById('enemyScaleEnemySelect');
+            const optionsMarkup = enemyCatalog.length === 0
+                ? '<option value="">No enemies found</option>'
+                : enemyCatalog.map((entry) => `<option value="${entry.type}">${entry.displayName}</option>`).join('');
+
+            mainSelect.innerHTML = optionsMarkup;
+            modalSelect.innerHTML = optionsMarkup;
+
+            if (selectedEnemyType) {
+                mainSelect.value = selectedEnemyType;
+                modalSelect.value = selectedEnemyType;
+            }
+        }
+
+        function setSpawnPlacementMode(mode) {
+            spawnPlacementMode = mode === 'enemy' ? 'enemy' : 'player';
+            const enemySelect = document.getElementById('enemyTypeSelect');
+            const enemyButton = document.querySelector('#spawnPalettePanel button');
+            enemySelect.disabled = spawnPlacementMode !== 'enemy';
+            if (enemyButton) {
+                enemyButton.disabled = enemyCatalog.length === 0;
+            }
+            draw();
+        }
+
+        async function setSelectedEnemyType(enemyType) {
+            selectedEnemyType = enemyType;
+            document.getElementById('enemyTypeSelect').value = enemyType || '';
+            document.getElementById('enemyScaleEnemySelect').value = enemyType || '';
+            updateEnemyScaleBadge();
+
+            if (enemyType) {
+                try {
+                    await loadEnemyPreviewResources(enemyType);
+                } catch (error) {
+                    console.error('Error loading enemy preview resources:', error);
+                    showStatus(`Error loading ${enemyType} preview`, 'error');
+                }
+            }
+
+            draw();
+        }
+
+        function getEnemyMetadata(enemyType) {
+            return enemyMetadataCache.get(enemyType) || null;
+        }
+
+        function updateEnemyScaleBadge() {
+            const badge = document.getElementById('enemyScaleBadge');
+            const metadata = getEnemyMetadata(selectedEnemyType);
+            badge.textContent = metadata
+                ? `Scale: ${Number(metadata.scale).toFixed(2)}`
+                : 'Scale: --';
+        }
+
+        function dismissEnemyScaleModal(event) {
+            if (event.target && event.target.id === 'enemyScaleModal') {
+                closeEnemyScaleModal();
+            }
+        }
+
+        function closeEnemyScaleModal() {
+            document.getElementById('enemyScaleModal').classList.remove('active');
+        }
+
+        async function openEnemyScaleModal() {
+            if (!selectedEnemyType) {
+                showStatus('No enemy type available to scale', 'error');
+                return;
+            }
+
+            try {
+                await loadPlayerPreviewResources();
+                await loadEnemyPreviewResources(selectedEnemyType);
+                document.getElementById('enemyScaleModal').classList.add('active');
+                document.getElementById('enemyScaleEnemySelect').value = selectedEnemyType;
+                const scale = getEnemyMetadata(selectedEnemyType)?.scale ?? 0.24;
+                syncEnemyScaleInputs(scale, 'range');
+            } catch (error) {
+                console.error('Error opening enemy scale modal:', error);
+                showStatus(`Could not open scale modal: ${error.message}`, 'error');
+            }
+        }
+
+        async function handleEnemyScaleSelectionChange(enemyType) {
+            await setSelectedEnemyType(enemyType);
+            const scale = getEnemyMetadata(enemyType)?.scale ?? 0.24;
+            syncEnemyScaleInputs(scale, 'range');
+        }
+
+        function syncEnemyScaleInputs(value, source) {
+            const numericValue = Math.max(0.05, Math.min(1, Number(value) || 0.24));
+            const rounded = Math.round(numericValue * 100) / 100;
+            const range = document.getElementById('enemyScaleRange');
+            const number = document.getElementById('enemyScaleNumber');
+
+            if (source !== 'range') {
+                range.value = rounded;
+            }
+            if (source !== 'number') {
+                number.value = rounded.toFixed(2);
+            }
+
+            renderEnemyScalePreview(rounded);
+        }
+
+        function drawPreviewSprite(ctx, image, animationMeta, centerX, groundY, scaleMultiplier, tintLabel) {
+            if (!image || !animationMeta) {
+                return;
+            }
+
+            const [cols, rows] = animationMeta.grid.split('x').map(Number);
+            const frameWidth = image.width / cols;
+            const frameHeight = image.height / rows;
+            const drawWidth = frameWidth * scaleMultiplier;
+            const drawHeight = frameHeight * scaleMultiplier;
+
+            ctx.drawImage(
+                image,
+                0, 0, frameWidth, frameHeight,
+                centerX - drawWidth / 2,
+                groundY - drawHeight,
+                drawWidth,
+                drawHeight
+            );
+
+            ctx.fillStyle = '#e6e7ef';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(tintLabel, centerX, groundY + 26);
+        }
+
+        function renderEnemyScalePreview(scaleMultiplier) {
+            const canvasEl = document.getElementById('enemyScalePreviewCanvas');
+            const previewCtx = canvasEl.getContext('2d');
+            previewCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+            previewCtx.fillStyle = '#101623';
+            previewCtx.fillRect(0, 0, canvasEl.width, canvasEl.height);
+
+            previewCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+            previewCtx.lineWidth = 2;
+            previewCtx.beginPath();
+            previewCtx.moveTo(28, 230);
+            previewCtx.lineTo(canvasEl.width - 28, 230);
+            previewCtx.stroke();
+
+            const enemyType = document.getElementById('enemyScaleEnemySelect').value || selectedEnemyType;
+            const enemyMetadata = getEnemyMetadata(enemyType);
+            const enemyBitmap = enemyIdleBitmapCache.get(enemyType);
+
+            drawPreviewSprite(
+                previewCtx,
+                playerPreviewBitmap,
+                playerPreviewMetadata?.idle,
+                180,
+                230,
+                0.55,
+                'Player Reference'
+            );
+
+            if (enemyMetadata && enemyBitmap) {
+                const idleMeta = enemyMetadata.animations?.idle;
+                const baseScale = Number(scaleMultiplier) || enemyMetadata.scale || 0.24;
+                drawPreviewSprite(
+                    previewCtx,
+                    enemyBitmap,
+                    idleMeta,
+                    390,
+                    230,
+                    baseScale,
+                    `${enemyMetadata.displayName} (${baseScale.toFixed(2)}x)`
+                );
+            }
+
+            previewCtx.fillStyle = '#7d8cb5';
+            previewCtx.font = '13px sans-serif';
+            previewCtx.textAlign = 'left';
+            previewCtx.fillText('Ground line', 28, 252);
+        }
+
+        async function saveEnemyScale() {
+            const enemyType = document.getElementById('enemyScaleEnemySelect').value || selectedEnemyType;
+            const scale = Math.max(0.05, Math.min(1, Number(document.getElementById('enemyScaleNumber').value) || 0.24));
+
+            try {
+                const response = await fetch('/api/save_enemy_metadata', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: enemyType,
+                        scale
+                    })
+                });
+
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to save enemy scale');
+                }
+
+                enemyMetadataCache.set(enemyType, result.metadata);
+                enemyCatalog = enemyCatalog.map((entry) => entry.type === enemyType ? result.metadata : entry);
+                updateEnemyScaleBadge();
+                renderEnemySelectors();
+                document.getElementById('enemyTypeSelect').value = enemyType;
+                document.getElementById('enemyScaleEnemySelect').value = enemyType;
+                closeEnemyScaleModal();
+                draw();
+                showStatus(`${result.metadata.displayName} scale saved`, 'success');
+            } catch (error) {
+                console.error('Error saving enemy scale:', error);
+                showStatus(error.message || 'Error saving enemy scale', 'error');
             }
         }
 
@@ -662,6 +1010,8 @@
                 ctx.fillText(`S${index + 1}`, x + 5, y - 5);
             });
 
+            drawEnemySpawns();
+
             if (editorBackgroundPreviewFront) {
                 drawBackgrounds();
             }
@@ -750,6 +1100,86 @@
             
             if (index !== -1) {
                 spawnPoints.splice(index, 1);
+                draw();
+            }
+        }
+
+        function drawEnemySpawns() {
+            enemySpawns.forEach((enemy, index) => {
+                const metadata = getEnemyMetadata(enemy.type);
+                const bitmap = enemyIdleBitmapCache.get(enemy.type);
+                const drawX = enemy.x;
+                const drawY = enemy.y;
+
+                if (bitmap && metadata?.animations?.idle) {
+                    const [cols, rows] = metadata.animations.idle.grid.split('x').map(Number);
+                    const frameWidth = bitmap.width / cols;
+                    const frameHeight = bitmap.height / rows;
+                    const scaledWidth = frameWidth * metadata.scale;
+                    const scaledHeight = frameHeight * metadata.scale;
+
+                    ctx.drawImage(
+                        bitmap,
+                        0, 0, frameWidth, frameHeight,
+                        drawX - scaledWidth / 2,
+                        drawY - scaledHeight / 2,
+                        scaledWidth,
+                        scaledHeight
+                    );
+                }
+
+                ctx.save();
+                ctx.strokeStyle = '#ff5c5c';
+                ctx.lineWidth = 2 / zoomLevel;
+                ctx.strokeRect(drawX - 12 / zoomLevel, drawY - 12 / zoomLevel, 24 / zoomLevel, 24 / zoomLevel);
+                ctx.fillStyle = 'rgba(255, 92, 92, 0.18)';
+                ctx.fillRect(drawX - 12 / zoomLevel, drawY - 12 / zoomLevel, 24 / zoomLevel, 24 / zoomLevel);
+                ctx.fillStyle = '#ffd7d7';
+                ctx.font = `${12 / zoomLevel}px sans-serif`;
+                ctx.fillText(`E${index + 1}`, drawX + 8 / zoomLevel, drawY - 10 / zoomLevel);
+                ctx.fillText(enemy.type, drawX + 8 / zoomLevel, drawY + 18 / zoomLevel);
+                ctx.restore();
+            });
+        }
+
+        function serializeEnemies() {
+            return enemySpawns.map((enemy) => ({
+                id: enemy.id,
+                type: enemy.type,
+                x: enemy.x,
+                y: enemy.y
+            }));
+        }
+
+        function addEnemySpawn(x, y) {
+            if (!selectedEnemyType) {
+                showStatus('Select an enemy type first', 'error');
+                return;
+            }
+
+            const enemyId = `${selectedEnemyType}_${enemySpawns.length}`;
+            enemySpawns.push({
+                id: enemyId,
+                type: selectedEnemyType,
+                x: x * TILE_SIZE,
+                y: y * TILE_SIZE
+            });
+            draw();
+        }
+
+        function removeEnemySpawn(x, y) {
+            const worldX = x * TILE_SIZE;
+            const worldY = y * TILE_SIZE;
+            const threshold = 36;
+
+            const index = enemySpawns.findIndex((enemy) => {
+                const dx = enemy.x - worldX;
+                const dy = enemy.y - worldY;
+                return Math.sqrt(dx * dx + dy * dy) < threshold;
+            });
+
+            if (index !== -1) {
+                enemySpawns.splice(index, 1);
                 draw();
             }
         }
@@ -934,9 +1364,17 @@
             // Handle spawn point mode
             if (toolMode === 'spawn') {
                 if (e.button === 0) { // Left click - add spawn point
-                    addSpawnPoint(pos.x, pos.y);
+                    if (spawnPlacementMode === 'enemy') {
+                        addEnemySpawn(pos.x, pos.y);
+                    } else {
+                        addSpawnPoint(pos.x, pos.y);
+                    }
                 } else if (e.button === 2) { // Right click - remove spawn point
-                    removeSpawnPoint(pos.x, pos.y);
+                    if (spawnPlacementMode === 'enemy') {
+                        removeEnemySpawn(pos.x, pos.y);
+                    } else {
+                        removeSpawnPoint(pos.x, pos.y);
+                    }
                 }
                 return;
             }
@@ -1072,8 +1510,9 @@
             const label = mode === 'background'
                 ? 'Background Editor'
                 : mode === 'spawn'
-                    ? 'Spawn Point'
+                    ? 'Spawn / Enemies'
                     : 'Tile Paint';
+            setSpawnPlacementMode(spawnPlacementMode);
             draw();
             showStatus(`Tool: ${label}`, 'success');
         }
@@ -1103,8 +1542,8 @@
             
             // Validate map has at least one tile, spawn point, or background
             const hasTiles = mapData.some(row => row.some(tile => tile >= 0));
-            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0) {
-                showStatus('Map must have at least one tile, spawn point, or background', 'error');
+            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0 && enemySpawns.length === 0) {
+                showStatus('Map must have at least one tile, spawn point, enemy, or background', 'error');
                 return;
             }
             
@@ -1119,7 +1558,8 @@
                         tiles: mapData,
                         spawnPoints: spawnPoints,
                         tileCollisions: tileCollisions,
-                        backgrounds: serializeBackgrounds()
+                        backgrounds: serializeBackgrounds(),
+                        enemies: serializeEnemies()
                     })
                 });
                 
@@ -1156,9 +1596,17 @@
                     mapData = result.tiles;
                     spawnPoints = result.spawnPoints || [];
                     tileCollisions = result.tileCollisions || {};
+                    enemySpawns = Array.isArray(result.enemies) ? result.enemies : [];
                     placedBackgrounds = Array.isArray(result.backgrounds)
                         ? result.backgrounds.map((background) => normalizeBackgroundPlacement(background)).filter(Boolean)
                         : [];
+                    enemySpawns.forEach((enemy) => {
+                        if (enemy?.type) {
+                            loadEnemyPreviewResources(enemy.type).catch((error) => {
+                                console.error('Error loading enemy preview:', error);
+                            });
+                        }
+                    });
                     ensureDefaultBackgroundPlacement();
                     syncBackgroundIdentityCounter();
                     renderPlacedBackgroundStack();
@@ -1182,6 +1630,7 @@
             if (confirm('Are you sure you want to clear the map?')) {
                 initMapData();
                 spawnPoints = [];
+                enemySpawns = [];
                 placedBackgrounds = [];
                 selectedPlacedBackgroundId = null;
                 ensureDefaultBackgroundPlacement();
@@ -1480,7 +1929,8 @@
                         tiles: mapData,
                         spawnPoints: spawnPoints,
                         tileCollisions: tileCollisions,
-                        backgrounds: serializeBackgrounds()
+                        backgrounds: serializeBackgrounds(),
+                        enemies: serializeEnemies()
                     })
                 });
                 
@@ -1573,5 +2023,3 @@
     </script>
 </body>
 </html>
-
-

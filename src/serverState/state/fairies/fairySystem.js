@@ -33,6 +33,9 @@ function initializeFairies(input) {
       color,
       wander_offset: randomBetween(0, Math.PI * 2),
       wander_speed: randomBetween(1, 3),
+      bob_phase: randomBetween(0, Math.PI * 2),
+      bob_speed: randomBetween(0.8, 1.8),
+      bob_amplitude: randomBetween(2, 6),
     });
   }
 
@@ -47,6 +50,7 @@ function initializeFairies(input) {
 function updateFairies(input) {
   for (const fairy of input.fairies) {
     fairy.wander_offset += fairy.wander_speed * input.dt;
+    fairy.bob_phase += fairy.bob_speed * input.dt;
 
     const wanderRadius = 30;
     const targetX =
@@ -57,19 +61,17 @@ function updateFairies(input) {
     const targetY =
       fairy.target_platform.y +
       Math.sin(fairy.wander_offset * 0.7) * 15 -
-      20;
+      20 +
+      Math.sin(fairy.bob_phase) * fairy.bob_amplitude;
 
     const dx = targetX - fairy.x;
     const dy = targetY - fairy.y;
 
-    fairy.vx = dx * 2.0;
-    fairy.vy = dy * 2.0;
+    fairy.vx = dx * 2.8;
+    fairy.vy = dy * 2.8;
 
     fairy.x += fairy.vx * input.dt;
     fairy.y += fairy.vy * input.dt;
-
-    fairy.x += randomBetween(-5, 5) * input.dt;
-    fairy.y += randomBetween(-3, 3) * input.dt;
   }
 }
 

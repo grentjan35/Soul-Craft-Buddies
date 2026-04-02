@@ -1,6 +1,5 @@
 const {
   FRAME_TIME,
-  FIREBALL_SIZE,
   FIREBALL_RADIUS,
   FIREBALL_POWER_MAX,
   FIREBALL_DAMAGE,
@@ -16,6 +15,12 @@ const {
   PLAYER_MAX_HEALTH,
 } = require('../state/constants');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
+const {
+  checkFireballEnemyCollision,
+  damageEnemy,
+  serializeEnemiesForState,
+  updateEnemies,
+} = require('../enemies/runtime');
 const { updateFairies } = require('../state/fairies/fairySystem');
 
 /**
@@ -92,7 +97,6 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   const broadcastIntervalMs = 1000 / 20;
-  let lastFairyBroadcastMs = 0;
 
   setInterval(() => {
     const nowMs = Date.now();
@@ -102,6 +106,7 @@ function startGameLoop(input) {
     dt = Math.min(dt, 0.1);
 
     updateGameState({ state: input.state, dt, io: input.io });
+    updateEnemies({ state: input.state, dt, io: input.io });
     updateFairies({ fairies: input.state.fairies, dt });
     updateFireballs({ state: input.state, dt, io: input.io });
     updateExplosions({ state: input.state, io: input.io });
@@ -110,11 +115,7 @@ function startGameLoop(input) {
 
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
-      const includeFairies = nowMs - lastFairyBroadcastMs >= 250;
-      if (includeFairies) {
-        lastFairyBroadcastMs = nowMs;
-      }
-      broadcastState({ io: input.io, state: input.state, includeFairies });
+      broadcastState({ io: input.io, state: input.state, includeFairies: true });
     }
   }, FRAME_TIME * 1000);
 }
@@ -181,11 +182,14 @@ function broadcastState(input) {
     ts,
     seq: input.state.stateSeq,
     players: playersPayload,
+    enemies: serializeEnemiesForState(input.state),
     fairies: input.includeFairies
       ? input.state.fairies.map((fairy) => ({
           id: fairy.id,
           x: round1(fairy.x),
           y: round1(fairy.y),
+          vx: round1(fairy.vx),
+          vy: round1(fairy.vy),
           color: fairy.color,
         }))
       : undefined,
@@ -597,6 +601,36 @@ function updateFireballs(input) {
           sourceVy: f.vy,
         });
 
+        toRemove.push(id);
+        break;
+      }
+    }
+
+    if (toRemove.includes(id)) {
+      continue;
+    }
+
+    for (const [enemyId, enemy] of input.state.enemies.entries()) {
+      if (!enemy.alive) continue;
+
+      if (checkFireballEnemyCollision(input.state, f, enemy)) {
+        damageEnemy({
+          state: input.state,
+          enemyId,
+          damage: 1,
+          sourceSid: f.owner_sid,
+          sourceVx: f.vx,
+          sourceVy: f.vy,
+        });
+        createExplosion({
+          state: input.state,
+          io: input.io,
+          x: f.x,
+          y: f.y,
+          ownerSid: f.owner_sid,
+          sourceVx: f.vx,
+          sourceVy: f.vy,
+        });
         toRemove.push(id);
         break;
       }

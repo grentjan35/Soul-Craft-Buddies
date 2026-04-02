@@ -20,7 +20,7 @@ async function createApp(config) {
 
   app.use(createHealthRouter());
   app.use(createPagesRouter({ templatesDir: config.templatesDir }));
-  app.use(createMapsRouter({ dataDir: config.dataDir }));
+  app.use(createMapsRouter({ dataDir: config.dataDir, staticDir: config.staticDir }));
   app.use(
     createAssetsRouter({
       secretKey: config.secretKey,

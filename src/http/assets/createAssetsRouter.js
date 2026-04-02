@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+const { loadEnemyCatalog, loadEnemyMetadata, saveEnemyMetadata } = require('../../enemies/catalog');
 const { resolveUnderBaseDir } = require('../../utils/pathSafety');
 const { signToken, verifyToken } = require('./tokenService');
 const { loadManifest } = require('./manifestService');
@@ -222,6 +223,7 @@ function createAssetsRouter(deps) {
   const selectableCharacters = listAvailableCharacterCards(deps.staticDir);
   const selectableBackgrounds = listAvailableBackgrounds(deps.staticDir);
   const backgroundCompanions = listAvailableBackgroundCompanions(deps.staticDir);
+  const listEnemyCatalog = () => loadEnemyCatalog({ staticDir: deps.staticDir });
   const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
   const publicGameplaySounds = new Set(['fall.wav']);
@@ -833,6 +835,90 @@ function createAssetsRouter(deps) {
     } catch {
       res.status(500).send('Server error');
     }
+  });
+
+  router.get('/api/character_preview_asset/:character/:assetName', (req, res) => {
+    const character = String(req.params.character ?? '').trim().toLowerCase();
+    const assetName = String(req.params.assetName ?? '').trim().toLowerCase();
+    const assetPath = path.join(deps.staticDir, 'assets', 'characters', character, `${assetName}.png`);
+
+    if (!fs.existsSync(assetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: assetPath,
+      downloadName: `${character}_${assetName}.png`,
+    });
+  });
+
+  router.get('/api/enemies', (_req, res) => {
+    res.json(Object.values(listEnemyCatalog()));
+  });
+
+  router.get('/api/enemy_metadata/:enemyType', (req, res) => {
+    const enemyType = String(req.params.enemyType ?? '').trim().toLowerCase();
+    const metadata = loadEnemyMetadata({ staticDir: deps.staticDir, enemyType });
+
+    if (!metadata) {
+      res.status(404).send(`Enemy ${enemyType} not found`);
+      return;
+    }
+
+    res.json(metadata);
+  });
+
+  router.post('/api/save_enemy_metadata', (req, res) => {
+    const enemyType = String(req.body?.type ?? req.body?.enemyType ?? '').trim().toLowerCase();
+    if (!enemyType) {
+      res.status(400).json({ error: 'Enemy type is required' });
+      return;
+    }
+
+    const currentMetadata = loadEnemyMetadata({ staticDir: deps.staticDir, enemyType });
+    if (!currentMetadata) {
+      res.status(404).json({ error: `Enemy ${enemyType} not found` });
+      return;
+    }
+
+    const scale = Number(req.body?.scale);
+    if (!Number.isFinite(scale) || scale <= 0) {
+      res.status(400).json({ error: 'Enemy scale must be a positive number' });
+      return;
+    }
+
+    const savedMetadata = saveEnemyMetadata({
+      staticDir: deps.staticDir,
+      enemyType,
+      metadata: {
+        ...currentMetadata,
+        scale,
+      },
+    });
+
+    res.json({
+      success: true,
+      metadata: savedMetadata,
+    });
+  });
+
+  router.get('/api/enemy_asset/:enemyType/:assetName', (req, res) => {
+    const enemyType = String(req.params.enemyType ?? '').trim().toLowerCase();
+    const assetName = String(req.params.assetName ?? '').trim().toLowerCase();
+    const assetPath = path.join(deps.staticDir, 'assets', 'enemies', enemyType, `${assetName}.png`);
+
+    if (!fs.existsSync(assetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: assetPath,
+      downloadName: `${enemyType}_${assetName}.png`,
+    });
   });
 
   router.get('/api/character_card/:token/:character', (req, res) => {

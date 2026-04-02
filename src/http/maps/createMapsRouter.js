@@ -3,14 +3,16 @@ const fs = require('fs');
 const path = require('path');
 
 const { createBackup, listBackups, restoreBackup, getBackupDir } = require('./backupService');
+const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
 
 /**
  * Creates map + backup management endpoints.
- * @param {{dataDir: string}} deps
+ * @param {{dataDir: string, staticDir: string}} deps
  * @returns {import('express').Router}
  */
 function createMapsRouter(deps) {
   const router = express.Router();
+  const enemyCatalog = loadEnemyCatalog({ staticDir: deps.staticDir });
 
   router.post('/api/save_map', (req, res) => {
     const name = String(req.body?.name ?? '').trim();
@@ -20,6 +22,7 @@ function createMapsRouter(deps) {
     const spawnPoints = req.body?.spawnPoints ?? [];
     const tileCollisions = req.body?.tileCollisions ?? {};
     const backgrounds = req.body?.backgrounds ?? [];
+    const enemies = normalizeEnemySpawns(req.body?.enemies ?? [], enemyCatalog);
 
     if (!name) {
       res.status(400).json({ error: 'Map name is required' });
@@ -78,6 +81,11 @@ function createMapsRouter(deps) {
       }
     }
 
+    if (Array.isArray(req.body?.enemies) && enemies.length !== req.body.enemies.length) {
+      res.status(400).json({ error: 'Enemy spawns must have valid ids, types, and coordinates' });
+      return;
+    }
+
     try {
       createBackup({ dataDir: deps.dataDir, mapName: path.basename(name) });
     } catch {
@@ -95,6 +103,7 @@ function createMapsRouter(deps) {
         spawnPoints,
         tileCollisions,
         backgrounds,
+        enemies,
       })
     );
 
@@ -118,6 +127,9 @@ function createMapsRouter(deps) {
       }
       if (!Array.isArray(mapData.backgrounds)) {
         mapData.backgrounds = [];
+      }
+      if (!Array.isArray(mapData.enemies)) {
+        mapData.enemies = [];
       }
       res.json(mapData);
     } catch {
@@ -194,13 +206,33 @@ function createMapsRouter(deps) {
 
     const mapPath = path.join(deps.dataDir, `${mapName}.json`);
     if (fs.existsSync(mapPath)) {
-      res.json(JSON.parse(fs.readFileSync(mapPath, 'utf8')));
+      const mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+      if (!Array.isArray(mapData.enemies)) {
+        mapData.enemies = [];
+      }
+      if (!Array.isArray(mapData.backgrounds)) {
+        mapData.backgrounds = [];
+      }
+      if (!mapData.tileCollisions) {
+        mapData.tileCollisions = {};
+      }
+      res.json(mapData);
       return;
     }
 
     const defaultPath = path.join(deps.dataDir, 'default.json');
     if (fs.existsSync(defaultPath)) {
-      res.json(JSON.parse(fs.readFileSync(defaultPath, 'utf8')));
+      const mapData = JSON.parse(fs.readFileSync(defaultPath, 'utf8'));
+      if (!Array.isArray(mapData.enemies)) {
+        mapData.enemies = [];
+      }
+      if (!Array.isArray(mapData.backgrounds)) {
+        mapData.backgrounds = [];
+      }
+      if (!mapData.tileCollisions) {
+        mapData.tileCollisions = {};
+      }
+      res.json(mapData);
       return;
     }
 
@@ -211,6 +243,7 @@ function createMapsRouter(deps) {
       tiles: Array.from({ length: 18 }, () => Array.from({ length: 25 }, () => -1)),
       spawnPoints: [],
       backgrounds: [],
+      enemies: [],
     });
   });
 

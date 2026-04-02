@@ -7,8 +7,12 @@ const {
   DEAD_BODY_DURATION,
 } = require('./constants');
 
+const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
 const { initializeFairies } = require('./fairies/fairySystem');
+const { resetEnemiesForState } = require('../enemies/runtime');
 const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
+const { buildPlatformsFromMap } = require('./platforms/buildPlatformsFromMap');
+const { buildPlatformNavigation } = require('./platformNavigation/buildPlatformNavigation');
 
 /**
  * Loads map JSON if present.
@@ -30,39 +34,13 @@ function loadMapFromDisk(input) {
 }
 
 /**
- * Converts tile map data into platform AABBs.
- * @param {{tiles: number[][], width: number, height: number}} mapData
- * @returns {Array<{x: number, y: number, w: number, h: number, tile_type: number}>}
- */
-function tilesToPlatforms(mapData) {
-  /** @type {Array<{x: number, y: number, w: number, h: number, tile_type: number}>} */
-  const platforms = [];
-
-  for (let y = 0; y < mapData.height; y += 1) {
-    for (let x = 0; x < mapData.width; x += 1) {
-      const tileType = mapData.tiles?.[y]?.[x];
-      if (typeof tileType === 'number' && tileType >= 0) {
-        platforms.push({
-          x: x * TILE_SIZE,
-          y: y * TILE_SIZE,
-          w: TILE_SIZE,
-          h: TILE_SIZE,
-          tile_type: tileType,
-        });
-      }
-    }
-  }
-
-  return platforms;
-}
-
-/**
  * Creates initial in-memory state.
  * @param {{config: any}} input
  * @returns {any}
  */
 function createInitialState(input) {
   const dataDir = input.config.dataDir;
+  const enemyDefinitions = loadEnemyCatalog({ staticDir: input.config.staticDir });
 
   const mapResult = loadMapFromDisk({ dataDir, mapName: 'default' });
   const mapData = mapResult.ok
@@ -75,9 +53,10 @@ function createInitialState(input) {
           Array.from({ length: 25 }, () => -1)
         ),
         spawnPoints: [{ x: 100, y: 500, id: 0 }],
+        enemies: [],
       };
 
-  const platforms = tilesToPlatforms(mapData);
+  const platforms = buildPlatformsFromMap(mapData);
 
   const mapBounds = {
     min_x: 0,
@@ -89,8 +68,9 @@ function createInitialState(input) {
   const spawnPoints = Array.isArray(mapData.spawnPoints)
     ? mapData.spawnPoints
     : [{ x: 100, y: 500, id: 0 }];
+  const enemySpawns = normalizeEnemySpawns(mapData.enemies, enemyDefinitions);
 
-  return {
+  const state = {
     config: input.config,
     players: new Map(),
     deadBodies: new Map(),
@@ -101,14 +81,21 @@ function createInitialState(input) {
     stateSeq: 0,
     platforms,
     platformGrid: buildPlatformGrid({ platforms }),
+    platformNavigation: buildPlatformNavigation({ platforms }),
     mapBounds,
     currentMapName: String(mapData.name ?? 'default'),
     spawnPoints,
+    enemyDefinitions,
+    enemySpawns,
+    enemies: new Map(),
     spawnPointIndex: 0,
     fairies: initializeFairies({ platforms }),
     maxHealth: PLAYER_MAX_HEALTH,
     dataDir,
   };
+
+  resetEnemiesForState({ state });
+  return state;
 }
 
 module.exports = { createInitialState };
