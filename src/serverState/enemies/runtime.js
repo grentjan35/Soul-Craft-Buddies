@@ -353,6 +353,89 @@ function getEnemySupportPlatform(state, enemy, definition) {
   return getSupportPlatformForHitbox(state, getEnemyHitboxForPosition(definition, enemy.x, enemy.y));
 }
 
+function lineIntersectsRect(x1, y1, x2, y2, rect) {
+  const minX = Math.min(x1, x2);
+  const maxX = Math.max(x1, x2);
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+
+  if (maxX < rect.x || minX > rect.x + rect.w || maxY < rect.y || minY > rect.y + rect.h) {
+    return false;
+  }
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0;
+  let t1 = 1;
+  const checks = [
+    [-dx, x1 - rect.x],
+    [dx, rect.x + rect.w - x1],
+    [-dy, y1 - rect.y],
+    [dy, rect.y + rect.h - y1],
+  ];
+
+  for (const [p, q] of checks) {
+    if (p === 0) {
+      if (q < 0) {
+        return false;
+      }
+      continue;
+    }
+
+    const ratio = q / p;
+    if (p < 0) {
+      if (ratio > t1) {
+        return false;
+      }
+      if (ratio > t0) {
+        t0 = ratio;
+      }
+    } else {
+      if (ratio < t0) {
+        return false;
+      }
+      if (ratio < t1) {
+        t1 = ratio;
+      }
+    }
+  }
+
+  return true;
+}
+
+function hasLineOfSightToPlayer(state, enemy, player) {
+  if (!Array.isArray(state.platforms) || state.platforms.length === 0) {
+    return true;
+  }
+
+  const fromX = enemy.x;
+  const fromY = enemy.y - 14;
+  const toX = player.x;
+  const toY = player.y - PLAYER_HITBOX_HEIGHT * 0.2;
+  const minX = Math.min(fromX, toX);
+  const maxX = Math.max(fromX, toX);
+  const minY = Math.min(fromY, toY);
+  const maxY = Math.max(fromY, toY);
+
+  for (const platform of state.platforms) {
+    const overlapsSpan =
+      platform.x < maxX - 4 &&
+      platform.x + platform.w > minX + 4 &&
+      platform.y < maxY - 4 &&
+      platform.y + platform.h > minY + 4;
+
+    if (!overlapsSpan) {
+      continue;
+    }
+
+    if (lineIntersectsRect(fromX, fromY, toX, toY, platform)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function updateEnemyProgressTracker(enemy, moveIntent, nowSec) {
   if (moveIntent === 0) {
     enemy.last_progress_x = enemy.x;
@@ -908,6 +991,10 @@ function chooseTargetPlayer(state, enemy, definition, nowSec) {
     const dy = player.y - enemy.y;
     const distance = Math.hypot(dx, dy);
     if (distance > definition.behavior.detectionRadius) {
+      continue;
+    }
+
+    if (!hasLineOfSightToPlayer(state, enemy, player)) {
       continue;
     }
 

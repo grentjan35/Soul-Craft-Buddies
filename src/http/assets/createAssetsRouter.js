@@ -226,8 +226,21 @@ function createAssetsRouter(deps) {
   const listEnemyCatalog = () => loadEnemyCatalog({ staticDir: deps.staticDir });
   const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
+  const publicSpiderFootstepPattern = /^footstep([2-4])?\.mp3$/;
   const publicGameplaySounds = new Set(['fall.wav']);
   const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
+  const publicPlayerHurtPattern = /^hurt[1-5]?\.mp3$/;
+  const publicSpiderSounds = new Set([
+    'death.mp3',
+    'death2.mp3',
+    'eating.mp3',
+    'growl.mp3',
+    'growling.mp3',
+    'hurt.mp3',
+    'screeching.mp3',
+    'throwing up.mp3',
+    'wine.mp3',
+  ]);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -279,6 +292,24 @@ function createAssetsRouter(deps) {
     res.sendFile(soundPath);
   });
 
+  router.get('/audio/spider_footsteps/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicSpiderFootstepPattern.test(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'spider footsteps', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
   router.get('/audio/:name', (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicGameplaySounds.has(soundName)) {
@@ -305,6 +336,42 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'fireball', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/hurt/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicPlayerHurtPattern.test(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'hurt', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/spider/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicSpiderSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'spider', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;

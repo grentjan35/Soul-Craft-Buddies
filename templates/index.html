@@ -1153,8 +1153,10 @@
         let loadingCompleteSoundPlayed = false;
         let menuAudio = null;
         let footstepAudio = null;
+        let spiderFootstepAudio = null;
         let fallAudio = null;
         let fireballAudio = null;
+        let combatAudio = null;
         const INPUT_SEND_INTERVAL_MS = 33;
         let lastInputSendTime = 0;
         let scheduledInputFlush = null;
@@ -1927,8 +1929,10 @@
             loadingCompleteAudio.preload = 'auto';
             loadingCompleteAudio.load();
             footstepAudio = createFootstepAudioSystem();
+            spiderFootstepAudio = createSpiderFootstepAudioSystem();
             fallAudio = createFallAudioSystem();
             fireballAudio = createFireballAudioSystem();
+            combatAudio = createCombatAudioSystem();
 
             function createMenuAudioSystem() {
                 const MENU_VOLUME_MULTIPLIER = 0.7;
@@ -2307,6 +2311,95 @@
                 return { unlockAudio, playLocal, playAt };
             }
 
+            function createSpiderFootstepAudioSystem() {
+                const SPIDER_FOOTSTEP_VOLUME_MULTIPLIER = 1.05;
+                const soundUrls = [
+                    '/audio/spider_footsteps/footstep.mp3',
+                    '/audio/spider_footsteps/footstep2.mp3',
+                    '/audio/spider_footsteps/footstep3.mp3',
+                    '/audio/spider_footsteps/footstep4.mp3'
+                ];
+                const audioContext =
+                    window.AudioContext ? new AudioContext() :
+                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const bufferCache = new Map();
+                let nextPoolIndex = 0;
+                let audioUnlocked = false;
+
+                async function loadBuffer(url) {
+                    if (!audioContext) {
+                        return null;
+                    }
+
+                    if (bufferCache.has(url)) {
+                        return bufferCache.get(url);
+                    }
+
+                    const bufferPromise = fetch(url)
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`Failed to load spider footstep sound: ${url}`);
+                            }
+                            return response.arrayBuffer();
+                        })
+                        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer.slice(0)));
+                    bufferCache.set(url, bufferPromise);
+                    return bufferPromise;
+                }
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+
+                    audioUnlocked = true;
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(() => {});
+                    }
+                    soundUrls.forEach((url) => loadBuffer(url).catch(() => {}));
+                }
+
+                async function playAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.4, minSemitone = -4, maxSemitone = 1) {
+                    if (!audioContext) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const { gain, pan } = computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport);
+                        if (gain <= 0.015) {
+                            return;
+                        }
+
+                        const url = soundUrls[nextPoolIndex % soundUrls.length];
+                        nextPoolIndex += 1;
+                        const buffer = await loadBuffer(url);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const gainNode = audioContext.createGain();
+                        const panNode = audioContext.createStereoPanner();
+                        source.buffer = buffer;
+                        source.detune.value = (minSemitone + Math.random() * (maxSemitone - minSemitone)) * 100;
+                        gainNode.gain.value = Math.min(1, volume * SPIDER_FOOTSTEP_VOLUME_MULTIPLIER) * gain;
+                        panNode.pan.value = pan;
+                        source.connect(gainNode);
+                        gainNode.connect(panNode);
+                        panNode.connect(audioContext.destination);
+                        source.start();
+                    } catch (_error) {
+                        // Ignore spider footstep failures so gameplay continues uninterrupted.
+                    }
+                }
+
+                return { unlockAudio, playAt };
+            }
+
             function createFireballAudioSystem() {
                 const FIREBALL_VOLUME_MULTIPLIER = 1.1;
                 const soundUrls = {
@@ -2475,6 +2568,186 @@
                     stopAllLoops,
                     playReleaseAt,
                     playHitAt
+                };
+            }
+
+            function createCombatAudioSystem() {
+                const COMBAT_VOLUME_MULTIPLIER = 1.05;
+                const soundUrls = {
+                    spiderAmbient: [
+                        '/audio/spider/eating.mp3',
+                        '/audio/spider/growl.mp3',
+                        '/audio/spider/growling.mp3',
+                        '/audio/spider/throwing%20up.mp3'
+                    ],
+                    spiderAttack: '/audio/spider/screeching.mp3',
+                    spiderHit: '/audio/spider/wine.mp3',
+                    spiderDeath: [
+                        '/audio/spider/death.mp3',
+                        '/audio/spider/death2.mp3'
+                    ],
+                    playerHurt: [
+                        '/audio/hurt/hurt.mp3',
+                        '/audio/hurt/hurt2.mp3',
+                        '/audio/hurt/hurt3.mp3',
+                        '/audio/hurt/hurt4.mp3',
+                        '/audio/hurt/hurt5.mp3'
+                    ]
+                };
+                const audioContext =
+                    window.AudioContext ? new AudioContext() :
+                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const bufferCache = new Map();
+                let audioUnlocked = false;
+
+                function randomFrom(list) {
+                    if (!Array.isArray(list) || list.length === 0) {
+                        return null;
+                    }
+                    return list[Math.floor(Math.random() * list.length)] || null;
+                }
+
+                async function loadBuffer(url) {
+                    if (!audioContext || !url) {
+                        return null;
+                    }
+
+                    if (bufferCache.has(url)) {
+                        return bufferCache.get(url);
+                    }
+
+                    const bufferPromise = fetch(url)
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`Failed to load combat sound: ${url}`);
+                            }
+                            return response.arrayBuffer();
+                        })
+                        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer.slice(0)));
+                    bufferCache.set(url, bufferPromise);
+                    return bufferPromise;
+                }
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+
+                    audioUnlocked = true;
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(() => {});
+                    }
+
+                    const warmUrls = [
+                        ...soundUrls.spiderAmbient,
+                        soundUrls.spiderAttack,
+                        soundUrls.spiderHit,
+                        ...soundUrls.spiderDeath,
+                        ...soundUrls.playerHurt
+                    ];
+                    warmUrls.forEach((url) => loadBuffer(url).catch(() => {}));
+                }
+
+                async function playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport = null, volume = 1, detune = 0) {
+                    if (!audioContext || !url) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const { gain, pan } = computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport);
+                        if (gain <= 0.012) {
+                            return;
+                        }
+
+                        const buffer = await loadBuffer(url);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const gainNode = audioContext.createGain();
+                        const panNode = audioContext.createStereoPanner();
+                        source.buffer = buffer;
+                        source.detune.value = detune;
+                        gainNode.gain.value = Math.min(1.2, volume * COMBAT_VOLUME_MULTIPLIER) * gain;
+                        panNode.pan.value = pan;
+                        source.connect(gainNode);
+                        gainNode.connect(panNode);
+                        panNode.connect(audioContext.destination);
+                        source.start();
+                    } catch (_error) {
+                        // Ignore combat audio failures so gameplay keeps running.
+                    }
+                }
+
+                async function playUrlLocal(url, volume = 1, detune = 0) {
+                    if (!audioContext || !url) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const buffer = await loadBuffer(url);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const gainNode = audioContext.createGain();
+                        source.buffer = buffer;
+                        source.detune.value = detune;
+                        gainNode.gain.value = Math.min(1.2, volume * COMBAT_VOLUME_MULTIPLIER);
+                        source.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        source.start();
+                    } catch (_error) {
+                        // Ignore combat audio failures so gameplay keeps running.
+                    }
+                }
+
+                async function playSpiderAmbientAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.5) {
+                    const url = randomFrom(soundUrls.spiderAmbient);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, -40 + Math.random() * 80);
+                }
+
+                async function playSpiderAttackAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.8) {
+                    await playUrlAt(soundUrls.spiderAttack, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playSpiderHitAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.7) {
+                    await playUrlAt(soundUrls.spiderHit, worldX, worldY, listenerX, listenerY, viewport, volume, 10);
+                }
+
+                async function playSpiderDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.88) {
+                    const url = randomFrom(soundUrls.spiderDeath);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playPlayerHurtAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.78) {
+                    const url = randomFrom(soundUrls.playerHurt);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, -20 + Math.random() * 40);
+                }
+
+                async function playPlayerHurtLocal(volume = 0.84) {
+                    const url = randomFrom(soundUrls.playerHurt);
+                    await playUrlLocal(url, volume, -20 + Math.random() * 40);
+                }
+
+                return {
+                    unlockAudio,
+                    playSpiderAmbientAt,
+                    playSpiderAttackAt,
+                    playSpiderHitAt,
+                    playSpiderDeathAt,
+                    playPlayerHurtAt,
+                    playPlayerHurtLocal
                 };
             }
 
@@ -2735,8 +3008,10 @@
             startScreen.addEventListener('pointerdown', () => {
                 menuAudio.unlockAudio();
                 footstepAudio.unlockAudio();
+                spiderFootstepAudio.unlockAudio();
                 fallAudio.unlockAudio();
                 fireballAudio.unlockAudio();
+                combatAudio.unlockAudio();
                 menuAudio.play('click', 0.42);
             });
 
@@ -4348,6 +4623,9 @@
         const enemyState = {};
         const authoritativeEnemyState = {};
         const enemySnapshots = {};
+        const previousEnemyAudioState = {};
+        const enemyAmbientAudioState = {};
+        const enemyFootstepFrameCounters = {};
         const fairySnapshots = {};
         const authoritativeFairyState = {};
         const MAX_SNAPSHOT_AGE_MS = 1000;
@@ -4360,6 +4638,8 @@
         // Store rendered dimensions for each player (aspect-ratio-preserving)
         const playerRenderDimensions = {};
         const enemyRenderDimensions = {};
+        const playerHitFlashUntilMs = {};
+        const enemyHitFlashUntilMs = {};
         // Store animation frames for each player to prevent sync issues
         const playerAnimFrames = {};
         const enemyAnimFrames = {};
@@ -4389,6 +4669,7 @@
         let burnMarks = [];
         let attachedPlayerBurns = [];
         const spriteFrameAlphaCache = new Map();
+        const spriteWhiteFrameCache = new Map();
         let mousePosition = { x: 0, y: 0 };
         const FIREBALL_SIZE = 34;
         const FIREBALL_RADIUS = FIREBALL_SIZE / 2;
@@ -4815,6 +5096,7 @@
                         delete enemySnapshots[enemyId];
                         delete enemyAnimFrames[enemyId];
                         delete enemyRenderDimensions[enemyId];
+                        delete enemyHitFlashUntilMs[enemyId];
                     }
                 }
             } else {
@@ -4824,6 +5106,7 @@
                     delete enemySnapshots[enemyId];
                     delete enemyAnimFrames[enemyId];
                     delete enemyRenderDimensions[enemyId];
+                    delete enemyHitFlashUntilMs[enemyId];
                 }
             }
             
@@ -4935,6 +5218,7 @@
                     delete playerState[sid];
                     delete authoritativePlayerState[sid];
                     delete playerSnapshots[sid];
+                    delete playerHitFlashUntilMs[sid];
                 }
             }
         });
@@ -5158,6 +5442,25 @@
             }
             if (playerState[sid]) {
                 playerState[sid].health = health;
+            }
+            playerHitFlashUntilMs[sid] = Date.now() + 110;
+
+            const listenerState = getPlayerState(socket.id);
+            const hitPlayerState = playerState[sid] || authoritativePlayerState[sid] || null;
+            if (combatAudio && listenerState && hitPlayerState) {
+                const audibleViewport = getAudibleViewport();
+                if (sid === socket.id) {
+                    combatAudio.playPlayerHurtLocal(0.9);
+                } else {
+                    combatAudio.playPlayerHurtAt(
+                        hitPlayerState.x,
+                        hitPlayerState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport,
+                        0.76
+                    );
+                }
             }
 
             if (typeof x === 'number' && typeof y === 'number') {
@@ -5493,6 +5796,7 @@
             lastSpatialAudioUpdateTime = nowMs;
             updateSpatialFootstepAudio();
             updateSpatialFireballAudio();
+            updateSpatialEnemyAudio(nowMs);
         }
 
         function drawEntityHealthBar(ctx, entityX, entityY, health, maxHealth, cameraX, cameraY, yOffset = 70) {
@@ -5538,6 +5842,161 @@
                 width: canvas.width / cameraZoom,
                 height: canvas.height / cameraZoom
             };
+        }
+
+        function updateSpatialEnemyAudio(nowMs) {
+            if (!combatAudio) {
+                return;
+            }
+
+            const listenerState = getPlayerState(socket.id);
+            if (!listenerState) {
+                return;
+            }
+
+            const audibleViewport = getAudibleViewport();
+            const ambientCooldownBaseMs = 4200;
+            const enemyFootstepInterval = 3;
+
+            for (const enemyId in enemyState) {
+                const currentState = enemyState[enemyId];
+                if (!currentState || currentState.type !== 'spider') {
+                    continue;
+                }
+
+                const previousState = previousEnemyAudioState[enemyId];
+                const ambientState = enemyAmbientAudioState[enemyId] || {
+                    nextAt: nowMs + 1800 + Math.random() * 2200
+                };
+
+                if (previousState) {
+                    const tookDamage =
+                        currentState.alive &&
+                        previousState.alive &&
+                        typeof currentState.health === 'number' &&
+                        typeof previousState.health === 'number' &&
+                        currentState.health < previousState.health;
+                    const justDied = previousState.alive && !currentState.alive;
+                    const landedThisFrame = previousState.alive && !previousState.on_ground && currentState.on_ground;
+                    const startedAttack =
+                        currentState.alive &&
+                        (
+                            (previousState.brain_state !== 'prepare' && currentState.brain_state === 'prepare') ||
+                            (previousState.action !== 'attack' && currentState.action === 'attack')
+                        );
+
+                    if (tookDamage) {
+                        enemyHitFlashUntilMs[enemyId] = nowMs + 110;
+                        combatAudio.playSpiderHitAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.72
+                        );
+                    }
+
+                    if (justDied) {
+                        combatAudio.playSpiderDeathAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.9
+                        );
+                        ambientState.nextAt = nowMs + ambientCooldownBaseMs;
+                    } else if (startedAttack) {
+                        combatAudio.playSpiderAttackAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.82
+                        );
+                        ambientState.nextAt = nowMs + 2200 + Math.random() * 1000;
+                    }
+
+                    if (landedThisFrame && fallAudio) {
+                        fallAudio.playAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.34
+                        );
+                        enemyFootstepFrameCounters[enemyId] = 0;
+                    }
+                }
+
+                const isAmbientState =
+                    currentState.alive &&
+                    (
+                        currentState.brain_state === 'idle' ||
+                        currentState.brain_state === 'wander' ||
+                        currentState.action === 'idle' ||
+                        currentState.action === 'run'
+                    );
+
+                if (isAmbientState && nowMs >= ambientState.nextAt) {
+                    combatAudio.playSpiderAmbientAt(
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport,
+                        0.52
+                    );
+                    ambientState.nextAt = nowMs + ambientCooldownBaseMs + Math.random() * 3800;
+                }
+
+                const movedHorizontally = previousState ? Math.abs(currentState.x - previousState.x) > 0.6 : false;
+                const isWalking =
+                    currentState.alive &&
+                    currentState.on_ground &&
+                    currentState.action === 'run' &&
+                    movedHorizontally;
+
+                if (isWalking && spiderFootstepAudio) {
+                    enemyFootstepFrameCounters[enemyId] = (enemyFootstepFrameCounters[enemyId] || 0) + 1;
+                    if (enemyFootstepFrameCounters[enemyId] >= enemyFootstepInterval) {
+                        spiderFootstepAudio.playAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.26,
+                            -7,
+                            -2
+                        );
+                        enemyFootstepFrameCounters[enemyId] = 0;
+                    }
+                } else if (!currentState.on_ground || currentState.action !== 'run') {
+                    enemyFootstepFrameCounters[enemyId] = 0;
+                }
+
+                enemyAmbientAudioState[enemyId] = ambientState;
+                previousEnemyAudioState[enemyId] = {
+                    health: currentState.health,
+                    alive: currentState.alive,
+                    action: currentState.action,
+                    brain_state: currentState.brain_state,
+                    on_ground: currentState.on_ground,
+                    x: currentState.x
+                };
+            }
+
+            for (const enemyId in previousEnemyAudioState) {
+                if (!enemyState[enemyId]) {
+                    delete previousEnemyAudioState[enemyId];
+                    delete enemyAmbientAudioState[enemyId];
+                    delete enemyFootstepFrameCounters[enemyId];
+                }
+            }
         }
 
         function updateSpatialFootstepAudio() {
@@ -5734,6 +6193,7 @@
 
             return {
                 state,
+                cacheKey: `${enemyType}|${assetName}|${frameIdx}`,
                 image,
                 frameIdx,
                 frameX: (frameIdx % cols) * frameW,
@@ -5742,6 +6202,109 @@
                 frameH,
                 renderDims
             };
+        }
+
+        function getWhiteFlashFrameCanvas(cacheKey, image, frameX, frameY, frameW, frameH) {
+            const cached = spriteWhiteFrameCache.get(cacheKey);
+            if (cached) {
+                return cached;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(frameW));
+            canvas.height = Math.max(1, Math.round(frameH));
+            const frameCtx = canvas.getContext('2d');
+            frameCtx.clearRect(0, 0, canvas.width, canvas.height);
+            frameCtx.drawImage(
+                image,
+                frameX,
+                frameY,
+                frameW,
+                frameH,
+                0,
+                0,
+                canvas.width,
+                canvas.height
+            );
+            frameCtx.globalCompositeOperation = 'source-in';
+            frameCtx.fillStyle = '#ffffff';
+            frameCtx.fillRect(0, 0, canvas.width, canvas.height);
+            frameCtx.globalCompositeOperation = 'source-over';
+            spriteWhiteFrameCache.set(cacheKey, canvas);
+            return canvas;
+        }
+
+        function getHitFlashAlpha(hitFlashUntilMs, nowMs, durationMs = 110) {
+            if (!Number.isFinite(hitFlashUntilMs) || hitFlashUntilMs <= nowMs) {
+                return 0;
+            }
+
+            const remaining = hitFlashUntilMs - nowMs;
+            const normalized = Math.max(0, Math.min(1, remaining / durationMs));
+            return 0.18 + normalized * 0.62;
+        }
+
+        function drawSpriteFrameWithHitFlash(input) {
+            const {
+                image,
+                frameX,
+                frameY,
+                frameW,
+                frameH,
+                drawX,
+                drawY,
+                drawW,
+                drawH,
+                direction = 'right',
+                opacity = 1,
+                flashAlpha = 0,
+                cacheKey = 'sprite'
+            } = input;
+
+            ctx.save();
+            ctx.globalAlpha = opacity;
+
+            if (direction === 'left') {
+                ctx.translate(drawX + drawW / 2, drawY + drawH / 2);
+                ctx.scale(-1, 1);
+                ctx.drawImage(
+                    image,
+                    frameX,
+                    frameY,
+                    frameW,
+                    frameH,
+                    -drawW / 2,
+                    -drawH / 2,
+                    drawW,
+                    drawH
+                );
+
+                if (flashAlpha > 0.001) {
+                    const whiteFrame = getWhiteFlashFrameCanvas(cacheKey, image, frameX, frameY, frameW, frameH);
+                    ctx.globalAlpha = opacity * flashAlpha;
+                    ctx.drawImage(whiteFrame, -drawW / 2, -drawH / 2, drawW, drawH);
+                }
+            } else {
+                ctx.drawImage(
+                    image,
+                    frameX,
+                    frameY,
+                    frameW,
+                    frameH,
+                    drawX,
+                    drawY,
+                    drawW,
+                    drawH
+                );
+
+                if (flashAlpha > 0.001) {
+                    const whiteFrame = getWhiteFlashFrameCanvas(cacheKey, image, frameX, frameY, frameW, frameH);
+                    ctx.globalAlpha = opacity * flashAlpha;
+                    ctx.drawImage(whiteFrame, drawX, drawY, drawW, drawH);
+                }
+            }
+
+            ctx.restore();
         }
 
         function getEnemyHitboxRect(state) {
@@ -7070,45 +7633,31 @@
 
                     const frameInfo = getEnemyFrameRenderInfo(enemyId);
                     if (frameInfo) {
+                        const nowMs = Date.now();
                         let enemyOpacity = 1;
                         if (!state.alive && typeof state.respawn_at_ms === 'number' && state.respawn_at_ms > 0) {
                             const fadeWindowMs = 900;
-                            const timeRemainingMs = state.respawn_at_ms - Date.now();
+                            const timeRemainingMs = state.respawn_at_ms - nowMs;
                             if (timeRemainingMs <= fadeWindowMs) {
                                 enemyOpacity = Math.max(0, Math.min(1, timeRemainingMs / fadeWindowMs));
                             }
                         }
-
-                        ctx.save();
-                        ctx.globalAlpha = enemyOpacity;
-                        if (state.direction === 'left') {
-                            ctx.translate(state.x - cameraX, state.y - cameraY);
-                            ctx.scale(-1, 1);
-                            ctx.drawImage(
-                                frameInfo.image,
-                                frameInfo.frameX,
-                                frameInfo.frameY,
-                                frameInfo.frameW,
-                                frameInfo.frameH,
-                                -frameInfo.renderDims.width / 2,
-                                -frameInfo.renderDims.height / 2,
-                                frameInfo.renderDims.width,
-                                frameInfo.renderDims.height
-                            );
-                        } else {
-                            ctx.drawImage(
-                                frameInfo.image,
-                                frameInfo.frameX,
-                                frameInfo.frameY,
-                                frameInfo.frameW,
-                                frameInfo.frameH,
-                                state.x - cameraX - frameInfo.renderDims.width / 2,
-                                state.y - cameraY - frameInfo.renderDims.height / 2,
-                                frameInfo.renderDims.width,
-                                frameInfo.renderDims.height
-                            );
-                        }
-                        ctx.restore();
+                        const flashAlpha = getHitFlashAlpha(enemyHitFlashUntilMs[enemyId], nowMs);
+                        drawSpriteFrameWithHitFlash({
+                            image: frameInfo.image,
+                            frameX: frameInfo.frameX,
+                            frameY: frameInfo.frameY,
+                            frameW: frameInfo.frameW,
+                            frameH: frameInfo.frameH,
+                            drawX: state.x - cameraX - frameInfo.renderDims.width / 2,
+                            drawY: state.y - cameraY - frameInfo.renderDims.height / 2,
+                            drawW: frameInfo.renderDims.width,
+                            drawH: frameInfo.renderDims.height,
+                            direction: state.direction,
+                            opacity: enemyOpacity,
+                            flashAlpha,
+                            cacheKey: `enemy|${frameInfo.cacheKey}`
+                        });
                     } else if (failedEnemyTypes.has(state.type)) {
                         ctx.fillStyle = '#c24747';
                         ctx.fillRect(state.x - cameraX - 28, state.y - cameraY - 28, 56, 56);
@@ -7199,16 +7748,22 @@
                             
                             // Send dimensions to server if they changed
                             playerRenderDimensions[sid] = renderDims;
-
-                            ctx.save();
-                            if (direction === 'left') {
-                                ctx.translate(pos.x - cameraX, pos.y - cameraY);
-                                ctx.scale(-1, 1);
-                                ctx.drawImage(playerAssets[action], frameX, frameY, frameW, frameH, -renderDims.width / 2, -renderDims.height / 2, renderDims.width, renderDims.height);
-                            } else {
-                                ctx.drawImage(playerAssets[action], frameX, frameY, frameW, frameH, pos.x - cameraX - renderDims.width / 2, pos.y - cameraY - renderDims.height / 2, renderDims.width, renderDims.height);
-                            }
-                            ctx.restore();
+                            const flashAlpha = getHitFlashAlpha(playerHitFlashUntilMs[sid], now);
+                            drawSpriteFrameWithHitFlash({
+                                image: playerAssets[action],
+                                frameX,
+                                frameY,
+                                frameW,
+                                frameH,
+                                drawX: pos.x - cameraX - renderDims.width / 2,
+                                drawY: pos.y - cameraY - renderDims.height / 2,
+                                drawW: renderDims.width,
+                                drawH: renderDims.height,
+                                direction,
+                                opacity: 1,
+                                flashAlpha,
+                                cacheKey: `player|${playerCharacter}|${action}|${frameIdx}`
+                            });
                         } else if (failedCharacters.has(playerCharacter)) {
                             // Only show red square if assets have failed to load
                             const fallbackDims = { width: PLAYER_MAX_SIZE, height: PLAYER_MAX_SIZE };
