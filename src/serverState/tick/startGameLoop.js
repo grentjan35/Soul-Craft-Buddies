@@ -106,7 +106,7 @@ function startGameLoop(input) {
     dt = Math.min(dt, 0.1);
 
     updateGameState({ state: input.state, dt, io: input.io });
-    updateEnemies({ state: input.state, dt, io: input.io });
+    updateEnemies({ state: input.state, dt, io: input.io, spawnFireball });
     updateFairies({ fairies: input.state.fairies, dt });
     updateFireballs({ state: input.state, dt, io: input.io });
     updateExplosions({ state: input.state, io: input.io });
@@ -153,6 +153,8 @@ function broadcastState(input) {
     if (!f.active) continue;
     fireballsPayload[id] = {
       owner_sid: f.owner_sid,
+      owner_type: f.owner_type ?? 'player',
+      owner_enemy_id: f.owner_enemy_id ?? null,
       x: round1(f.x),
       y: round1(f.y),
       vx: round1(f.vx),
@@ -162,6 +164,8 @@ function broadcastState(input) {
       initial_vx: round1(f.initial_vx ?? f.vx),
       initial_vy: round1(f.initial_vy ?? f.vy),
       spawn_time_ms: f.spawn_time_ms ?? Math.round((f.spawn_time ?? 0) * 1000),
+      render_scale: f.render_scale ?? 1,
+      radius_scale: f.radius_scale ?? 1,
     };
   }
 
@@ -292,6 +296,22 @@ function updateGameState(input) {
 }
 
 function spawnPlayerFireball(input) {
+  spawnFireball({
+    state: input.state,
+    io: input.io,
+    ownerType: 'player',
+    ownerSid: input.ownerSid,
+    x: input.player.x,
+    y: input.player.y,
+    vx: input.vx,
+    vy: input.vy,
+    damage: FIREBALL_DAMAGE,
+    renderScale: 1,
+    radiusScale: 1,
+  });
+}
+
+function spawnFireball(input) {
   const nowMs = Date.now();
   const now = nowMs / 1000;
   const fireballId = input.state.nextFireballId;
@@ -299,33 +319,44 @@ function spawnPlayerFireball(input) {
 
   input.state.fireballs.set(fireballId, {
     id: fireballId,
-    owner_sid: input.ownerSid,
-    x: input.player.x,
-    y: input.player.y,
+    owner_sid: input.ownerSid ?? null,
+    owner_type: input.ownerType ?? 'player',
+    owner_enemy_id: input.ownerEnemyId ?? null,
+    x: input.x,
+    y: input.y,
     vx: input.vx,
     vy: input.vy,
-    start_x: input.player.x,
-    start_y: input.player.y,
+    start_x: input.x,
+    start_y: input.y,
     initial_vx: input.vx,
     initial_vy: input.vy,
     distance_traveled: 0,
     spawn_time: now,
     spawn_time_ms: nowMs,
+    damage: Math.max(1, Math.round(input.damage ?? FIREBALL_DAMAGE)),
+    render_scale: Math.max(0.2, Number(input.renderScale) || 1),
+    radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
+    max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
     active: true,
   });
 
   input.io.emit('projectile_created', {
     id: fireballId,
-    owner_sid: input.ownerSid,
-    x: input.player.x,
-    y: input.player.y,
+    owner_sid: input.ownerSid ?? null,
+    owner_type: input.ownerType ?? 'player',
+    owner_enemy_id: input.ownerEnemyId ?? null,
+    x: input.x,
+    y: input.y,
     vx: input.vx,
     vy: input.vy,
-    start_x: input.player.x,
-    start_y: input.player.y,
+    start_x: input.x,
+    start_y: input.y,
     initial_vx: input.vx,
     initial_vy: input.vy,
     spawn_time_ms: nowMs,
+    render_scale: Math.max(0.2, Number(input.renderScale) || 1),
+    radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
+    max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
   });
 }
 
@@ -551,7 +582,8 @@ function updateFireballs(input) {
     f.distance_traveled = Math.sqrt(dx * dx + dy * dy);
 
     const age = nowSec - f.spawn_time;
-    if (age > FIREBALL_LIFETIME || f.distance_traveled > FIREBALL_MAX_DISTANCE) {
+    const fireballMaxDistance = Math.max(48, Number(f.max_distance) || FIREBALL_MAX_DISTANCE);
+    if (age > FIREBALL_LIFETIME || f.distance_traveled > fireballMaxDistance) {
       toRemove.push(id);
       createExplosion({
         state: input.state,
@@ -559,6 +591,9 @@ function updateFireballs(input) {
         x: f.x,
         y: f.y,
         ownerSid: f.owner_sid,
+        ownerType: f.owner_type,
+        ownerEnemyId: f.owner_enemy_id,
+        damage: f.damage,
         sourceVx: f.vx,
         sourceVy: f.vy,
       });
@@ -579,6 +614,9 @@ function updateFireballs(input) {
         x: f.x,
         y: f.y,
         ownerSid: f.owner_sid,
+        ownerType: f.owner_type,
+        ownerEnemyId: f.owner_enemy_id,
+        damage: f.damage,
         sourceVx: f.vx,
         sourceVy: f.vy,
       });
@@ -587,7 +625,7 @@ function updateFireballs(input) {
 
     for (const [sid, p] of input.state.players.entries()) {
       if (p.is_dying) continue;
-      if (sid === f.owner_sid) continue;
+      if (f.owner_type !== 'enemy' && sid === f.owner_sid) continue;
 
       if (checkFireballPlayerCollision({ fireball: f, player: p })) {
         createExplosion({
@@ -596,6 +634,9 @@ function updateFireballs(input) {
           x: f.x,
           y: f.y,
           ownerSid: f.owner_sid,
+          ownerType: f.owner_type,
+          ownerEnemyId: f.owner_enemy_id,
+          damage: f.damage,
           directHitSid: sid,
           sourceVx: f.vx,
           sourceVy: f.vy,
@@ -610,24 +651,24 @@ function updateFireballs(input) {
       continue;
     }
 
+    if (f.owner_type === 'enemy') {
+      continue;
+    }
+
     for (const [enemyId, enemy] of input.state.enemies.entries()) {
       if (!enemy.alive) continue;
 
       if (checkFireballEnemyCollision(input.state, f, enemy)) {
-        damageEnemy({
-          state: input.state,
-          enemyId,
-          damage: 1,
-          sourceSid: f.owner_sid,
-          sourceVx: f.vx,
-          sourceVy: f.vy,
-        });
         createExplosion({
           state: input.state,
           io: input.io,
           x: f.x,
           y: f.y,
           ownerSid: f.owner_sid,
+          ownerType: f.owner_type,
+          ownerEnemyId: f.owner_enemy_id,
+          damage: f.damage,
+          directHitEnemyId: enemyId,
           sourceVx: f.vx,
           sourceVy: f.vy,
         });
@@ -679,6 +720,8 @@ function updateExplosions(input) {
 function applyExplosionDamage(input) {
   const nowSec = Date.now() / 1000;
   const radius = EXPLOSION_RADIUS * 2.35;
+  const ENEMY_EXPLOSION_DIRECT_DAMAGE = Math.max(1, Math.round(input.damage ?? FIREBALL_DAMAGE));
+  const ENEMY_EXPLOSION_SPLASH_MIN_PROXIMITY = 0.28;
 
   for (const [sid, player] of input.state.players.entries()) {
     if (player.is_dying) continue;
@@ -692,8 +735,8 @@ function applyExplosionDamage(input) {
 
     const proximity = isDirectHit ? 1 : Math.max(0, 1 - distance / radius);
     const damage = isDirectHit
-      ? FIREBALL_DAMAGE
-      : Math.max(4, Math.round(FIREBALL_DAMAGE * 0.7 * proximity));
+      ? ENEMY_EXPLOSION_DIRECT_DAMAGE
+      : Math.max(4, Math.round(ENEMY_EXPLOSION_DIRECT_DAMAGE * 0.7 * proximity));
     if (damage <= 0) continue;
 
     let impulseX = distance > 0.001 ? dx / distance : 0;
@@ -746,11 +789,48 @@ function applyExplosionDamage(input) {
       y: input.y,
     });
   }
+
+  for (const [enemyId, enemy] of input.state.enemies.entries()) {
+    if (!enemy.alive || input.ownerType === 'enemy') continue;
+
+    const dx = enemy.x - input.x;
+    const dy = enemy.y - input.y;
+    const distance = Math.hypot(dx, dy);
+    const isDirectHit = enemyId === input.directHitEnemyId;
+    if (!isDirectHit && distance > radius) continue;
+
+    const proximity = isDirectHit ? 1 : Math.max(0, 1 - distance / radius);
+    if (!isDirectHit && proximity < ENEMY_EXPLOSION_SPLASH_MIN_PROXIMITY) continue;
+    const damage = isDirectHit
+      ? ENEMY_EXPLOSION_DIRECT_DAMAGE
+      : Math.max(6, Math.round(ENEMY_EXPLOSION_DIRECT_DAMAGE * 0.42 * proximity));
+    if (damage <= 0) continue;
+
+    let impulseX = distance > 0.001 ? dx / distance : 0;
+    let impulseY = distance > 0.001 ? dy / distance : -1;
+    if (isDirectHit && Math.abs(impulseX) < 0.001) {
+      impulseX = Math.sign(input.sourceVx || 0) || 1;
+      impulseY = -0.35;
+    }
+
+    const knockbackScale = isDirectHit ? 1.05 : Math.max(0.35, Math.pow(proximity, 0.55));
+    const knockbackVx = impulseX * 520 * knockbackScale;
+    const knockbackVy = -(190 + 170 * knockbackScale) + Math.min(0, impulseY) * 50;
+
+    damageEnemy({
+      state: input.state,
+      enemyId,
+      damage,
+      sourceSid: input.ownerSid,
+      sourceVx: knockbackVx,
+      sourceVy: knockbackVy,
+    });
+  }
 }
 
 /**
  * Creates an explosion.
- * @param {{state: any, io: import('socket.io').Server, x: number, y: number, ownerSid?: string, directHitSid?: string, sourceVx?: number, sourceVy?: number}} input
+ * @param {{state: any, io: import('socket.io').Server, x: number, y: number, ownerSid?: string | null, ownerType?: string, ownerEnemyId?: string | null, damage?: number, directHitSid?: string, directHitEnemyId?: string, sourceVx?: number, sourceVy?: number}} input
  */
 function createExplosion(input) {
   const nowMs = Date.now();
@@ -874,11 +954,12 @@ function checkPlayerPlatformCollision(input) {
  * @returns {boolean}
  */
 function checkFireballPlatformCollision(input) {
+  const radius = FIREBALL_RADIUS * Math.max(0.2, Number(input.fireball.radius_scale) || 1);
   const closestX = Math.max(input.platform.x, Math.min(input.fireball.x, input.platform.x + input.platform.w));
   const closestY = Math.max(input.platform.y, Math.min(input.fireball.y, input.platform.y + input.platform.h));
   const dx = input.fireball.x - closestX;
   const dy = input.fireball.y - closestY;
-  return dx * dx + dy * dy <= FIREBALL_RADIUS * FIREBALL_RADIUS;
+  return dx * dx + dy * dy <= radius * radius;
 }
 
 /**
@@ -887,12 +968,13 @@ function checkFireballPlatformCollision(input) {
  * @returns {boolean}
  */
 function checkFireballPlayerCollision(input) {
+  const radius = FIREBALL_RADIUS * Math.max(0.2, Number(input.fireball.radius_scale) || 1);
   const hb = getPlayerHitbox(input.player);
   const closestX = Math.max(hb.x, Math.min(input.fireball.x, hb.x + PLAYER_HITBOX_WIDTH));
   const closestY = Math.max(hb.y, Math.min(input.fireball.y, hb.y + PLAYER_HITBOX_HEIGHT));
   const dx = input.fireball.x - closestX;
   const dy = input.fireball.y - closestY;
-  return dx * dx + dy * dy <= FIREBALL_RADIUS * FIREBALL_RADIUS;
+  return dx * dx + dy * dy <= radius * radius;
 }
 
 /**

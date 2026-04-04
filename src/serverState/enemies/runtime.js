@@ -11,6 +11,47 @@ function secondsFromMs(ms) {
   return ms / 1000;
 }
 
+const MIN_ENEMY_RESPAWN_DELAY_SECONDS = 60;
+const ENEMY_DEATH_HOLD_SECONDS = 10;
+
+function isFlyingEnemy(definition) {
+  return definition?.behavior?.movementMode === 'flying';
+}
+
+function usesProjectileAttack(definition) {
+  return definition?.behavior?.attackMode === 'projectile';
+}
+
+function getFacingFromSign(sign, fallbackDirection = 'right') {
+  if (sign < 0) {
+    return 'left';
+  }
+  if (sign > 0) {
+    return 'right';
+  }
+  return fallbackDirection === 'left' ? 'left' : 'right';
+}
+
+function chooseEnemyDeathDirection(enemy, sourceVx) {
+  const currentDirection = enemy.direction === 'left' ? 'left' : 'right';
+  const impactSign = Math.sign(Number(sourceVx) || 0);
+  const baseDirection = getFacingFromSign(impactSign, currentDirection);
+
+  if (impactSign === 0) {
+    return Math.random() < 0.5 ? currentDirection : (currentDirection === 'left' ? 'right' : 'left');
+  }
+
+  if (Math.abs(Number(sourceVx) || 0) >= 180 && Math.random() < 0.28) {
+    return baseDirection === 'left' ? 'right' : 'left';
+  }
+
+  if (Math.random() < 0.18) {
+    return currentDirection;
+  }
+
+  return baseDirection;
+}
+
 function getEnemyDefinition(state, enemyType) {
   return state.enemyDefinitions?.[enemyType] ?? null;
 }
@@ -50,6 +91,14 @@ function getEnemyHitbox(state, enemy) {
     return null;
   }
   return getEnemyHitboxForPosition(definition, enemy.x, enemy.y);
+}
+
+function getEnemyProjectileOrigin(enemy, definition) {
+  const directionSign = enemy.direction === 'left' ? -1 : 1;
+  return {
+    x: enemy.x + directionSign * (definition.behavior.projectileOffsetX ?? 0),
+    y: enemy.y + (definition.behavior.projectileYOffset ?? 0),
+  };
 }
 
 function setEnemyCenterFromHitbox(definition, enemy, hitboxX, hitboxY) {
@@ -434,6 +483,273 @@ function hasLineOfSightToPlayer(state, enemy, player) {
   }
 
   return true;
+}
+
+function getEnemyCenterYForHitboxTop(definition, hitboxTopY) {
+  return hitboxTopY - getEnemyShape(definition).localY;
+}
+
+function getFlyingEnemyCeilingSafeCenterY(state, definition) {
+  const shape = getEnemyShape(definition);
+  const ceilingPadding = Math.max(28, shape.height * 0.45);
+  return getEnemyCenterYForHitboxTop(definition, state.mapBounds.min_y + ceilingPadding);
+}
+
+function clampFlyingCenterYToSafeBand(state, definition, centerY) {
+  const shape = getEnemyShape(definition);
+  const minCenterY = getFlyingEnemyCeilingSafeCenterY(state, definition);
+  const bottomPadding = Math.max(28, shape.height * 0.3);
+  const maxCenterY = getEnemyCenterYForHitboxTop(
+    definition,
+    state.mapBounds.max_y - shape.height - bottomPadding
+  );
+  return clamp(centerY, minCenterY, maxCenterY);
+}
+
+function getFlyingCeilingTrapEscape(state, enemy, definition) {
+  const hitbox = getEnemyHitboxForPosition(definition, enemy.x, enemy.y);
+  if (!hitbox) {
+    return null;
+  }
+
+  const nearbyPlatforms = getNearbyPlatforms({
+    platformGrid: state.platformGrid,
+    x: enemy.x,
+    y: enemy.y,
+  });
+
+  let bestPlatform = null;
+  let bestGap = Number.POSITIVE_INFINITY;
+  for (const platform of nearbyPlatforms) {
+    const horizontalOverlap = Math.min(hitbox.x + hitbox.width, platform.x + platform.w) - Math.max(hitbox.x, platform.x);
+    if (horizontalOverlap < Math.max(10, hitbox.width * 0.42)) {
+      continue;
+    }
+
+    const verticalGap = hitbox.y - (platform.y + platform.h);
+    if (verticalGap < -8 || verticalGap > Math.max(26, hitbox.height * 0.5)) {
+      continue;
+    }
+
+    if (verticalGap < bestGap) {
+      bestGap = verticalGap;
+      bestPlatform = platform;
+    }
+  }
+
+  if (!bestPlatform) {
+    return null;
+  }
+
+  const shape = getEnemyShape(definition);
+  const leftExitX = bestPlatform.x - shape.width * 0.7 - 18;
+  const rightExitX = bestPlatform.x + bestPlatform.w + shape.width * 0.7 + 18;
+  const leftDistance = Math.abs(enemy.x - leftExitX);
+  const rightDistance = Math.abs(enemy.x - rightExitX);
+  const chosenX = leftDistance <= rightDistance ? leftExitX : rightExitX;
+  const downY = getEnemyCenterYForHitboxTop(
+    definition,
+    bestPlatform.y + bestPlatform.h + Math.max(26, shape.height * 0.38)
+  );
+
+  return {
+    escapeX: clamp(chosenX, state.mapBounds.min_x + shape.width * 0.6, state.mapBounds.max_x - shape.width * 0.6),
+    escapeY: clampFlyingCenterYToSafeBand(state, definition, downY),
+  };
+}
+
+function getExpandedRect(rect, expandX, expandY) {
+  return {
+    x: rect.x - expandX,
+    y: rect.y - expandY,
+    w: rect.w + expandX * 2,
+    h: rect.h + expandY * 2,
+  };
+}
+
+function getFirstBlockingPlatformBetween(state, definition, fromX, fromY, toX, toY) {
+  if (!Array.isArray(state.platforms) || state.platforms.length === 0) {
+    return null;
+  }
+
+  const shape = getEnemyShape(definition);
+  const expandX = Math.max(10, shape.width * 0.42);
+  const expandY = Math.max(10, shape.height * 0.42);
+  const minX = Math.min(fromX, toX);
+  const maxX = Math.max(fromX, toX);
+  const minY = Math.min(fromY, toY);
+  const maxY = Math.max(fromY, toY);
+  let bestPlatform = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+
+  for (const platform of state.platforms) {
+    const expanded = getExpandedRect(platform, expandX, expandY);
+    const overlapsSpan =
+      expanded.x < maxX - 4 &&
+      expanded.x + expanded.w > minX + 4 &&
+      expanded.y < maxY - 4 &&
+      expanded.y + expanded.h > minY + 4;
+
+    if (!overlapsSpan || !lineIntersectsRect(fromX, fromY, toX, toY, expanded)) {
+      continue;
+    }
+
+    const distance = Math.abs((platform.x + platform.w / 2) - fromX);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestPlatform = platform;
+    }
+  }
+
+  return bestPlatform;
+}
+
+function canFlyingEnemyFitAt(state, definition, x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return false;
+  }
+
+  const hitbox = getEnemyHitboxForPosition(definition, x, y);
+  if (!hitbox) {
+    return false;
+  }
+  if (
+    hitbox.x < state.mapBounds.min_x ||
+    hitbox.y < state.mapBounds.min_y ||
+    hitbox.x + hitbox.width > state.mapBounds.max_x ||
+    hitbox.y + hitbox.height > state.mapBounds.max_y
+  ) {
+    return false;
+  }
+
+  const nearbyPlatforms = getNearbyPlatforms({
+    platformGrid: state.platformGrid,
+    x,
+    y,
+  });
+
+  return !nearbyPlatforms.some((platform) => checkEnemyPlatformCollision(definition, x, y, platform));
+}
+
+function canFlyingEnemyTravelDirect(state, definition, fromX, fromY, toX, toY) {
+  const blockingPlatform = getFirstBlockingPlatformBetween(state, definition, fromX, fromY, toX, toY);
+  return !blockingPlatform && canFlyingEnemyFitAt(state, definition, toX, toY);
+}
+
+function chooseFlyingAltitudeBias(enemy, definition) {
+  const aboveHigh = -definition.behavior.hoverHeight;
+  const aboveMid = -Math.max(36, definition.behavior.hoverHeight * 0.72);
+  const aboveLow = -Math.max(22, definition.behavior.hoverHeight * 0.48);
+  const level = -Math.max(8, definition.behavior.hoverVariance * 0.06);
+  const belowLight = Math.max(20, definition.behavior.hoverVariance * 0.22);
+  const options = [aboveHigh, aboveMid, aboveLow, level, belowLight];
+  const index = Math.floor(Math.random() * options.length);
+  enemy.attack_altitude_bias = options[index];
+  enemy.next_altitude_swap_at = 0;
+}
+
+function maybeRefreshFlyingAttackBias(enemy, definition, nowSec) {
+  if (!Number.isFinite(enemy.next_altitude_swap_at) || nowSec >= enemy.next_altitude_swap_at) {
+    chooseFlyingAltitudeBias(enemy, definition);
+    enemy.next_altitude_swap_at = nowSec + 1.35 + Math.random() * 1.9;
+  }
+}
+
+function getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec) {
+  maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
+
+  const bobAmplitude = definition.behavior.hoverBobAmplitude;
+  const bobSpeed = definition.behavior.hoverBobSpeed;
+  const bobOffset = Math.sin(nowSec * bobSpeed + stableEnemyPhase(enemy)) * bobAmplitude;
+  const offsetX = enemy.preferred_hover_offset_x || 0;
+  const sweepOffsetX = Math.sin(nowSec * 1.15 + stableEnemyPhase(enemy) * 0.7) * 30;
+  const rawY = targetPlayer.y + (enemy.attack_altitude_bias ?? -definition.behavior.hoverHeight) + bobOffset;
+  const minY = targetPlayer.y - definition.behavior.hoverHeight - definition.behavior.hoverVariance;
+  const maxY = targetPlayer.y + Math.min(52, definition.behavior.hoverVariance * 0.28);
+
+  return {
+    x: targetPlayer.x - offsetX + sweepOffsetX,
+    y: clampFlyingCenterYToSafeBand(state, definition, clamp(rawY, minY, maxY)),
+  };
+}
+
+function buildFlyingDetourPlan(state, enemy, definition, targetPoint) {
+  const blocker = getFirstBlockingPlatformBetween(state, definition, enemy.x, enemy.y, targetPoint.x, targetPoint.y);
+  if (!blocker) {
+    return null;
+  }
+
+  const shape = getEnemyShape(definition);
+  const clearance = Math.max(18, shape.height * 0.42);
+  const aboveY = clampFlyingCenterYToSafeBand(
+    state,
+    definition,
+    getEnemyCenterYForHitboxTop(definition, blocker.y - shape.height - clearance)
+  );
+  const belowY = clampFlyingCenterYToSafeBand(
+    state,
+    definition,
+    getEnemyCenterYForHitboxTop(definition, blocker.y + blocker.h + clearance)
+  );
+  const movingRight = targetPoint.x >= enemy.x;
+  const nearSideX = movingRight
+    ? blocker.x - shape.width * 0.7 - clearance
+    : blocker.x + blocker.w + shape.width * 0.7 + clearance;
+  const farSideX = movingRight
+    ? blocker.x + blocker.w + shape.width * 0.7 + clearance
+    : blocker.x - shape.width * 0.7 - clearance;
+
+  const candidateLanes = [
+    { mode: 'above', y: aboveY },
+    { mode: 'below', y: belowY },
+  ].filter((lane) => canFlyingEnemyFitAt(state, definition, enemy.x, lane.y));
+
+  let bestPlan = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const lane of candidateLanes) {
+    const laneNearX = clamp(nearSideX, state.mapBounds.min_x, state.mapBounds.max_x);
+    const laneFarX = clamp(farSideX, state.mapBounds.min_x, state.mapBounds.max_x);
+    const nearPoint = { x: laneNearX, y: lane.y };
+    const farPoint = { x: laneFarX, y: lane.y };
+    if (
+      !canFlyingEnemyFitAt(state, definition, nearPoint.x, nearPoint.y) ||
+      !canFlyingEnemyFitAt(state, definition, farPoint.x, farPoint.y)
+    ) {
+      continue;
+    }
+
+    const firstLegClear = canFlyingEnemyTravelDirect(state, definition, enemy.x, enemy.y, nearPoint.x, nearPoint.y);
+    const secondLegClear = canFlyingEnemyTravelDirect(state, definition, nearPoint.x, nearPoint.y, farPoint.x, farPoint.y);
+    const thirdLegClear = canFlyingEnemyTravelDirect(state, definition, farPoint.x, farPoint.y, targetPoint.x, targetPoint.y);
+    const score =
+      (firstLegClear ? 0 : 180) +
+      (secondLegClear ? 0 : 90) +
+      (thirdLegClear ? 0 : 60) +
+      Math.abs(targetPoint.y - lane.y) * 0.9 +
+      Math.abs(enemy.y - lane.y) * 0.45;
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestPlan = {
+        blocker,
+        laneMode: lane.mode,
+        nearPoint,
+        farPoint,
+      };
+    }
+  }
+
+  return bestPlan;
+}
+
+function getFlyingMovementIntent(desiredVelocityX, desiredVelocityY) {
+  if (Math.abs(desiredVelocityX) > 8) {
+    return Math.sign(desiredVelocityX);
+  }
+  if (Math.abs(desiredVelocityY) > 8) {
+    return desiredVelocityY < 0 ? -1 : 1;
+  }
+  return 0;
 }
 
 function updateEnemyProgressTracker(enemy, moveIntent, nowSec) {
@@ -906,6 +1222,7 @@ function setBrainState(enemy, nextState, nowSec) {
 
 function buildEnemyInstance(spawn, definition) {
   const nowSec = Date.now() / 1000;
+  const startsFlying = isFlyingEnemy(definition);
   return {
     id: spawn.id,
     spawn_id: spawn.id,
@@ -939,6 +1256,8 @@ function buildEnemyInstance(spawn, definition) {
     prepare_until: 0,
     lunge_until: 0,
     recover_until: 0,
+    attack_release_at: 0,
+    attack_shot_fired: false,
     attack_hit_victims: [],
     health: definition.stats.maxHealth,
     max_health: definition.stats.maxHealth,
@@ -949,6 +1268,11 @@ function buildEnemyInstance(spawn, definition) {
     nav_cache_key: '',
     nav_cache_until: 0,
     nav_cache_plan: null,
+    preferred_hover_offset_x: (Math.random() < 0.5 ? -1 : 1) * (110 + Math.random() * 90),
+    preferred_hover_y: spawn.y - definition.behavior.hoverHeight,
+    attack_altitude_bias: -definition.behavior.hoverHeight,
+    next_altitude_swap_at: nowSec + 0.8 + Math.random() * 0.9,
+    movement_mode: startsFlying ? 'flying' : 'ground',
   };
 }
 
@@ -1028,16 +1352,34 @@ function beginPrepare(enemy, targetPlayer, nowSec, definition) {
   setBrainState(enemy, 'prepare', nowSec);
   enemy.action = 'prepare';
   enemy.prepare_until = nowSec + secondsFromMs(definition.behavior.telegraphDurationMs);
+  enemy.attack_release_at = nowSec + secondsFromMs(definition.behavior.telegraphDurationMs * 0.68);
+  enemy.attack_shot_fired = false;
   enemy.attack_hit_victims = [];
   enemy.vx = 0;
   enemy.jump_launch_vx = 0;
   enemy.knockback_vx = 0;
+  if (isFlyingEnemy(definition)) {
+    enemy.vy = 0;
+  }
   if (targetPlayer) {
     enemy.direction = targetPlayer.x < enemy.x ? 'left' : 'right';
   }
 }
 
 function beginLunge(enemy, targetPlayer, nowSec, definition) {
+  if (usesProjectileAttack(definition)) {
+    setBrainState(enemy, 'lunge', nowSec);
+    enemy.action = 'attack';
+    enemy.vx = 0;
+    enemy.vy = 0;
+    enemy.jump_launch_vx = 0;
+    enemy.knockback_vx = 0;
+    enemy.lunge_until = nowSec + secondsFromMs(definition.behavior.lungeDurationMs);
+    enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
+    enemy.attack_hit_victims = [];
+    return;
+  }
+
   const targetX = targetPlayer ? targetPlayer.x : enemy.x + (enemy.direction === 'left' ? -1 : 1) * 100;
   const targetY = targetPlayer ? targetPlayer.y : enemy.y - 40;
   const dx = targetX - enemy.x;
@@ -1063,6 +1405,8 @@ function beginRecover(enemy, nowSec) {
   setBrainState(enemy, 'recover', nowSec);
   enemy.action = 'idle';
   enemy.recover_until = nowSec + 0.22;
+  enemy.attack_release_at = 0;
+  enemy.attack_shot_fired = false;
 }
 
 function getMovementJumpImpulse(definition, enemyFeetY, targetTopY, options = {}) {
@@ -1320,6 +1664,111 @@ function applyEnemyPhysics(state, enemy, definition, dt, desiredVelocityX) {
   }
 }
 
+function getFlyingEnemyTargetY(enemy, definition, targetPlayer, nowSec) {
+  const bobAmplitude = definition.behavior.hoverBobAmplitude;
+  const bobSpeed = definition.behavior.hoverBobSpeed;
+  const bobOffset = Math.sin(nowSec * bobSpeed + stableEnemyPhase(enemy)) * bobAmplitude;
+
+  if (targetPlayer) {
+    const desiredBaseY = targetPlayer.y + (enemy.attack_altitude_bias ?? -definition.behavior.hoverHeight);
+    const minY = targetPlayer.y - definition.behavior.hoverHeight - definition.behavior.hoverVariance;
+    const maxY = targetPlayer.y + Math.min(52, definition.behavior.hoverVariance * 0.28);
+    return clamp(desiredBaseY + bobOffset, minY, maxY);
+  }
+
+  return enemy.spawn_y - definition.behavior.hoverHeight * 0.35 + bobOffset;
+}
+
+function stableEnemyPhase(enemy) {
+  let hash = 0;
+  const id = String(enemy?.id ?? '');
+  for (let index = 0; index < id.length; index += 1) {
+    hash = ((hash << 5) - hash) + id.charCodeAt(index);
+    hash |= 0;
+  }
+  return Math.abs(hash % 628) / 100;
+}
+
+function applyFlyingEnemyPhysics(state, enemy, definition, dt, desiredVelocityX, desiredVelocityY) {
+  const prevX = enemy.x;
+  const prevY = enemy.y;
+  const knockbackVx = Number.isFinite(enemy.knockback_vx) ? enemy.knockback_vx : 0;
+  const targetVx = desiredVelocityX + knockbackVx;
+  const targetVy = desiredVelocityY;
+  const horizontalEase = dt >= (1 / 50) ? 0.18 : 0.13;
+  const verticalEase = dt >= (1 / 50) ? 0.16 : 0.11;
+
+  enemy.vx += (targetVx - enemy.vx) * horizontalEase;
+  enemy.vy += (targetVy - enemy.vy) * verticalEase;
+
+  if (enemy.vx > 8) {
+    enemy.direction = 'right';
+  } else if (enemy.vx < -8) {
+    enemy.direction = 'left';
+  }
+
+  enemy.x += enemy.vx * dt;
+  const nearbyAfterX = getNearbyPlatforms({
+    platformGrid: state.platformGrid,
+    x: enemy.x,
+    y: enemy.y,
+  });
+  if (nearbyAfterX.some((platform) => checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform))) {
+    enemy.x = prevX;
+    enemy.vx = 0;
+  }
+
+  enemy.y += enemy.vy * dt;
+  const nearbyAfterY = getNearbyPlatforms({
+    platformGrid: state.platformGrid,
+    x: enemy.x,
+    y: enemy.y,
+  });
+  if (nearbyAfterY.some((platform) => checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform))) {
+    enemy.y = prevY;
+    enemy.vy = 0;
+  }
+
+  clampEnemyToBounds(state, definition, enemy);
+  enemy.on_ground = false;
+  enemy.jumps_remaining = 2;
+  enemy.jump_launch_vx = 0;
+
+  const hitboxAfterClamp = getEnemyHitboxForPosition(definition, enemy.x, enemy.y);
+  if (hitboxAfterClamp && hitboxAfterClamp.y <= state.mapBounds.min_y + 2) {
+    enemy.attack_altitude_bias = Math.max(20, definition.behavior.hoverVariance * 0.18);
+    enemy.next_altitude_swap_at = 0;
+    enemy.vy = Math.max(enemy.vy, definition.behavior.verticalMoveSpeed * 0.45);
+  }
+
+  const trapEscape = getFlyingCeilingTrapEscape(state, enemy, definition);
+  if (trapEscape) {
+    const escapeDx = trapEscape.escapeX - enemy.x;
+    const escapeDy = trapEscape.escapeY - enemy.y;
+    enemy.attack_altitude_bias = Math.max(24, definition.behavior.hoverVariance * 0.24);
+    enemy.next_altitude_swap_at = 0;
+    enemy.vx = Math.abs(escapeDx) > 8
+      ? Math.sign(escapeDx) * Math.max(Math.abs(enemy.vx), definition.behavior.moveSpeed * 0.78)
+      : enemy.vx * 0.88;
+    enemy.vy = Math.abs(escapeDy) > 8
+      ? Math.sign(escapeDy) * Math.max(Math.abs(enemy.vy), definition.behavior.verticalMoveSpeed * 0.95)
+      : Math.max(enemy.vy, definition.behavior.verticalMoveSpeed * 0.32);
+  }
+
+  if (Math.abs(targetVx) < 8 && Math.abs(enemy.vx) < 8) {
+    enemy.vx *= 0.94;
+  }
+  if (Math.abs(targetVy) < 8 && Math.abs(enemy.vy) < 8) {
+    enemy.vy *= 0.9;
+  }
+
+  if (Math.abs(knockbackVx) < 10) {
+    enemy.knockback_vx = 0;
+  } else {
+    enemy.knockback_vx = knockbackVx * 0.82;
+  }
+}
+
 function damagePlayerFromEnemyHit(input) {
   const { player, enemy, definition, nowSec } = input;
   if (player.is_dying) {
@@ -1360,6 +1809,10 @@ function damagePlayerFromEnemyHit(input) {
 }
 
 function processEnemyAttackHits(input) {
+  if (usesProjectileAttack(input.definition)) {
+    return;
+  }
+
   if (input.enemy.brain_state !== 'lunge') {
     return;
   }
@@ -1386,19 +1839,109 @@ function processEnemyAttackHits(input) {
   input.enemy.attack_hit_victims = Array.from(hitVictims);
 }
 
+function maybeFireEnemyProjectile(input) {
+  const { enemy, definition, targetPlayer, nowSec } = input;
+  if (!usesProjectileAttack(definition) || !targetPlayer || enemy.attack_shot_fired) {
+    return;
+  }
+  if (enemy.brain_state !== 'prepare' && enemy.brain_state !== 'lunge') {
+    return;
+  }
+  if (nowSec < enemy.attack_release_at) {
+    return;
+  }
+
+  const origin = getEnemyProjectileOrigin(enemy, definition);
+  const targetX = targetPlayer.x;
+  const targetY = targetPlayer.y - PLAYER_HITBOX_HEIGHT * 0.2;
+  const dx = targetX - origin.x;
+  const dy = targetY - origin.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const speed = definition.behavior.projectileSpeed;
+  const vx = dx / distance * speed;
+  const vy = dy / distance * speed;
+
+  if (Math.abs(vx) > 8) {
+    enemy.direction = vx < 0 ? 'left' : 'right';
+  }
+
+  input.spawnFireball({
+    state: input.state,
+    io: input.io,
+    ownerType: 'enemy',
+    ownerEnemyId: enemy.id,
+    ownerSid: null,
+    x: origin.x,
+    y: origin.y,
+    vx,
+    vy,
+    damage: definition.behavior.projectileDamage,
+    renderScale: definition.behavior.projectileScale,
+    radiusScale: definition.behavior.projectileRadiusScale,
+  });
+  enemy.attack_shot_fired = true;
+}
+
 function markEnemyDead(input) {
   const { enemy, definition, sourceVx, sourceVy, nowSec } = input;
+  const despawnFadeSec = secondsFromMs(definition.behavior.despawnAfterDeathMs);
+  const respawnDelaySec = Math.max(MIN_ENEMY_RESPAWN_DELAY_SECONDS, secondsFromMs(definition.stats.respawnDelayMs));
   setBrainState(enemy, 'dead', nowSec);
   enemy.action = 'death';
   enemy.alive = false;
   enemy.death_time = nowSec;
-  enemy.despawn_at = nowSec + secondsFromMs(definition.behavior.despawnAfterDeathMs);
-  enemy.respawn_at = nowSec + secondsFromMs(definition.stats.respawnDelayMs);
+  enemy.despawn_at = nowSec + ENEMY_DEATH_HOLD_SECONDS + despawnFadeSec;
+  enemy.respawn_at = enemy.despawn_at + respawnDelaySec;
   enemy.vx = 0;
   enemy.knockback_vx = Math.sign(sourceVx || (enemy.direction === 'left' ? -1 : 1)) * 260;
+  enemy.direction = chooseEnemyDeathDirection(enemy, enemy.knockback_vx);
   enemy.vy = -Math.max(240, Math.abs(sourceVy || 0) * 0.35 + 220);
   enemy.on_ground = false;
   enemy.jumps_remaining = 0;
+}
+
+function stageEnemyRespawn(enemy, definition, nowSec) {
+  enemy.x = enemy.spawn_x;
+  enemy.y = enemy.spawn_y;
+  enemy.vx = 0;
+  enemy.vy = 0;
+  enemy.knockback_vx = 0;
+  enemy.on_ground = false;
+  enemy.jumps_remaining = 2;
+  enemy.direction = 'right';
+  enemy.action = 'idle';
+  enemy.brain_state = 'idle';
+  enemy.state_started_at = nowSec;
+  enemy.target_sid = null;
+  enemy.aggro_until = 0;
+  enemy.wander_target_x = enemy.spawn_x;
+  enemy.next_decision_at = nowSec + 1 + Math.random();
+  enemy.last_jump_at = 0;
+  enemy.last_progress_x = enemy.x;
+  enemy.last_progress_y = enemy.y;
+  enemy.last_progress_at = nowSec;
+  enemy.jump_start_y = enemy.y;
+  enemy.jump_target_top_y = 0;
+  enemy.jump_requires_double = false;
+  enemy.jump_launch_vx = 0;
+  enemy.attack_cooldown_until = 0;
+  enemy.prepare_until = 0;
+  enemy.lunge_until = 0;
+  enemy.recover_until = 0;
+  enemy.attack_release_at = 0;
+  enemy.attack_shot_fired = false;
+  enemy.attack_hit_victims = [];
+  enemy.health = definition.stats.maxHealth;
+  enemy.max_health = definition.stats.maxHealth;
+  enemy.alive = false;
+  enemy.death_time = 0;
+  enemy.despawn_at = 0;
+  enemy.nav_cache_key = '';
+  enemy.nav_cache_until = 0;
+  enemy.nav_cache_plan = null;
+  enemy.preferred_hover_y = enemy.spawn_y - definition.behavior.hoverHeight;
+  enemy.attack_altitude_bias = -definition.behavior.hoverHeight;
+  enemy.next_altitude_swap_at = nowSec + 0.7 + Math.random() * 0.8;
 }
 
 function damageEnemy(input) {
@@ -1462,6 +2005,8 @@ function respawnEnemy(state, enemy, definition) {
   enemy.prepare_until = 0;
   enemy.lunge_until = 0;
   enemy.recover_until = 0;
+  enemy.attack_release_at = 0;
+  enemy.attack_shot_fired = false;
   enemy.attack_hit_victims = [];
   enemy.health = definition.stats.maxHealth;
   enemy.max_health = definition.stats.maxHealth;
@@ -1472,11 +2017,19 @@ function respawnEnemy(state, enemy, definition) {
   enemy.nav_cache_key = '';
   enemy.nav_cache_until = 0;
   enemy.nav_cache_plan = null;
+  enemy.preferred_hover_y = enemy.spawn_y - definition.behavior.hoverHeight;
+  enemy.attack_altitude_bias = -definition.behavior.hoverHeight;
+  enemy.next_altitude_swap_at = enemy.state_started_at + 0.7 + Math.random() * 0.8;
 }
 
 function updateDeadEnemy(state, enemy, definition, dt, nowSec) {
   if (enemy.respawn_at > 0 && nowSec >= enemy.respawn_at) {
     respawnEnemy(state, enemy, definition);
+    return;
+  }
+
+  if (enemy.despawn_at > 0 && nowSec >= enemy.despawn_at) {
+    stageEnemyRespawn(enemy, definition, nowSec);
     return;
   }
 
@@ -1489,8 +2042,10 @@ function updateAliveEnemy(input) {
   const { state, enemy, definition, dt, nowSec } = input;
   const targetPlayer = chooseTargetPlayer(state, enemy, definition, nowSec);
   enemy.target_sid = targetPlayer ? enemy.target_sid : null;
+  const flying = isFlyingEnemy(definition);
 
   let desiredVelocityX = 0;
+  let desiredVelocityY = 0;
   let moveIntent = 0;
   let navigationPlan = null;
 
@@ -1499,6 +2054,13 @@ function updateAliveEnemy(input) {
     if (targetPlayer) {
       enemy.direction = targetPlayer.x < enemy.x ? 'left' : 'right';
     }
+    maybeFireEnemyProjectile({
+      ...input,
+      enemy,
+      definition,
+      targetPlayer,
+      nowSec,
+    });
     if (nowSec >= enemy.prepare_until) {
       beginLunge(enemy, targetPlayer, nowSec, definition);
       desiredVelocityX = enemy.vx;
@@ -1506,6 +2068,13 @@ function updateAliveEnemy(input) {
   } else if (enemy.brain_state === 'lunge') {
     enemy.action = 'attack';
     desiredVelocityX = enemy.vx;
+    maybeFireEnemyProjectile({
+      ...input,
+      enemy,
+      definition,
+      targetPlayer,
+      nowSec,
+    });
     if (nowSec >= enemy.lunge_until) {
       beginRecover(enemy, nowSec);
       desiredVelocityX = 0;
@@ -1516,25 +2085,112 @@ function updateAliveEnemy(input) {
       setBrainState(enemy, targetPlayer ? 'chase' : 'idle', nowSec);
     }
   } else if (targetPlayer) {
-    navigationPlan = getCachedChaseNavigationPlan(state, enemy, definition, targetPlayer, nowSec);
-    const attackDx = targetPlayer.x - enemy.x;
-    moveIntent = resolveChaseMoveIntent(enemy, navigationPlan, targetPlayer, definition);
-    if (moveIntent !== 0) {
-      enemy.direction = moveIntent < 0 ? 'left' : 'right';
-    } else if (attackDx !== 0) {
-      enemy.direction = attackDx < 0 ? 'left' : 'right';
-    }
-    setBrainState(enemy, moveIntent === 0 ? 'idle' : 'chase', nowSec);
+    if (flying) {
+      maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
+      const attackDx = targetPlayer.x - enemy.x;
+      const orbitTarget = getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec);
+      let detourPlan = buildFlyingDetourPlan(state, enemy, definition, orbitTarget);
+      let desiredPoint = orbitTarget;
+      if (detourPlan) {
+        const distanceToNearPoint = Math.hypot(detourPlan.nearPoint.x - enemy.x, detourPlan.nearPoint.y - enemy.y);
+        const hasReachedLane = distanceToNearPoint <= 28;
+        const horizontalProgress = Math.abs(enemy.x - detourPlan.farPoint.x) <= 28;
+        desiredPoint = !hasReachedLane
+          ? detourPlan.nearPoint
+          : (!horizontalProgress ? detourPlan.farPoint : orbitTarget);
+      }
 
-    if (
-      enemy.on_ground &&
-      nowSec >= enemy.attack_cooldown_until &&
-      !navigationPlan?.pursuingPlatformFirst &&
-      Math.abs(attackDx) <= definition.behavior.attackRange &&
-      Math.abs(targetPlayer.y - enemy.y) <= 120
-    ) {
-      beginPrepare(enemy, targetPlayer, nowSec, definition);
-      moveIntent = 0;
+      const dx = desiredPoint.x - enemy.x;
+      const dy = desiredPoint.y - enemy.y;
+      const horizontalDeadzone = 26;
+      const verticalDeadzone = 18;
+      const horizontalSpeedScale = Math.abs(dy) > 64 ? 0.74 : 1;
+      const verticalSpeedScale = Math.abs(dx) > 120 ? 0.78 : 1;
+      desiredVelocityX = Math.abs(dx) > horizontalDeadzone
+        ? Math.sign(dx) * definition.behavior.moveSpeed * horizontalSpeedScale
+        : 0;
+      desiredVelocityY = Math.abs(dy) > verticalDeadzone
+        ? Math.sign(dy) * definition.behavior.verticalMoveSpeed * verticalSpeedScale
+        : 0;
+
+      const flyingMoveIntent = getFlyingMovementIntent(desiredVelocityX, desiredVelocityY);
+      updateEnemyProgressTracker(enemy, flyingMoveIntent, nowSec);
+      const stuckDuration = getEnemyStuckDuration(enemy, flyingMoveIntent, nowSec);
+
+      if (stuckDuration >= 0.58) {
+        enemy.preferred_hover_offset_x *= -1;
+        enemy.attack_altitude_bias = enemy.attack_altitude_bias <= 0
+          ? Math.max(28, definition.behavior.hoverVariance * 0.24)
+          : -definition.behavior.hoverHeight;
+        detourPlan = buildFlyingDetourPlan(state, enemy, definition, getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec));
+
+        if (detourPlan) {
+          const prioritizeVerticalEscape = Math.abs(enemy.y - detourPlan.nearPoint.y) > 16;
+          desiredPoint = prioritizeVerticalEscape
+            ? { x: enemy.x, y: detourPlan.nearPoint.y }
+            : detourPlan.farPoint;
+        } else {
+          desiredPoint = {
+            x: enemy.x + (enemy.preferred_hover_offset_x > 0 ? 42 : -42),
+            y: clamp(
+              targetPlayer.y - definition.behavior.hoverHeight * 0.92,
+              state.mapBounds.min_y + 64,
+              targetPlayer.y + 36
+            ),
+          };
+        }
+
+        const rescueDx = desiredPoint.x - enemy.x;
+        const rescueDy = desiredPoint.y - enemy.y;
+        desiredVelocityX = Math.abs(rescueDx) > 12
+          ? Math.sign(rescueDx) * definition.behavior.moveSpeed * 0.78
+          : 0;
+        desiredVelocityY = Math.abs(rescueDy) > 10
+          ? Math.sign(rescueDy) * definition.behavior.verticalMoveSpeed * 1.08
+          : 0;
+      }
+
+      if (Math.abs(attackDx) > 14) {
+        enemy.direction = attackDx < 0 ? 'left' : 'right';
+      }
+      setBrainState(
+        enemy,
+        Math.abs(desiredVelocityX) > 0 || Math.abs(desiredVelocityY) > 0 ? 'chase' : 'idle',
+        nowSec
+      );
+
+      if (
+        nowSec >= enemy.attack_cooldown_until &&
+        Math.abs(targetPlayer.x - enemy.x) <= definition.behavior.attackRange &&
+        Math.abs(targetPlayer.y - enemy.y) <= definition.behavior.hoverHeight + definition.behavior.hoverVariance + 90 &&
+        !detourPlan &&
+        hasLineOfSightToPlayer(state, enemy, targetPlayer)
+      ) {
+        beginPrepare(enemy, targetPlayer, nowSec, definition);
+        desiredVelocityX = 0;
+        desiredVelocityY = 0;
+      }
+    } else {
+      navigationPlan = getCachedChaseNavigationPlan(state, enemy, definition, targetPlayer, nowSec);
+      const attackDx = targetPlayer.x - enemy.x;
+      moveIntent = resolveChaseMoveIntent(enemy, navigationPlan, targetPlayer, definition);
+      if (moveIntent !== 0) {
+        enemy.direction = moveIntent < 0 ? 'left' : 'right';
+      } else if (attackDx !== 0) {
+        enemy.direction = attackDx < 0 ? 'left' : 'right';
+      }
+      setBrainState(enemy, moveIntent === 0 ? 'idle' : 'chase', nowSec);
+
+      if (
+        enemy.on_ground &&
+        nowSec >= enemy.attack_cooldown_until &&
+        !navigationPlan?.pursuingPlatformFirst &&
+        Math.abs(attackDx) <= definition.behavior.attackRange &&
+        Math.abs(targetPlayer.y - enemy.y) <= 120
+      ) {
+        beginPrepare(enemy, targetPlayer, nowSec, definition);
+        moveIntent = 0;
+      }
     }
   } else {
     enemy.nav_cache_key = '';
@@ -1549,19 +2205,44 @@ function updateAliveEnemy(input) {
       ? Math.sign(enemy.wander_target_x - enemy.x)
       : 0;
 
+    if (flying) {
+      desiredVelocityX = moveIntent * definition.behavior.moveSpeed * 0.48;
+      const idleTargetY = getFlyingEnemyTargetY(enemy, definition, null, nowSec);
+      const dy = idleTargetY - enemy.y;
+      desiredVelocityY = Math.abs(dy) > 14
+        ? Math.sign(dy) * definition.behavior.verticalMoveSpeed * 0.5
+        : 0;
+    }
+
     if (moveIntent === 0) {
       setBrainState(enemy, 'idle', nowSec);
     }
   }
 
   if (enemy.brain_state !== 'prepare' && enemy.brain_state !== 'lunge' && enemy.brain_state !== 'recover') {
-    updateEnemyProgressTracker(enemy, moveIntent, nowSec);
-    maybeJumpTowardTarget(state, enemy, definition, moveIntent, targetPlayer, navigationPlan, nowSec);
-    desiredVelocityX = moveIntent * definition.behavior.moveSpeed;
-    enemy.action = Math.abs(desiredVelocityX) > 0 ? 'run' : 'idle';
+    if (flying) {
+      enemy.action = Math.abs(desiredVelocityX) > 0 || Math.abs(desiredVelocityY) > 0 ? 'run' : 'idle';
+    } else {
+      updateEnemyProgressTracker(enemy, moveIntent, nowSec);
+      maybeJumpTowardTarget(state, enemy, definition, moveIntent, targetPlayer, navigationPlan, nowSec);
+      desiredVelocityX = moveIntent * definition.behavior.moveSpeed;
+      enemy.action = Math.abs(desiredVelocityX) > 0 ? 'run' : 'idle';
+    }
   }
 
-  applyEnemyPhysics(state, enemy, definition, dt, desiredVelocityX);
+  if (flying) {
+    if (enemy.brain_state === 'prepare' || enemy.brain_state === 'lunge') {
+      maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
+      const attackTargetY = getFlyingEnemyTargetY(enemy, definition, targetPlayer, nowSec);
+      const dy = attackTargetY - enemy.y;
+      desiredVelocityY = Math.abs(dy) > 12
+        ? Math.sign(dy) * definition.behavior.verticalMoveSpeed * 0.3
+        : 0;
+    }
+    applyFlyingEnemyPhysics(state, enemy, definition, dt, desiredVelocityX, desiredVelocityY);
+  } else {
+    applyEnemyPhysics(state, enemy, definition, dt, desiredVelocityX);
+  }
   processEnemyAttackHits({
     state,
     enemy,
@@ -1622,6 +2303,7 @@ function serializeEnemiesForState(state) {
       max_health: enemy.max_health,
       alive: enemy.alive,
       death_time_ms: enemy.death_time ? Math.round(enemy.death_time * 1000) : 0,
+      despawn_at_ms: enemy.despawn_at ? Math.round(enemy.despawn_at * 1000) : 0,
       respawn_at_ms: enemy.respawn_at ? Math.round(enemy.respawn_at * 1000) : 0,
       target_sid: enemy.target_sid || null,
     };

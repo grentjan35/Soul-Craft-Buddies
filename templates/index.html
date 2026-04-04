@@ -1157,6 +1157,7 @@
         let fallAudio = null;
         let fireballAudio = null;
         let combatAudio = null;
+        let combatMusic = null;
         const INPUT_SEND_INTERVAL_MS = 33;
         let lastInputSendTime = 0;
         let scheduledInputFlush = null;
@@ -1465,6 +1466,10 @@
         let jumpButton = null;
         let joystickActive = false;
         let joystickOrigin = { x: 0, y: 0 };
+        let pinchZoomActive = false;
+        let pinchStartDistance = 0;
+        let pinchStartZoom = 0;
+        let suppressNextCanvasTap = false;
 
         // Initialize mobile controls if on mobile device
         function initializeMobileControls() {
@@ -1494,8 +1499,55 @@
             
             // Prevent default touch behaviors on game canvas
             const canvas = document.getElementById('gameCanvas');
-            canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+            canvas.addEventListener('touchstart', handleCanvasTouchStart, { passive: false });
+            canvas.addEventListener('touchmove', handleCanvasTouchMove, { passive: false });
+            canvas.addEventListener('touchcancel', handleCanvasTouchEnd, { passive: false });
             canvas.addEventListener('touchend', handleCanvasTapAttack, { passive: false });
+        }
+
+        function handleCanvasTouchStart(e) {
+            e.preventDefault();
+            if (e.touches.length === 2) {
+                pinchZoomActive = true;
+                suppressNextCanvasTap = true;
+                pinchStartDistance = getTouchDistance(e.touches[0], e.touches[1]);
+                pinchStartZoom = cameraZoom;
+            }
+        }
+
+        function handleCanvasTouchMove(e) {
+            if (e.touches.length !== 2 || !pinchZoomActive) {
+                return;
+            }
+            e.preventDefault();
+            const nextDistance = getTouchDistance(e.touches[0], e.touches[1]);
+            if (pinchStartDistance <= 0) {
+                return;
+            }
+
+            const zoomRatio = nextDistance / pinchStartDistance;
+            setCameraZoom(pinchStartZoom * zoomRatio);
+        }
+
+        function handleCanvasTouchEnd(e) {
+            if (pinchZoomActive && e.touches.length < 2) {
+                pinchZoomActive = false;
+                pinchStartDistance = 0;
+                pinchStartZoom = cameraZoom;
+                window.setTimeout(() => {
+                    suppressNextCanvasTap = false;
+                }, 120);
+            }
+        }
+
+        function handleCanvasWheelZoom(e) {
+            if (!e.ctrlKey) {
+                return;
+            }
+
+            e.preventDefault();
+            const zoomDelta = e.deltaY < 0 ? CAMERA_ZOOM_STEP : -CAMERA_ZOOM_STEP;
+            setCameraZoom(cameraZoom + zoomDelta);
         }
 
         function handleJoystickStart(e) {
@@ -1590,7 +1642,8 @@
             const dx = worldX - myPlayer.x;
             const dy = worldY - myPlayer.y;
             const angle = Math.atan2(dy, dx);
-            socket.emit('projectile_fire', { angle });
+            const distance = Math.hypot(dx, dy);
+            socket.emit('projectile_fire', { angle, distance, dx, dy });
         }
         
         function handleJumpStart(e) {
@@ -1608,7 +1661,7 @@
 
         function handleCanvasTapAttack(e) {
             e.preventDefault();
-            if (chatActive || !allAssetsLoaded || joystickActive || e.changedTouches.length === 0) return;
+            if (chatActive || !allAssetsLoaded || joystickActive || pinchZoomActive || suppressNextCanvasTap || e.changedTouches.length === 0) return;
 
             const touch = e.changedTouches[0];
             fireProjectileAtScreenPoint(touch.clientX, touch.clientY);
@@ -1924,6 +1977,9 @@
             // Initialize WebGL
             initGL();
 
+            let sharedGameAudioContext = null;
+            const registeredGameAudioSystems = new Set();
+
             playBtn.disabled = true;
             loadingCompleteAudio = new Audio('/audio/menu/full.wav');
             loadingCompleteAudio.preload = 'auto';
@@ -1933,6 +1989,8 @@
             fallAudio = createFallAudioSystem();
             fireballAudio = createFireballAudioSystem();
             combatAudio = createCombatAudioSystem();
+            combatMusic = createCombatMusicSystem();
+            bindGlobalAudioRecovery();
 
             function createMenuAudioSystem() {
                 const MENU_VOLUME_MULTIPLIER = 0.7;
@@ -2010,23 +2068,149 @@
                 return { unlockAudio, play };
             }
 
+            function createCombatMusicSystem() {
+                const TRACK_URL = '/audio/combat.mp3';
+                const MAX_VOLUME = 0.42;
+                const FADE_IN_PER_SECOND = 1.6;
+                const FADE_OUT_PER_SECOND = 1.05;
+                const PAN_LERP_PER_SECOND = 3.6;
+                const HOLD_AFTER_COMBAT_MS = 1400;
+                const audio = new Audio(TRACK_URL);
+                audio.preload = 'auto';
+                audio.loop = true;
+                audio.volume = 1;
+                const audioContext = getSharedGameAudioContext();
+                const spatialNodes = audioContext ? createSpatialPanNodes(audioContext) : null;
+                const mediaSource = audioContext && spatialNodes ? audioContext.createMediaElementSource(audio) : null;
+                let audioUnlocked = false;
+                let currentVolume = 0;
+                let targetVolume = 0;
+                let activeUntilMs = 0;
+                let currentPan = 0;
+                let targetPan = 0;
+
+                if (mediaSource && spatialNodes) {
+                    mediaSource.connect(spatialNodes.gainNode);
+                    spatialNodes.gainNode.gain.value = 0;
+                    spatialNodes.setPan(0);
+                }
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+
+                    audioUnlocked = true;
+                    audio.load();
+                    audio.muted = true;
+                    const playAttempt = audio.play();
+                    if (playAttempt && typeof playAttempt.then === 'function') {
+                        playAttempt
+                            .then(() => {
+                                audio.pause();
+                                audio.currentTime = 0;
+                                audio.muted = false;
+                            })
+                            .catch(() => {
+                                audio.muted = false;
+                            });
+                    } else {
+                        audio.muted = false;
+                    }
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(() => {});
+                    }
+                }
+
+                function setCombatActive(active, nowMs, nextPan = 0) {
+                    if (active) {
+                        activeUntilMs = Math.max(activeUntilMs, nowMs + HOLD_AFTER_COMBAT_MS);
+                        targetPan = Math.max(-1, Math.min(1, nextPan));
+                    }
+                    targetVolume = nowMs <= activeUntilMs ? MAX_VOLUME : 0;
+                }
+
+                function tick(nowMs, dtSeconds) {
+                    const shouldBeAudible = nowMs <= activeUntilMs;
+                    targetVolume = shouldBeAudible ? MAX_VOLUME : 0;
+                    const fadeRate = targetVolume > currentVolume ? FADE_IN_PER_SECOND : FADE_OUT_PER_SECOND;
+                    const step = Math.max(0.001, fadeRate * Math.max(0, dtSeconds));
+
+                    if (Math.abs(targetVolume - currentVolume) <= step) {
+                        currentVolume = targetVolume;
+                    } else if (targetVolume > currentVolume) {
+                        currentVolume += step;
+                    } else {
+                        currentVolume -= step;
+                    }
+
+                    currentVolume = Math.max(0, Math.min(MAX_VOLUME, currentVolume));
+                    const panStep = Math.max(0.001, PAN_LERP_PER_SECOND * Math.max(0, dtSeconds));
+                    if (Math.abs(targetPan - currentPan) <= panStep) {
+                        currentPan = targetPan;
+                    } else if (targetPan > currentPan) {
+                        currentPan += panStep;
+                    } else {
+                        currentPan -= panStep;
+                    }
+                    currentPan = Math.max(-1, Math.min(1, currentPan));
+
+                    if (spatialNodes) {
+                        spatialNodes.gainNode.gain.value = currentVolume;
+                        spatialNodes.setPan(currentPan);
+                    } else {
+                        audio.volume = currentVolume;
+                    }
+
+                    if (currentVolume > 0.002) {
+                        const playAttempt = audio.play();
+                        if (playAttempt && typeof playAttempt.catch === 'function') {
+                            playAttempt.catch(() => {});
+                        }
+                    } else if (!audio.paused) {
+                        audio.pause();
+                    }
+                }
+
+                function stop() {
+                    activeUntilMs = 0;
+                    targetVolume = 0;
+                    currentVolume = 0;
+                    targetPan = 0;
+                    currentPan = 0;
+                    if (spatialNodes) {
+                        spatialNodes.gainNode.gain.value = 0;
+                        spatialNodes.setPan(0);
+                    } else {
+                        audio.volume = 0;
+                    }
+                    if (!audio.paused) {
+                        audio.pause();
+                    }
+                }
+
+                return { unlockAudio, setCombatActive, tick, stop };
+            }
+
             function computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport = null) {
                 const dx = worldX - listenerX;
                 const dy = worldY - listenerY;
                 const distance = Math.hypot(dx, dy);
-                const nearDistance = 36;
+                const nearDistance = 28;
                 const maxDistance = viewport
-                    ? Math.max(viewport.width * 0.95, viewport.height * 1.1, 900)
-                    : 900;
+                    ? Math.max(viewport.width * 0.9, viewport.height * 1.05, 860)
+                    : 860;
 
                 if (distance >= maxDistance) {
                     return { gain: 0, pan: 0 };
                 }
 
-                const distanceFade = Math.max(0, 1 - Math.max(0, distance - nearDistance) / (maxDistance - nearDistance));
+                const normalizedDistance = Math.max(0, Math.min(1, Math.max(0, distance - nearDistance) / Math.max(1, maxDistance - nearDistance)));
+                const distanceFade = Math.pow(1 - normalizedDistance, 2.45);
 
                 let pan;
                 let screenPresence = 0.75;
+                let verticalPresence = 1;
                 if (viewport) {
                     const centerX = viewport.x + viewport.width / 2;
                     const centerY = viewport.y + viewport.height / 2;
@@ -2054,21 +2238,119 @@
                     const edgeFade = Math.max(0, 1 - edgeDistance / edgeHearingRange);
 
                     screenPresence = onScreen ? 1 : edgeFade * 0.7;
-                    pan = Math.max(-1, Math.min(1, normalizedScreenX));
+                    pan = Math.max(-1, Math.min(1, -normalizedScreenX));
 
                     if (!onScreen && Math.abs(pan) < 0.25) {
-                        pan = normalizedScreenX < 0 ? -0.35 : 0.35;
+                        pan = normalizedScreenX < 0 ? 0.35 : -0.35;
                     }
 
                     if (Math.abs(normalizedScreenY) > 1.15) {
                         screenPresence *= 0.6;
                     }
+                    verticalPresence = Math.max(0.45, 1 - Math.max(0, Math.abs(normalizedScreenY) - 0.2) * 0.3);
                 } else {
-                    pan = Math.max(-1, Math.min(1, dx / 320));
+                    pan = Math.max(-1, Math.min(1, -dx / 280));
                 }
 
-                const gain = Math.max(0, distanceFade * distanceFade * screenPresence);
-                return { gain, pan };
+                const curvedPan = Math.sign(pan) * Math.pow(Math.min(1, Math.abs(pan)), 0.82);
+                const gain = Math.max(0, distanceFade * screenPresence * verticalPresence);
+                return { gain, pan: curvedPan };
+            }
+
+            function getSharedGameAudioContext() {
+                if (sharedGameAudioContext) {
+                    return sharedGameAudioContext;
+                }
+
+                sharedGameAudioContext =
+                    window.AudioContext ? new AudioContext() :
+                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                return sharedGameAudioContext;
+            }
+
+            function registerGameAudioSystem(system) {
+                if (system && typeof system.unlockAudio === 'function') {
+                    registeredGameAudioSystems.add(system);
+                }
+                return system;
+            }
+
+            async function ensureSharedGameAudioRunning() {
+                const audioContext = getSharedGameAudioContext();
+                if (!audioContext) {
+                    return false;
+                }
+
+                try {
+                    if (audioContext.state !== 'running') {
+                        await audioContext.resume();
+                    }
+                } catch (_error) {
+                    return false;
+                }
+
+                return audioContext.state === 'running';
+            }
+
+            function createSpatialPanNodes(audioContext) {
+                const gainNode = audioContext.createGain();
+
+                if (typeof audioContext.createStereoPanner === 'function') {
+                    const panNode = audioContext.createStereoPanner();
+                    gainNode.connect(panNode);
+                    panNode.connect(audioContext.destination);
+                    return {
+                        gainNode,
+                        setPan: (value) => {
+                            panNode.pan.value = value;
+                        }
+                    };
+                }
+
+                const fallbackGainL = audioContext.createGain();
+                const fallbackGainR = audioContext.createGain();
+                const merger = audioContext.createChannelMerger(2);
+                gainNode.connect(fallbackGainL);
+                gainNode.connect(fallbackGainR);
+                fallbackGainL.connect(merger, 0, 0);
+                fallbackGainR.connect(merger, 0, 1);
+                merger.connect(audioContext.destination);
+
+                return {
+                    gainNode,
+                    setPan: (value) => {
+                        const normalized = Math.max(-1, Math.min(1, value));
+                        fallbackGainL.gain.value = normalized <= 0 ? 1 : 1 - normalized;
+                        fallbackGainR.gain.value = normalized >= 0 ? 1 : 1 + normalized;
+                    }
+                };
+            }
+
+            function bindGlobalAudioRecovery() {
+                const recoverAudio = () => {
+                    ensureSharedGameAudioRunning().catch(() => {});
+                    registeredGameAudioSystems.forEach((system) => {
+                        try {
+                            system.unlockAudio();
+                        } catch (_error) {
+                            // Ignore individual system recovery failures.
+                        }
+                    });
+                };
+
+                const passiveRecover = () => {
+                    recoverAudio();
+                };
+
+                window.addEventListener('pointerdown', passiveRecover, { passive: true });
+                window.addEventListener('touchstart', passiveRecover, { passive: true });
+                window.addEventListener('keydown', passiveRecover, { passive: true });
+                window.addEventListener('focus', passiveRecover, { passive: true });
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        recoverAudio();
+                    }
+                });
             }
 
             function createFootstepAudioSystem() {
@@ -2078,9 +2360,7 @@
                     '/audio/footsteps/footsteps_2.wav',
                     '/audio/footsteps/footsteps_3.wav'
                 ];
-                const audioContext =
-                    window.AudioContext ? new AudioContext() :
-                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
                 let nextPoolIndex = 0;
                 let audioUnlocked = false;
@@ -2155,16 +2435,13 @@
                         }
 
                         const source = audioContext.createBufferSource();
-                        const gainNode = audioContext.createGain();
-                        const panNode = audioContext.createStereoPanner();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         source.playbackRate.value = 1;
                         source.detune.value = randomSemitone(minSemitone, maxSemitone) * 100;
                         gainNode.gain.value = Math.min(1, volume * FOOTSTEP_VOLUME_MULTIPLIER) * gain;
-                        panNode.pan.value = pan;
                         source.connect(gainNode);
-                        gainNode.connect(panNode);
-                        panNode.connect(audioContext.destination);
+                        setPan(pan);
                         source.start();
                     } catch (_error) {
                         // Ignore footstep playback failures so gameplay continues uninterrupted.
@@ -2202,15 +2479,13 @@
                     }
                 }
 
-                return { unlockAudio, playAt, playLocal };
+                return registerGameAudioSystem({ unlockAudio, playAt, playLocal });
             }
 
             function createFallAudioSystem() {
                 const FALL_VOLUME_MULTIPLIER = 1.25;
                 const soundUrl = '/audio/fall.wav';
-                const audioContext =
-                    window.AudioContext ? new AudioContext() :
-                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const audioContext = getSharedGameAudioContext();
                 let bufferPromise = null;
                 let audioUnlocked = false;
 
@@ -2294,21 +2569,18 @@
                         }
 
                         const source = audioContext.createBufferSource();
-                        const gainNode = audioContext.createGain();
-                        const panNode = audioContext.createStereoPanner();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         gainNode.gain.value = Math.min(1, volume * FALL_VOLUME_MULTIPLIER) * gain;
-                        panNode.pan.value = pan;
                         source.connect(gainNode);
-                        gainNode.connect(panNode);
-                        panNode.connect(audioContext.destination);
+                        setPan(pan);
                         source.start();
                     } catch (_error) {
                         // Ignore fall audio failures so gameplay stays responsive.
                     }
                 }
 
-                return { unlockAudio, playLocal, playAt };
+                return registerGameAudioSystem({ unlockAudio, playLocal, playAt });
             }
 
             function createSpiderFootstepAudioSystem() {
@@ -2319,9 +2591,7 @@
                     '/audio/spider_footsteps/footstep3.mp3',
                     '/audio/spider_footsteps/footstep4.mp3'
                 ];
-                const audioContext =
-                    window.AudioContext ? new AudioContext() :
-                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
                 let nextPoolIndex = 0;
                 let audioUnlocked = false;
@@ -2382,22 +2652,19 @@
                         }
 
                         const source = audioContext.createBufferSource();
-                        const gainNode = audioContext.createGain();
-                        const panNode = audioContext.createStereoPanner();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         source.detune.value = (minSemitone + Math.random() * (maxSemitone - minSemitone)) * 100;
                         gainNode.gain.value = Math.min(1, volume * SPIDER_FOOTSTEP_VOLUME_MULTIPLIER) * gain;
-                        panNode.pan.value = pan;
                         source.connect(gainNode);
-                        gainNode.connect(panNode);
-                        panNode.connect(audioContext.destination);
+                        setPan(pan);
                         source.start();
                     } catch (_error) {
                         // Ignore spider footstep failures so gameplay continues uninterrupted.
                     }
                 }
 
-                return { unlockAudio, playAt };
+                return registerGameAudioSystem({ unlockAudio, playAt });
             }
 
             function createFireballAudioSystem() {
@@ -2405,13 +2672,13 @@
                 const soundUrls = {
                     release: '/audio/fireball/release.wav',
                     hit: '/audio/fireball/hit.wav',
-                    inair: '/audio/fireball/inair.wav'
+                    inair: '/audio/fireball/inair.wav',
+                    floorFire: '/audio/fire.wav'
                 };
-                const audioContext =
-                    window.AudioContext ? new AudioContext() :
-                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
-                const activeLoops = new Map();
+                const activeProjectileLoops = new Map();
+                const activeBurnLoops = new Map();
                 let audioUnlocked = false;
 
                 async function loadBuffer(url) {
@@ -2471,23 +2738,20 @@
                         }
 
                         const source = audioContext.createBufferSource();
-                        const gainNode = audioContext.createGain();
-                        const panNode = audioContext.createStereoPanner();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         source.detune.value = detune;
                         gainNode.gain.value = Math.min(1.2, volume * FIREBALL_VOLUME_MULTIPLIER) * gain;
-                        panNode.pan.value = pan;
                         source.connect(gainNode);
-                        gainNode.connect(panNode);
-                        panNode.connect(audioContext.destination);
+                        setPan(pan);
                         source.start();
                     } catch (_error) {
                         // Ignore fireball audio failures so gameplay continues uninterrupted.
                     }
                 }
 
-                async function startLoop(id, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.55) {
-                    if (!audioContext || activeLoops.has(id)) {
+                async function startSpatialLoop(loopMap, loopId, url, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.55, volumeCap = 1) {
+                    if (!audioContext || loopMap.has(loopId)) {
                         return;
                     }
 
@@ -2496,40 +2760,37 @@
                             await audioContext.resume();
                         }
 
-                        const buffer = await loadBuffer(soundUrls.inair);
+                        const buffer = await loadBuffer(url);
                         if (!buffer) {
                             return;
                         }
 
                         const source = audioContext.createBufferSource();
-                        const gainNode = audioContext.createGain();
-                        const panNode = audioContext.createStereoPanner();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         source.loop = true;
                         source.connect(gainNode);
-                        gainNode.connect(panNode);
-                        panNode.connect(audioContext.destination);
-                        activeLoops.set(id, { source, gainNode, panNode, baseVolume: volume });
-                        updateLoop(id, worldX, worldY, listenerX, listenerY, viewport);
+                        loopMap.set(loopId, { source, gainNode, setPan, baseVolume: volume, volumeCap });
+                        updateSpatialLoop(loopMap, loopId, worldX, worldY, listenerX, listenerY, viewport);
                         source.start();
                     } catch (_error) {
-                        activeLoops.delete(id);
+                        loopMap.delete(loopId);
                     }
                 }
 
-                function updateLoop(id, worldX, worldY, listenerX, listenerY, viewport = null) {
-                    const loop = activeLoops.get(id);
+                function updateSpatialLoop(loopMap, loopId, worldX, worldY, listenerX, listenerY, viewport = null) {
+                    const loop = loopMap.get(loopId);
                     if (!loop) {
                         return;
                     }
 
                     const { gain, pan } = computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport);
-                    loop.gainNode.gain.value = Math.min(1, loop.baseVolume * FIREBALL_VOLUME_MULTIPLIER) * gain;
-                    loop.panNode.pan.value = pan;
+                    loop.gainNode.gain.value = Math.min(loop.volumeCap, loop.baseVolume * FIREBALL_VOLUME_MULTIPLIER) * gain;
+                    loop.setPan(pan);
                 }
 
-                function stopLoop(id) {
-                    const loop = activeLoops.get(id);
+                function stopSpatialLoop(loopMap, loopId) {
+                    const loop = loopMap.get(loopId);
                     if (!loop || !audioContext) {
                         return;
                     }
@@ -2543,12 +2804,39 @@
                         // Ignore cleanup errors.
                     }
 
-                    activeLoops.delete(id);
+                    loopMap.delete(loopId);
+                }
+
+                async function startLoop(id, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.55) {
+                    await startSpatialLoop(activeProjectileLoops, id, soundUrls.inair, worldX, worldY, listenerX, listenerY, viewport, volume, 1);
+                }
+
+                function updateLoop(id, worldX, worldY, listenerX, listenerY, viewport = null) {
+                    updateSpatialLoop(activeProjectileLoops, id, worldX, worldY, listenerX, listenerY, viewport);
+                }
+
+                function stopLoop(id) {
+                    stopSpatialLoop(activeProjectileLoops, id);
+                }
+
+                async function startBurnLoop(id, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.34) {
+                    await startSpatialLoop(activeBurnLoops, id, soundUrls.floorFire, worldX, worldY, listenerX, listenerY, viewport, volume, 0.65);
+                }
+
+                function updateBurnLoop(id, worldX, worldY, listenerX, listenerY, viewport = null) {
+                    updateSpatialLoop(activeBurnLoops, id, worldX, worldY, listenerX, listenerY, viewport);
+                }
+
+                function stopBurnLoop(id) {
+                    stopSpatialLoop(activeBurnLoops, id);
                 }
 
                 function stopAllLoops() {
-                    for (const id of Array.from(activeLoops.keys())) {
+                    for (const id of Array.from(activeProjectileLoops.keys())) {
                         stopLoop(id);
+                    }
+                    for (const id of Array.from(activeBurnLoops.keys())) {
+                        stopBurnLoop(id);
                     }
                 }
 
@@ -2560,15 +2848,19 @@
                     await playOneShot(soundUrls.hit, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
                 }
 
-                return {
+                return registerGameAudioSystem({
                     unlockAudio,
                     startLoop,
                     updateLoop,
                     stopLoop,
+                    startBurnLoop,
+                    updateBurnLoop,
+                    stopBurnLoop,
+                    activeBurnLoopIds: () => Array.from(activeBurnLoops.keys()),
                     stopAllLoops,
                     playReleaseAt,
                     playHitAt
-                };
+                });
             }
 
             function createCombatAudioSystem() {
@@ -2586,6 +2878,15 @@
                         '/audio/spider/death.mp3',
                         '/audio/spider/death2.mp3'
                     ],
+                    batAmbient: [
+                        '/audio/bat/idle.mp3',
+                        '/audio/bat/wander.mp3',
+                        '/audio/bat/wandering.mp3'
+                    ],
+                    batDetect: '/audio/bat/detect.mp3',
+                    batHit: '/audio/bat/hurt.mp3',
+                    batDeath: '/audio/bat/death.mp3',
+                    batFlight: '/audio/bat/flying.mp3',
                     playerHurt: [
                         '/audio/hurt/hurt.mp3',
                         '/audio/hurt/hurt2.mp3',
@@ -2594,10 +2895,9 @@
                         '/audio/hurt/hurt5.mp3'
                     ]
                 };
-                const audioContext =
-                    window.AudioContext ? new AudioContext() :
-                    (window.webkitAudioContext ? new window.webkitAudioContext() : null);
+                const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
+                const activeLoops = new Map();
                 let audioUnlocked = false;
 
                 function stableHash(input) {
@@ -2664,6 +2964,11 @@
                         soundUrls.spiderAttack,
                         soundUrls.spiderHit,
                         ...soundUrls.spiderDeath,
+                        ...soundUrls.batAmbient,
+                        soundUrls.batDetect,
+                        soundUrls.batHit,
+                        soundUrls.batDeath,
+                        soundUrls.batFlight,
                         ...soundUrls.playerHurt
                     ];
                     warmUrls.forEach((url) => loadBuffer(url).catch(() => {}));
@@ -2690,15 +2995,12 @@
                         }
 
                         const source = audioContext.createBufferSource();
-                        const gainNode = audioContext.createGain();
-                        const panNode = audioContext.createStereoPanner();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         source.detune.value = detune;
                         gainNode.gain.value = Math.min(1.2, volume * COMBAT_VOLUME_MULTIPLIER) * gain;
-                        panNode.pan.value = pan;
                         source.connect(gainNode);
-                        gainNode.connect(panNode);
-                        panNode.connect(audioContext.destination);
+                        setPan(pan);
                         source.start();
                     } catch (_error) {
                         // Ignore combat audio failures so gameplay keeps running.
@@ -2761,15 +3063,126 @@
                     await playUrlLocal(url, volume, detuneFromKey(`${key}|hurt`, -0.2, 0.2));
                 }
 
-                return {
+                async function playBatAmbientAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.42, key = 'bat-ambient') {
+                    const url = pickByKey(soundUrls.batAmbient, key);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, detuneFromKey(`${key}|ambient`, -0.3, 0.3));
+                }
+
+                async function playBatDetectAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.76) {
+                    await playUrlAt(soundUrls.batDetect, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playBatHitAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.68) {
+                    await playUrlAt(soundUrls.batHit, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playBatDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.86) {
+                    await playUrlAt(soundUrls.batDeath, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                function getBatLoopCrowdingGain(listenerX, listenerY) {
+                    let nearbyLoopCount = 0;
+                    for (const loop of activeLoops.values()) {
+                        if (!loop || !Number.isFinite(loop.worldX) || !Number.isFinite(loop.worldY)) {
+                            continue;
+                        }
+
+                        const distance = Math.hypot(loop.worldX - listenerX, loop.worldY - listenerY);
+                        if (distance <= 420) {
+                            nearbyLoopCount += 1;
+                        }
+                    }
+
+                    if (nearbyLoopCount <= 1) {
+                        return 1;
+                    }
+
+                    return Math.max(0.42, 1 / Math.pow(nearbyLoopCount, 0.58));
+                }
+
+                async function startBatFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.18) {
+                    if (!audioContext || activeLoops.has(id)) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const buffer = await loadBuffer(soundUrls.batFlight);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
+                        source.buffer = buffer;
+                        source.loop = true;
+                        source.connect(gainNode);
+                        activeLoops.set(id, { source, gainNode, setPan, baseVolume: volume, worldX, worldY });
+                        updateBatFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport);
+                        source.start();
+                    } catch (_error) {
+                        activeLoops.delete(id);
+                    }
+                }
+
+                function updateBatFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport = null) {
+                    const loop = activeLoops.get(id);
+                    if (!loop) {
+                        return;
+                    }
+
+                    loop.worldX = worldX;
+                    loop.worldY = worldY;
+                    const { gain, pan } = computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport);
+                    const crowdingGain = getBatLoopCrowdingGain(listenerX, listenerY);
+                    loop.gainNode.gain.value = Math.min(0.38, loop.baseVolume * COMBAT_VOLUME_MULTIPLIER) * gain * crowdingGain;
+                    loop.setPan(pan);
+                }
+
+                function stopBatFlightLoop(id) {
+                    const loop = activeLoops.get(id);
+                    if (!loop || !audioContext) {
+                        return;
+                    }
+
+                    try {
+                        loop.gainNode.gain.cancelScheduledValues(audioContext.currentTime);
+                        loop.gainNode.gain.setValueAtTime(loop.gainNode.gain.value, audioContext.currentTime);
+                        loop.gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.12);
+                        loop.source.stop(audioContext.currentTime + 0.13);
+                    } catch (_error) {
+                        // Ignore cleanup errors.
+                    }
+
+                    activeLoops.delete(id);
+                }
+
+                function stopAllBatFlightLoops() {
+                    for (const id of Array.from(activeLoops.keys())) {
+                        stopBatFlightLoop(id);
+                    }
+                }
+
+                return registerGameAudioSystem({
                     unlockAudio,
                     playSpiderAmbientAt,
                     playSpiderAttackAt,
                     playSpiderHitAt,
                     playSpiderDeathAt,
+                    playBatAmbientAt,
+                    playBatDetectAt,
+                    playBatHitAt,
+                    playBatDeathAt,
+                    startBatFlightLoop,
+                    updateBatFlightLoop,
+                    stopBatFlightLoop,
+                    stopAllBatFlightLoops,
                     playPlayerHurtAt,
                     playPlayerHurtLocal
-                };
+                });
             }
 
             function registerMenuHoverSound(element) {
@@ -3033,6 +3446,7 @@
                 fallAudio.unlockAudio();
                 fireballAudio.unlockAudio();
                 combatAudio.unlockAudio();
+                combatMusic.unlockAudio();
                 menuAudio.play('click', 0.42);
             });
 
@@ -3182,6 +3596,7 @@
             setTimeout(resizeCanvas, 250);
         });
         window.visualViewport?.addEventListener('resize', resizeCanvas);
+        canvas.addEventListener('wheel', handleCanvasWheelZoom, { passive: false });
         
         // Initialize mobile controls
         initializeMobileControls();
@@ -4620,9 +5035,13 @@
         // Camera system
         let cameraX = 0;
         let cameraY = 0;
-        const cameraZoom = 1.573;
+        const CAMERA_ZOOM_MIN = 1.573;
+        const CAMERA_ZOOM_MAX = 2.38;
+        const CAMERA_ZOOM_STEP = 0.12;
+        let cameraZoom = CAMERA_ZOOM_MIN;
         let targetCameraX = 0;
         let targetCameraY = 0;
+        let lastCameraFocusWorldPos = null;
         const cameraLerpFactor = 0.08;
 
         function clampCameraToMapBounds(nextCameraX, nextCameraY) {
@@ -4636,6 +5055,52 @@
                 y: Math.max(mapBounds.minY, Math.min(nextCameraY, maxCameraY))
             };
         }
+
+        function clampGameZoom(value) {
+            return Math.max(CAMERA_ZOOM_MIN, Math.min(CAMERA_ZOOM_MAX, value));
+        }
+
+        function saveCameraZoomPreference() {
+            try {
+                localStorage.setItem('soulcraft_camera_zoom', String(cameraZoom));
+            } catch (_error) {
+                // Ignore storage issues.
+            }
+        }
+
+        function loadCameraZoomPreference() {
+            try {
+                const stored = Number(localStorage.getItem('soulcraft_camera_zoom'));
+                if (Number.isFinite(stored)) {
+                    cameraZoom = clampGameZoom(stored);
+                }
+            } catch (_error) {
+                cameraZoom = CAMERA_ZOOM_MIN;
+            }
+        }
+
+        function setCameraZoom(nextZoom) {
+            cameraZoom = clampGameZoom(nextZoom);
+            saveCameraZoomPreference();
+        }
+
+        function zoomCameraIn() {
+            setCameraZoom(cameraZoom + CAMERA_ZOOM_STEP);
+        }
+
+        function zoomCameraOut() {
+            setCameraZoom(cameraZoom - CAMERA_ZOOM_STEP);
+        }
+
+        function getTouchDistance(touchA, touchB) {
+            return Math.hypot(touchA.clientX - touchB.clientX, touchA.clientY - touchB.clientY);
+        }
+
+        function initializeZoomControls() {
+            loadCameraZoomPreference();
+        }
+
+        initializeZoomControls();
         
         // Server authoritative snapshots are kept separate from rendered positions.
         const playerState = {};
@@ -4692,6 +5157,7 @@
         let attachedPlayerBurns = [];
         const spriteFrameAlphaCache = new Map();
         const spriteWhiteFrameCache = new Map();
+        const spriteWarmGlowFrameCache = new Map();
         let mousePosition = { x: 0, y: 0 };
         const FIREBALL_SIZE = 34;
         const FIREBALL_RADIUS = FIREBALL_SIZE / 2;
@@ -5084,9 +5550,21 @@
                         brain_state: enemyPos.brain_state,
                         state_started_at_ms: enemyPos.state_started_at_ms,
                         death_time_ms: enemyPos.death_time_ms,
+                        despawn_at_ms: enemyPos.despawn_at_ms,
                         respawn_at_ms: enemyPos.respawn_at_ms,
                         target_sid: enemyPos.target_sid ?? null
                     };
+
+                    if (
+                        authoritativeEnemyState[enemyId] &&
+                        authoritativeEnemyState[enemyId].alive &&
+                        nextEnemyState.alive &&
+                        typeof authoritativeEnemyState[enemyId].health === 'number' &&
+                        typeof nextEnemyState.health === 'number' &&
+                        nextEnemyState.health < authoritativeEnemyState[enemyId].health
+                    ) {
+                        enemyHitFlashUntilMs[enemyId] = Date.now() + HIT_FLASH_DURATION_MS;
+                    }
 
                     authoritativeEnemyState[enemyId] = nextEnemyState;
                     appendSnapshot(enemySnapshots, enemyId, {
@@ -5104,6 +5582,7 @@
                         brain_state: enemyPos.brain_state,
                         state_started_at_ms: enemyPos.state_started_at_ms,
                         death_time_ms: enemyPos.death_time_ms,
+                        despawn_at_ms: enemyPos.despawn_at_ms,
                         respawn_at_ms: enemyPos.respawn_at_ms,
                         target_sid: enemyPos.target_sid ?? null
                     });
@@ -5176,6 +5655,7 @@
                     authoritativeFireballs[id] = {
                         id: id,
                         owner_sid: fb.owner_sid ?? authoritativeFireballs[id]?.owner_sid ?? null,
+                        owner_type: fb.owner_type ?? authoritativeFireballs[id]?.owner_type ?? 'player',
                         x: fb.x,
                         y: fb.y,
                         vx: fb.vx,
@@ -5184,22 +5664,26 @@
                         start_y: typeof fb.start_y === 'number' ? fb.start_y : fb.y,
                         initial_vx: typeof fb.initial_vx === 'number' ? fb.initial_vx : fb.vx,
                         initial_vy: typeof fb.initial_vy === 'number' ? fb.initial_vy : fb.vy,
-                        spawn_time_ms: typeof fb.spawn_time_ms === 'number' ? fb.spawn_time_ms : ts
+                        spawn_time_ms: typeof fb.spawn_time_ms === 'number' ? fb.spawn_time_ms : ts,
+                        render_scale: typeof fb.render_scale === 'number' ? fb.render_scale : (authoritativeFireballs[id]?.render_scale ?? 1)
                     };
 
                     if (!fireballs[id]) {
                         fireballs[id] = {
                             id: id,
                             owner_sid: authoritativeFireballs[id].owner_sid,
+                            owner_type: authoritativeFireballs[id].owner_type,
                             x: fb.x,
                             y: fb.y,
                             vx: fb.vx,
                             vy: fb.vy,
                             trail: [],
-                            spawn_time_ms: authoritativeFireballs[id].spawn_time_ms
+                            spawn_time_ms: authoritativeFireballs[id].spawn_time_ms,
+                            render_scale: authoritativeFireballs[id].render_scale
                         };
                     } else {
                         fireballs[id].owner_sid = authoritativeFireballs[id].owner_sid;
+                        fireballs[id].owner_type = authoritativeFireballs[id].owner_type;
                     }
                 }
                 
@@ -5370,10 +5854,11 @@
 
         // Handle projectile created event from server
         socket.on('projectile_created', (data) => {
-            const { id, owner_sid, x, y, vx, vy } = data;
+            const { id, owner_sid, owner_type, x, y, vx, vy } = data;
             authoritativeFireballs[id] = {
                 id: id,
                 owner_sid: owner_sid,
+                owner_type: owner_type ?? 'player',
                 x: x,
                 y: y,
                 vx: vx,
@@ -5382,17 +5867,20 @@
                 start_y: typeof data.start_y === 'number' ? data.start_y : y,
                 initial_vx: typeof data.initial_vx === 'number' ? data.initial_vx : vx,
                 initial_vy: typeof data.initial_vy === 'number' ? data.initial_vy : vy,
-                spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now()
+                spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now(),
+                render_scale: typeof data.render_scale === 'number' ? data.render_scale : 1
             };
             fireballs[id] = {
                 id: id,
                 owner_sid: owner_sid,
+                owner_type: owner_type ?? 'player',
                 x: x,
                 y: y,
                 vx: vx,
                 vy: vy,
                 trail: [],
-                spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now()
+                spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now(),
+                render_scale: typeof data.render_scale === 'number' ? data.render_scale : 1
             };
 
             const listenerState = getPlayerState(socket.id);
@@ -5669,6 +6157,7 @@
                     brain_state: sampled.brain_state ?? authoritativeEnemyState[enemyId].brain_state,
                     state_started_at_ms: sampled.state_started_at_ms ?? authoritativeEnemyState[enemyId].state_started_at_ms,
                     death_time_ms: sampled.death_time_ms ?? authoritativeEnemyState[enemyId].death_time_ms,
+                    despawn_at_ms: sampled.despawn_at_ms ?? authoritativeEnemyState[enemyId].despawn_at_ms,
                     respawn_at_ms: sampled.respawn_at_ms ?? authoritativeEnemyState[enemyId].respawn_at_ms,
                     target_sid: sampled.target_sid ?? authoritativeEnemyState[enemyId].target_sid ?? null
                 };
@@ -5752,21 +6241,25 @@
                     fireballs[id] = {
                         id: id,
                         owner_sid: fireballMeta.owner_sid,
+                        owner_type: fireballMeta.owner_type ?? 'player',
                         x: sampled.x,
                         y: sampled.y,
                         vx: sampled.vx ?? fireballMeta.vx,
                         vy: sampled.vy ?? fireballMeta.vy,
                         trail: [],
-                        spawn_time_ms: fireballMeta.spawn_time_ms
+                        spawn_time_ms: fireballMeta.spawn_time_ms,
+                        render_scale: fireballMeta.render_scale ?? 1
                     };
                 }
 
                 fireballs[id].owner_sid = fireballMeta.owner_sid;
+                fireballs[id].owner_type = fireballMeta.owner_type ?? 'player';
                 fireballs[id].x = sampled.x;
                 fireballs[id].y = sampled.y;
                 fireballs[id].vx = sampled.vx ?? fireballMeta.vx;
                 fireballs[id].vy = sampled.vy ?? fireballMeta.vy;
                 fireballs[id].spawn_time_ms = fireballMeta.spawn_time_ms;
+                fireballs[id].render_scale = fireballMeta.render_scale ?? 1;
                 const lastTrailPoint = fireballs[id].trail[fireballs[id].trail.length - 1];
                 if (!lastTrailPoint || renderNowTs - lastTrailPoint.time >= FIREBALL_TRAIL_SAMPLE_INTERVAL_MS) {
                     fireballs[id].trail.push({ x: fireballs[id].x, y: fireballs[id].y, time: renderNowTs });
@@ -5810,12 +6303,34 @@
                 fireballAudio.startLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport, 0.5);
                 fireballAudio.updateLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport);
             }
+
+            const activeBurnIds = new Set();
+            for (const mark of burnMarks) {
+                activeBurnIds.add(mark.id);
+                fireballAudio.startBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport, 0.34);
+                fireballAudio.updateBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport);
+            }
+
+            for (const staleId of Array.from(fireballAudio.activeBurnLoopIds?.() ?? [])) {
+                if (!activeBurnIds.has(staleId)) {
+                    fireballAudio.stopBurnLoop(staleId);
+                }
+            }
         }
 
         let lastSpatialAudioUpdateTime = 0;
         const SPATIAL_AUDIO_INTERVAL_MS = 33;
+        let lastCombatMusicUpdateTime = 0;
 
         function updateSpatialAudio(nowMs) {
+            if (combatMusic) {
+                const dtSeconds = lastCombatMusicUpdateTime > 0
+                    ? Math.max(0, Math.min(0.1, (nowMs - lastCombatMusicUpdateTime) / 1000))
+                    : SPATIAL_AUDIO_INTERVAL_MS / 1000;
+                lastCombatMusicUpdateTime = nowMs;
+                combatMusic.tick(nowMs, dtSeconds);
+            }
+
             if (nowMs - lastSpatialAudioUpdateTime < SPATIAL_AUDIO_INTERVAL_MS) {
                 return;
             }
@@ -5862,6 +6377,24 @@
             return state ? { x: state.x, y: state.y } : null;
         }
 
+        function getAudioListenerState() {
+            const liveState = getPlayerState(socket.id);
+            if (liveState && Number.isFinite(liveState.x) && Number.isFinite(liveState.y)) {
+                return liveState;
+            }
+
+            const dyingState = dyingPlayers[socket.id];
+            if (dyingState && Number.isFinite(dyingState.x) && Number.isFinite(dyingState.y)) {
+                return dyingState;
+            }
+
+            if (lastCameraFocusWorldPos && Number.isFinite(lastCameraFocusWorldPos.x) && Number.isFinite(lastCameraFocusWorldPos.y)) {
+                return lastCameraFocusWorldPos;
+            }
+
+            return null;
+        }
+
         function getAudibleViewport() {
             return {
                 x: cameraX,
@@ -5872,29 +6405,90 @@
         }
 
         function updateSpatialEnemyAudio(nowMs) {
-            if (!combatAudio) {
+            const listenerState = getAudioListenerState();
+            if (!listenerState && !combatAudio && !fallAudio && !spiderFootstepAudio) {
                 return;
             }
 
-            const listenerState = getPlayerState(socket.id);
-            if (!listenerState) {
-                return;
-            }
-
-            const audibleViewport = getAudibleViewport();
+            const audibleViewport = listenerState ? getAudibleViewport() : null;
             const ambientCooldownBaseMs = 4200;
             const enemyFootstepInterval = 3;
+            let combatMusicActive = false;
+            let combatMusicPanWeightedSum = 0;
+            let combatMusicPanWeightTotal = 0;
 
             for (const enemyId in enemyState) {
                 const currentState = enemyState[enemyId];
-                if (!currentState || currentState.type !== 'spider') {
+                if (!currentState || (currentState.type !== 'spider' && currentState.type !== 'bat')) {
                     continue;
                 }
 
+                const isSpider = currentState.type === 'spider';
+                const isBat = currentState.type === 'bat';
                 const previousState = previousEnemyAudioState[enemyId];
                 const ambientState = enemyAmbientAudioState[enemyId] || {
                     nextAt: nowMs + 1800 + Math.random() * 2200
                 };
+                const distanceToListener = listenerState
+                    ? Math.hypot(currentState.x - listenerState.x, currentState.y - listenerState.y)
+                    : Infinity;
+                const enemyIsThreatening =
+                    currentState.alive &&
+                    distanceToListener <= 760 &&
+                    (
+                        currentState.target_sid === socket.id ||
+                        currentState.brain_state === 'prepare' ||
+                        currentState.brain_state === 'lunge' ||
+                        currentState.brain_state === 'recover' ||
+                        currentState.brain_state === 'chase'
+                    );
+
+                if (enemyIsThreatening) {
+                    combatMusicActive = true;
+                    const dxToListener = currentState.x - listenerState.x;
+                    const dyToListener = currentState.y - listenerState.y;
+                    const threatDistance = Math.hypot(dxToListener, dyToListener);
+                    const threatMaxDistance = audibleViewport
+                        ? Math.max(audibleViewport.width * 0.9, audibleViewport.height * 1.05, 860)
+                        : 860;
+                    const threatDistanceRatio = Math.max(0, Math.min(1, threatDistance / Math.max(1, threatMaxDistance)));
+                    const threatGain = Math.pow(1 - threatDistanceRatio, 2.1);
+                    let threatPan = Math.max(-1, Math.min(1, -dxToListener / 280));
+
+                    if (audibleViewport) {
+                        const viewportCenterX = audibleViewport.x + audibleViewport.width / 2;
+                        const normalizedScreenX = (currentState.x - viewportCenterX) / Math.max(1, audibleViewport.width / 2);
+                        threatPan = Math.max(-1, Math.min(1, -normalizedScreenX));
+                    }
+
+                    const curvedThreatPan = Math.sign(threatPan) * Math.pow(Math.min(1, Math.abs(threatPan)), 0.82);
+                    const targetBonus = currentState.target_sid === socket.id ? 0.35 : 0;
+                    const threatWeight = Math.max(0.15, threatGain + targetBonus);
+                    combatMusicPanWeightedSum += curvedThreatPan * threatWeight;
+                    combatMusicPanWeightTotal += threatWeight;
+                }
+
+                if (isBat && combatAudio && listenerState && currentState.alive) {
+                    combatAudio.startBatFlightLoop(
+                        enemyId,
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport,
+                        0.14
+                    );
+                    combatAudio.updateBatFlightLoop(
+                        enemyId,
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport
+                    );
+                } else if (isBat && combatAudio) {
+                    combatAudio.stopBatFlightLoop(enemyId);
+                }
 
                 if (previousState) {
                     const tookDamage =
@@ -5904,6 +6498,7 @@
                         typeof previousState.health === 'number' &&
                         currentState.health < previousState.health;
                     const justDied = previousState.alive && !currentState.alive;
+                    const justRespawned = !previousState.alive && currentState.alive;
                     const landedThisFrame = previousState.alive && !previousState.on_ground && currentState.on_ground;
                     const justDetectedPlayer =
                         currentState.alive &&
@@ -5918,48 +6513,90 @@
 
                     if (tookDamage) {
                         enemyHitFlashUntilMs[enemyId] = nowMs + HIT_FLASH_DURATION_MS;
-                        combatAudio.playSpiderHitAt(
-                            currentState.x,
-                            currentState.y,
-                            listenerState.x,
-                            listenerState.y,
-                            audibleViewport,
-                            0.72
-                        );
+                        if (combatAudio && listenerState && isSpider) {
+                            combatAudio.playSpiderHitAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.72
+                            );
+                        } else if (combatAudio && listenerState && isBat) {
+                            combatAudio.playBatHitAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.72
+                            );
+                        }
                     }
 
-                    if (justDied) {
-                        combatAudio.playSpiderDeathAt(
-                            currentState.x,
-                            currentState.y,
-                            listenerState.x,
-                            listenerState.y,
-                            audibleViewport,
-                            0.9,
-                            `${enemyId}|${currentState.death_time_ms ?? nowMs}|death`
-                        );
+                    if (justRespawned) {
+                        ambientState.nextAt = nowMs + 2600 + Math.random() * 1400;
+                        enemyFootstepFrameCounters[enemyId] = 0;
+                    }
+
+                    if (justDied && combatAudio && listenerState) {
+                        if (isSpider) {
+                            combatAudio.playSpiderDeathAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.9,
+                                `${enemyId}|${currentState.death_time_ms ?? nowMs}|death`
+                            );
+                        } else if (isBat) {
+                            combatAudio.playBatDeathAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.86
+                            );
+                            combatAudio.stopBatFlightLoop(enemyId);
+                        }
                         ambientState.nextAt = nowMs + ambientCooldownBaseMs;
-                    } else if (justDetectedPlayer || startedAttack) {
-                        combatAudio.playSpiderAttackAt(
-                            currentState.x,
-                            currentState.y,
-                            listenerState.x,
-                            listenerState.y,
-                            audibleViewport,
-                            0.82
-                        );
+                    } else if ((justDetectedPlayer || startedAttack) && combatAudio && listenerState) {
+                        if (isSpider) {
+                            combatAudio.playSpiderAttackAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.82
+                            );
+                        } else if (isBat && justDetectedPlayer) {
+                            combatAudio.playBatDetectAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.78
+                            );
+                        }
                         ambientState.nextAt = nowMs + 2200 + Math.random() * 1000;
                     }
 
-                    if (landedThisFrame && fallAudio) {
-                        fallAudio.playAt(
-                            currentState.x,
-                            currentState.y,
-                            listenerState.x,
-                            listenerState.y,
-                            audibleViewport,
-                            0.34
-                        );
+                    if (landedThisFrame && fallAudio && isSpider) {
+                        createDustParticles(currentState.x, currentState.y + 18, 'enemy_land');
+                        if (listenerState) {
+                            fallAudio.playAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.34
+                            );
+                        }
                         enemyFootstepFrameCounters[enemyId] = 0;
                     }
                 }
@@ -5973,16 +6610,28 @@
                         currentState.action === 'run'
                     );
 
-                if (isAmbientState && nowMs >= ambientState.nextAt) {
-                    combatAudio.playSpiderAmbientAt(
-                        currentState.x,
-                        currentState.y,
-                        listenerState.x,
-                        listenerState.y,
-                        audibleViewport,
-                        0.52,
-                        `${enemyId}|${currentState.state_started_at_ms ?? 0}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
-                    );
+                if (combatAudio && listenerState && isAmbientState && nowMs >= ambientState.nextAt) {
+                    if (isSpider) {
+                        combatAudio.playSpiderAmbientAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.52,
+                            `${enemyId}|${currentState.state_started_at_ms ?? 0}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
+                        );
+                    } else if (isBat) {
+                        combatAudio.playBatAmbientAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.42,
+                            `${enemyId}|${currentState.brain_state}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
+                        );
+                    }
                     ambientState.nextAt = nowMs + ambientCooldownBaseMs + Math.random() * 3800;
                 }
 
@@ -5993,7 +6642,7 @@
                     currentState.action === 'run' &&
                     movedHorizontally;
 
-                if (isWalking && spiderFootstepAudio) {
+                if (isSpider && isWalking && spiderFootstepAudio && listenerState) {
                     enemyFootstepFrameCounters[enemyId] = (enemyFootstepFrameCounters[enemyId] || 0) + 1;
                     if (enemyFootstepFrameCounters[enemyId] >= enemyFootstepInterval) {
                         spiderFootstepAudio.playAt(
@@ -6026,9 +6675,23 @@
 
             for (const enemyId in previousEnemyAudioState) {
                 if (!enemyState[enemyId]) {
+                    if (combatAudio) {
+                        combatAudio.stopBatFlightLoop(enemyId);
+                    }
                     delete previousEnemyAudioState[enemyId];
                     delete enemyAmbientAudioState[enemyId];
                     delete enemyFootstepFrameCounters[enemyId];
+                }
+            }
+
+            if (combatMusic) {
+                if (!listenerState) {
+                    combatMusic.stop();
+                } else {
+                    const combatPan = combatMusicPanWeightTotal > 0
+                        ? combatMusicPanWeightedSum / combatMusicPanWeightTotal
+                        : 0;
+                    combatMusic.setCombatActive(combatMusicActive, nowMs, combatPan * 0.9);
                 }
             }
         }
@@ -6268,6 +6931,53 @@
             return canvas;
         }
 
+        function getWarmGlowFrameCanvas(cacheKey, image, frameX, frameY, frameW, frameH) {
+            const cached = spriteWarmGlowFrameCache.get(cacheKey);
+            if (cached) {
+                return cached;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(frameW));
+            canvas.height = Math.max(1, Math.round(frameH));
+            const frameCtx = canvas.getContext('2d', { willReadFrequently: true });
+            frameCtx.clearRect(0, 0, canvas.width, canvas.height);
+            frameCtx.drawImage(
+                image,
+                frameX,
+                frameY,
+                frameW,
+                frameH,
+                0,
+                0,
+                canvas.width,
+                canvas.height
+            );
+
+            const imageData = frameCtx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            for (let index = 0; index < data.length; index += 4) {
+                const r = data[index];
+                const g = data[index + 1];
+                const b = data[index + 2];
+                const a = data[index + 3];
+                const isWarmWingEmber = a > 24 && r >= 150 && g >= 90 && b <= 170 && r >= g * 0.88;
+                if (!isWarmWingEmber) {
+                    data[index + 3] = 0;
+                    continue;
+                }
+
+                data[index] = 255;
+                data[index + 1] = Math.max(196, g);
+                data[index + 2] = Math.min(120, Math.round(b * 0.55));
+                data[index + 3] = Math.min(255, Math.round(a * 0.92));
+            }
+
+            frameCtx.putImageData(imageData, 0, 0);
+            spriteWarmGlowFrameCache.set(cacheKey, canvas);
+            return canvas;
+        }
+
         function getHitFlashAlpha(hitFlashUntilMs, nowMs, durationMs = HIT_FLASH_DURATION_MS) {
             if (!Number.isFinite(hitFlashUntilMs) || hitFlashUntilMs <= nowMs) {
                 return 0;
@@ -6338,6 +7048,38 @@
                 }
             }
 
+            ctx.restore();
+        }
+
+        function drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraOffsetX, cameraOffsetY) {
+            if (!frameInfo || state?.type !== 'bat') {
+                return;
+            }
+
+            const glowFrame = getWarmGlowFrameCanvas(
+                `warm|${frameInfo.cacheKey}`,
+                frameInfo.image,
+                frameInfo.frameX,
+                frameInfo.frameY,
+                frameInfo.frameW,
+                frameInfo.frameH
+            );
+            const drawX = state.x - cameraOffsetX - frameInfo.renderDims.width / 2;
+            const drawY = state.y - cameraOffsetY - frameInfo.renderDims.height / 2;
+            const pulse = 0.78 + Math.sin(nowMs * 0.006 + stableStringNoise(state.id || 'bat')) * 0.12;
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = 0.22 * pulse;
+            if ('filter' in ctx) {
+                ctx.filter = 'blur(8px)';
+            }
+            ctx.drawImage(glowFrame, drawX - 2, drawY - 2, frameInfo.renderDims.width + 4, frameInfo.renderDims.height + 4);
+            ctx.globalAlpha = 0.3 * pulse;
+            if ('filter' in ctx) {
+                ctx.filter = 'blur(3px)';
+            }
+            ctx.drawImage(glowFrame, drawX, drawY, frameInfo.renderDims.width, frameInfo.renderDims.height);
             ctx.restore();
         }
 
@@ -6572,6 +7314,13 @@
                     spread = 8;
                     color = 'rgba(180, 160, 120, ';
                     break;
+                case 'enemy_land':
+                    particleCount = 4;
+                    baseSize = 2;
+                    lifetime = 0.22;
+                    spread = 14;
+                    color = 'rgba(146, 132, 102, ';
+                    break;
                 case 'land':
                 default:
                     particleCount = 8;
@@ -6596,6 +7345,10 @@
                         // Walking dust mostly spreads horizontally and slightly upward
                         vx = (Math.random() - 0.5) * spread;
                         vy = -Math.random() * spread * 0.3;
+                        break;
+                    case 'enemy_land':
+                        vx = Math.cos(angle) * velocity * 0.7;
+                        vy = -Math.abs(Math.sin(angle)) * velocity * 0.45;
                         break;
                     case 'land':
                     default:
@@ -7293,7 +8046,8 @@
                 }
 
                 const flickerTime = now * 0.0018 + stableStringNoise(id) * 10;
-                const flameRadius = FIREBALL_SIZE * 1.08;
+                const projectileScale = typeof fireball.render_scale === 'number' ? fireball.render_scale : 1;
+                const flameRadius = FIREBALL_SIZE * 1.08 * projectileScale;
                 const flickerX = Math.sin(flickerTime * 5.2) * 1.9;
                 const flameLift = Math.abs(Math.cos(flickerTime * 4.4)) * 1.2;
                 const sway = Math.sin(flickerTime * 1.2) * 0.14;
@@ -7366,7 +8120,7 @@
                     fireball.x + dirX * 1.5 + tangentX * flickerX * 0.12,
                     fireball.y + dirY * 1.1 + tangentY * flickerX * 0.12,
                     angle + Math.cos(flickerTime * 1.3) * 0.08,
-                    FIREBALL_SIZE * 0.52,
+                    FIREBALL_SIZE * 0.52 * projectileScale,
                     0.88,
                     now * 0.0013 + Number(id) * 0.07,
                     {
@@ -7577,6 +8331,15 @@
                     // Use default dimensions for dying players
                     localDims = { width: PLAYER_MAX_SIZE, height: PLAYER_MAX_SIZE };
                 }
+
+                if (localPlayerPos) {
+                    lastCameraFocusWorldPos = { x: localPlayerPos.x, y: localPlayerPos.y };
+                } else if (lastCameraFocusWorldPos) {
+                    localPlayerPos = {
+                        x: lastCameraFocusWorldPos.x,
+                        y: lastCameraFocusWorldPos.y
+                    };
+                }
                 
                 // Only update camera if we have a valid position (alive or dying)
                 if (localPlayerPos) {
@@ -7665,18 +8428,26 @@
                         continue;
                     }
 
+                    const nowMs = Date.now();
+                    if (!state.alive) {
+                        const despawnAtMs = typeof state.despawn_at_ms === 'number' ? state.despawn_at_ms : 0;
+                        if (!despawnAtMs || nowMs >= despawnAtMs) {
+                            continue;
+                        }
+                    }
+
                     const frameInfo = getEnemyFrameRenderInfo(enemyId);
                     if (frameInfo) {
-                        const nowMs = Date.now();
                         let enemyOpacity = 1;
-                        if (!state.alive && typeof state.respawn_at_ms === 'number' && state.respawn_at_ms > 0) {
-                            const fadeWindowMs = 900;
-                            const timeRemainingMs = state.respawn_at_ms - nowMs;
-                            if (timeRemainingMs <= fadeWindowMs) {
-                                enemyOpacity = Math.max(0, Math.min(1, timeRemainingMs / fadeWindowMs));
+                        if (!state.alive && typeof state.despawn_at_ms === 'number' && state.despawn_at_ms > 0) {
+                            const fadeDurationMs = 900;
+                            const fadeStartMs = state.despawn_at_ms - fadeDurationMs;
+                            if (nowMs >= fadeStartMs) {
+                                enemyOpacity = Math.max(0, Math.min(1, (state.despawn_at_ms - nowMs) / fadeDurationMs));
                             }
                         }
                         const flashAlpha = getHitFlashAlpha(enemyHitFlashUntilMs[enemyId], nowMs);
+                        drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraX, cameraY);
                         drawSpriteFrameWithHitFlash({
                             image: frameInfo.image,
                             frameX: frameInfo.frameX,
@@ -7718,9 +8489,11 @@
                         }
                     }
 
-                    const maxHealth = typeof state.max_health === 'number' ? state.max_health : 4;
-                    const health = typeof state.health === 'number' ? state.health : maxHealth;
-                    drawEntityHealthBar(ctx, state.x, state.y, health, maxHealth, cameraX, cameraY, 62);
+                    if (state.alive) {
+                        const maxHealth = typeof state.max_health === 'number' ? state.max_health : 4;
+                        const health = typeof state.health === 'number' ? state.health : maxHealth;
+                        drawEntityHealthBar(ctx, state.x, state.y, health, maxHealth, cameraX, cameraY, 62);
+                    }
                 }
 
                 // Draw Players with server authoritative positions and camera offset

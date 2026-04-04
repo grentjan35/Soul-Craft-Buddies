@@ -227,7 +227,7 @@ function createAssetsRouter(deps) {
   const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
   const publicSpiderFootstepPattern = /^footstep([2-4])?\.mp3$/;
-  const publicGameplaySounds = new Set(['fall.wav']);
+  const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3']);
   const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
   const publicPlayerHurtPattern = /^hurt[1-5]?\.mp3$/;
   const publicSpiderSounds = new Set([
@@ -240,6 +240,15 @@ function createAssetsRouter(deps) {
     'screeching.mp3',
     'throwing up.mp3',
     'wine.mp3',
+  ]);
+  const publicBatSounds = new Set([
+    'death.mp3',
+    'detect.mp3',
+    'flying.mp3',
+    'hurt.mp3',
+    'idle.mp3',
+    'wander.mp3',
+    'wandering.mp3',
   ]);
 
   router.post('/api/asset_session', (_req, res) => {
@@ -372,6 +381,24 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'spider', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/bat/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicBatSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'bat', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;

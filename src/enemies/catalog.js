@@ -8,10 +8,13 @@ const DEFAULT_STATS = {
   respawnDelayMs: 6000,
 };
 const DEFAULT_BEHAVIOR = {
+  movementMode: 'ground',
+  attackMode: 'melee',
   detectionRadius: 320,
   leashRadius: 520,
   wanderRadius: 192,
   moveSpeed: 115,
+  verticalMoveSpeed: 100,
   telegraphDurationMs: 420,
   lungeDurationMs: 520,
   attackCooldownMs: 1400,
@@ -22,6 +25,16 @@ const DEFAULT_BEHAVIOR = {
   stuckJumpDelayMs: 380,
   doubleJumpDelayMs: 780,
   despawnAfterDeathMs: 1400,
+  hoverHeight: 112,
+  hoverVariance: 84,
+  hoverBobAmplitude: 16,
+  hoverBobSpeed: 2.3,
+  projectileSpeed: 800,
+  projectileDamage: 18,
+  projectileScale: 1,
+  projectileRadiusScale: 1,
+  projectileYOffset: 0,
+  projectileOffsetX: 0,
 };
 const DEFAULT_ANIMATION = {
   frames: 1,
@@ -139,10 +152,19 @@ function normalizeEnemyMetadata(rawMetadata, enemyType) {
     behavior: {
       ...DEFAULT_BEHAVIOR,
       ...(safeRaw.behavior && typeof safeRaw.behavior === 'object' ? safeRaw.behavior : {}),
+      movementMode:
+        typeof safeRaw.behavior?.movementMode === 'string' && safeRaw.behavior.movementMode.trim()
+          ? safeRaw.behavior.movementMode.trim().toLowerCase()
+          : DEFAULT_BEHAVIOR.movementMode,
+      attackMode:
+        typeof safeRaw.behavior?.attackMode === 'string' && safeRaw.behavior.attackMode.trim()
+          ? safeRaw.behavior.attackMode.trim().toLowerCase()
+          : DEFAULT_BEHAVIOR.attackMode,
       detectionRadius: toPositiveNumber(Number(safeRaw.behavior?.detectionRadius), DEFAULT_BEHAVIOR.detectionRadius),
       leashRadius: toPositiveNumber(Number(safeRaw.behavior?.leashRadius), DEFAULT_BEHAVIOR.leashRadius),
       wanderRadius: toPositiveNumber(Number(safeRaw.behavior?.wanderRadius), DEFAULT_BEHAVIOR.wanderRadius),
       moveSpeed: toPositiveNumber(Number(safeRaw.behavior?.moveSpeed), DEFAULT_BEHAVIOR.moveSpeed),
+      verticalMoveSpeed: toPositiveNumber(Number(safeRaw.behavior?.verticalMoveSpeed), DEFAULT_BEHAVIOR.verticalMoveSpeed),
       telegraphDurationMs: toPositiveNumber(Number(safeRaw.behavior?.telegraphDurationMs), DEFAULT_BEHAVIOR.telegraphDurationMs),
       lungeDurationMs: toPositiveNumber(Number(safeRaw.behavior?.lungeDurationMs), DEFAULT_BEHAVIOR.lungeDurationMs),
       attackCooldownMs: toPositiveNumber(Number(safeRaw.behavior?.attackCooldownMs), DEFAULT_BEHAVIOR.attackCooldownMs),
@@ -153,6 +175,16 @@ function normalizeEnemyMetadata(rawMetadata, enemyType) {
       stuckJumpDelayMs: toPositiveNumber(Number(safeRaw.behavior?.stuckJumpDelayMs), DEFAULT_BEHAVIOR.stuckJumpDelayMs),
       doubleJumpDelayMs: toPositiveNumber(Number(safeRaw.behavior?.doubleJumpDelayMs), DEFAULT_BEHAVIOR.doubleJumpDelayMs),
       despawnAfterDeathMs: toPositiveNumber(Number(safeRaw.behavior?.despawnAfterDeathMs), DEFAULT_BEHAVIOR.despawnAfterDeathMs),
+      hoverHeight: toPositiveNumber(Number(safeRaw.behavior?.hoverHeight), DEFAULT_BEHAVIOR.hoverHeight),
+      hoverVariance: toPositiveNumber(Number(safeRaw.behavior?.hoverVariance), DEFAULT_BEHAVIOR.hoverVariance),
+      hoverBobAmplitude: toPositiveNumber(Number(safeRaw.behavior?.hoverBobAmplitude), DEFAULT_BEHAVIOR.hoverBobAmplitude),
+      hoverBobSpeed: toPositiveNumber(Number(safeRaw.behavior?.hoverBobSpeed), DEFAULT_BEHAVIOR.hoverBobSpeed),
+      projectileSpeed: toPositiveNumber(Number(safeRaw.behavior?.projectileSpeed), DEFAULT_BEHAVIOR.projectileSpeed),
+      projectileDamage: toPositiveNumber(Number(safeRaw.behavior?.projectileDamage), DEFAULT_BEHAVIOR.projectileDamage),
+      projectileScale: toPositiveNumber(Number(safeRaw.behavior?.projectileScale), DEFAULT_BEHAVIOR.projectileScale),
+      projectileRadiusScale: toPositiveNumber(Number(safeRaw.behavior?.projectileRadiusScale), DEFAULT_BEHAVIOR.projectileRadiusScale),
+      projectileYOffset: toFiniteNumber(Number(safeRaw.behavior?.projectileYOffset), DEFAULT_BEHAVIOR.projectileYOffset),
+      projectileOffsetX: toFiniteNumber(Number(safeRaw.behavior?.projectileOffsetX), DEFAULT_BEHAVIOR.projectileOffsetX),
     },
     animations,
   };

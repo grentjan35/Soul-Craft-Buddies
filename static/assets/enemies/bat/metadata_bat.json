@@ -1,0 +1,83 @@
+{
+  "id": "bat",
+  "type": "bat",
+  "displayName": "Bat",
+  "scale": 0.15,
+  "frameSize": {
+    "w": 566,
+    "h": 552
+  },
+  "hitbox": {
+    "x": 207,
+    "y": 285,
+    "w": 208,
+    "h": 153
+  },
+  "normalized": {
+    "x": 0.365724,
+    "y": 0.516304,
+    "w": 0.367491,
+    "h": 0.277174
+  },
+  "stats": {
+    "maxHealth": 50,
+    "contactDamage": 20,
+    "respawnDelayMs": 6000
+  },
+  "behavior": {
+    "movementMode": "flying",
+    "attackMode": "projectile",
+    "detectionRadius": 760,
+    "leashRadius": 1100,
+    "wanderRadius": 280,
+    "moveSpeed": 168,
+    "verticalMoveSpeed": 112,
+    "telegraphDurationMs": 420,
+    "lungeDurationMs": 360,
+    "attackCooldownMs": 1350,
+    "attackRange": 520,
+    "lungeSpeed": 560,
+    "lungeLift": 760,
+    "jumpForce": 720,
+    "stuckJumpDelayMs": 380,
+    "doubleJumpDelayMs": 780,
+    "despawnAfterDeathMs": 1400,
+    "hoverHeight": 176,
+    "hoverVariance": 112,
+    "hoverBobAmplitude": 24,
+    "hoverBobSpeed": 1.75,
+    "projectileSpeed": 880,
+    "projectileDamage": 20,
+    "projectileScale": 0.72,
+    "projectileRadiusScale": 0.72,
+    "projectileYOffset": -18,
+    "projectileOffsetX": 28
+  },
+  "animations": {
+    "idle": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "run": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "attack": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "attack"
+    },
+    "death": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "death"
+    },
+    "prepare": {
+      "frames": 4,
+      "grid": "3x3",
+      "asset": "attack"
+    }
+  }
+}

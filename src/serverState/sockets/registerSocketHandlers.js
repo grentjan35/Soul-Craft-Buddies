@@ -1,4 +1,11 @@
-const { PLAYER_MAX_HEALTH, ATTACK_DURATION, FIREBALL_POWER_MAX } = require('../state/constants');
+const {
+  PLAYER_MAX_HEALTH,
+  ATTACK_DURATION,
+  FIREBALL_POWER_MIN,
+  FIREBALL_POWER_MAX,
+  FIREBALL_MAX_DISTANCE,
+  GRAVITY,
+} = require('../state/constants');
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
 const { resetEnemiesForState } = require('../enemies/runtime');
@@ -113,12 +120,25 @@ function registerSocketHandlers(input) {
     player.attack_start_time = now;
     player.action = 'attack';
 
-    const angle = typeof data?.angle === 'number' ? data.angle : 0;
-    player.direction = Math.cos(angle) > 0 ? 'right' : 'left';
+    const requestedDx = Number(data?.dx);
+    const requestedDy = Number(data?.dy);
+    const requestedDistance = Number(data?.distance);
+    const targetDistance = Number.isFinite(requestedDistance)
+      ? Math.max(48, Math.min(requestedDistance, FIREBALL_MAX_DISTANCE))
+      : FIREBALL_MAX_DISTANCE;
+    const fallbackAngle = typeof data?.angle === 'number' ? data.angle : 0;
+    const targetDx = Number.isFinite(requestedDx) ? requestedDx : Math.cos(fallbackAngle) * targetDistance;
+    const targetDy = Number.isFinite(requestedDy) ? requestedDy : Math.sin(fallbackAngle) * targetDistance;
+    const angle = Math.atan2(targetDy, targetDx);
+    player.direction = targetDx >= 0 ? 'right' : 'left';
 
-    const power = FIREBALL_POWER_MAX;
-    const vx = Math.cos(angle) * power;
-    const vy = Math.sin(angle) * power;
+    const distanceRatio = Math.max(0, Math.min(1, targetDistance / FIREBALL_MAX_DISTANCE));
+    const referenceSpeed = FIREBALL_POWER_MIN + (FIREBALL_POWER_MAX - FIREBALL_POWER_MIN) * distanceRatio;
+    const effectiveSpeed = referenceSpeed * 2.35;
+    const flightTime = Math.max(0.16, Math.min(targetDistance / Math.max(220, effectiveSpeed), 0.62));
+    const gravityPerSecond = GRAVITY * 60;
+    const vx = targetDx / flightTime;
+    const vy = (targetDy - 0.5 * gravityPerSecond * flightTime * flightTime) / flightTime;
     player.pending_projectile_angle = angle;
     player.pending_projectile_vx = vx;
     player.pending_projectile_vy = vy;
