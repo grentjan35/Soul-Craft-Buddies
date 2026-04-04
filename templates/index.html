@@ -4189,6 +4189,7 @@
         let backgroundCatalogPromise = null;
         let backgroundCompanionMap = {};
         let foregroundOverlayCache = new Map();
+        let foregroundEffectLayerCache = new Map();
         let seamBridgeCache = new Map();
         let activeMapLoadPromise = null;
         let loadedMapName = null;
@@ -4198,6 +4199,59 @@
         const BACKGROUND_PARALLAX_OVERSCAN = 1.26;
         const BACKGROUND_SEAM_BLEED = 72;
         const BACKGROUND_SEAM_BRIDGE_WIDTH = 220;
+
+        function getForegroundEffectLayers(bitmap) {
+            if (!bitmap) {
+                return null;
+            }
+
+            const cacheKey = `${bitmap.width}x${bitmap.height}`;
+            const cached = foregroundEffectLayerCache.get(cacheKey);
+            if (cached) {
+                return cached;
+            }
+
+            const createLayerCanvas = () => {
+                const layerCanvas = document.createElement('canvas');
+                layerCanvas.width = bitmap.width;
+                layerCanvas.height = bitmap.height;
+                return layerCanvas;
+            };
+
+            const dimLayer = createLayerCanvas();
+            const dimCtx = dimLayer.getContext('2d');
+            if ('filter' in dimCtx) {
+                dimCtx.filter = 'blur(10px) brightness(0.48) saturate(0.72)';
+            }
+            dimCtx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            if ('filter' in dimCtx) {
+                dimCtx.filter = 'none';
+            }
+
+            const softLayer = createLayerCanvas();
+            const softCtx = softLayer.getContext('2d');
+            if ('filter' in softCtx) {
+                softCtx.filter = 'blur(1.8px) brightness(0.72) saturate(0.82) contrast(0.94)';
+            }
+            softCtx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            if ('filter' in softCtx) {
+                softCtx.filter = 'none';
+            }
+
+            const bloomLayer = createLayerCanvas();
+            const bloomCtx = bloomLayer.getContext('2d');
+            if ('filter' in bloomCtx) {
+                bloomCtx.filter = 'blur(7px) brightness(0.56) saturate(0.7)';
+            }
+            bloomCtx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            if ('filter' in bloomCtx) {
+                bloomCtx.filter = 'none';
+            }
+
+            const layers = { dimLayer, softLayer, bloomLayer };
+            foregroundEffectLayerCache.set(cacheKey, layers);
+            return layers;
+        }
 
         function getForegroundAssetCandidates(backgroundAssetName) {
             if (typeof backgroundAssetName !== 'string') {
@@ -4269,6 +4323,7 @@
             const time = performance.now() * 0.001;
             const atmosphericDriftX = Math.sin(time * 0.27 + placementX * 0.002) * 7;
             const atmosphericDriftY = Math.cos(time * 0.19 + placementY * 0.002) * 5;
+            const effectLayers = getForegroundEffectLayers(bitmap);
 
             const drawX = baseScreenX - extraWidth / 2 + parallaxOffsetX + atmosphericDriftX;
             const drawY = baseScreenY - extraHeight / 2 + parallaxOffsetY + atmosphericDriftY;
@@ -4282,20 +4337,14 @@
                 clipHeight + BACKGROUND_SEAM_BLEED * 2
             );
             targetCtx.clip();
-            if ('filter' in targetCtx) {
-                targetCtx.filter = 'blur(10px) brightness(0.48) saturate(0.72)';
-            }
             targetCtx.globalAlpha = 0.22;
             targetCtx.drawImage(
-                bitmap,
+                effectLayers?.dimLayer || bitmap,
                 drawX - BACKGROUND_SEAM_BLEED,
                 drawY - BACKGROUND_SEAM_BLEED,
                 scaledWidth + BACKGROUND_SEAM_BLEED * 2,
                 scaledHeight + BACKGROUND_SEAM_BLEED * 2
             );
-            if ('filter' in targetCtx) {
-                targetCtx.filter = 'none';
-            }
             targetCtx.globalAlpha = 1;
             targetCtx.restore();
 
@@ -4304,27 +4353,17 @@
             targetCtx.rect(baseScreenX, baseScreenY, clipWidth, clipHeight);
             targetCtx.clip();
 
-            if ('filter' in targetCtx) {
-                targetCtx.filter = 'blur(1.8px) brightness(0.72) saturate(0.82) contrast(0.94)';
-            }
             targetCtx.globalAlpha = 0.9;
-            targetCtx.drawImage(bitmap, drawX, drawY, scaledWidth, scaledHeight);
+            targetCtx.drawImage(effectLayers?.softLayer || bitmap, drawX, drawY, scaledWidth, scaledHeight);
 
             targetCtx.globalAlpha = 0.28;
-            if ('filter' in targetCtx) {
-                targetCtx.filter = 'blur(7px) brightness(0.56) saturate(0.7)';
-            }
             targetCtx.drawImage(
-                bitmap,
+                effectLayers?.bloomLayer || bitmap,
                 drawX - clipWidth * 0.015,
                 drawY - clipHeight * 0.01,
                 scaledWidth * 1.015,
                 scaledHeight * 1.015
             );
-
-            if ('filter' in targetCtx) {
-                targetCtx.filter = 'none';
-            }
             targetCtx.globalAlpha = 1;
 
             const overlayCanvas = getForegroundOverlayCanvas(clipWidth, clipHeight);
@@ -4513,9 +4552,16 @@
             }
 
             const backgrounds = Array.isArray(currentMap.backgrounds) ? currentMap.backgrounds : [];
+            const visibleBounds = getVisibleWorldBounds(160);
             backgrounds.forEach((placement) => {
                 const foregroundBitmap = placement?.foregroundBitmap;
                 if (!foregroundBitmap) {
+                    return;
+                }
+
+                const placementX = Number(placement.x) || 0;
+                const placementY = Number(placement.y) || 0;
+                if (!isWorldRectVisible(placementX, placementY, foregroundBitmap.width, foregroundBitmap.height, 160, visibleBounds)) {
                     return;
                 }
 
@@ -4690,6 +4736,7 @@
             mapChunkBuildQueue = [];
             mapChunkQueuedKeys.clear();
             foregroundOverlayCache.clear();
+            foregroundEffectLayerCache.clear();
             seamBridgeCache.clear();
             mapChunkGeneration += 1;
             if (mapChunkBuildFrameId) {
@@ -6974,8 +7021,29 @@
             }
 
             frameCtx.putImageData(imageData, 0, 0);
-            spriteWarmGlowFrameCache.set(cacheKey, canvas);
-            return canvas;
+
+            const createBlurredVariant = (sourceCanvas, filterValue, extraPadding = 0) => {
+                const blurredCanvas = document.createElement('canvas');
+                blurredCanvas.width = sourceCanvas.width + extraPadding * 2;
+                blurredCanvas.height = sourceCanvas.height + extraPadding * 2;
+                const blurredCtx = blurredCanvas.getContext('2d');
+                if ('filter' in blurredCtx) {
+                    blurredCtx.filter = filterValue;
+                }
+                blurredCtx.drawImage(sourceCanvas, extraPadding, extraPadding);
+                if ('filter' in blurredCtx) {
+                    blurredCtx.filter = 'none';
+                }
+                return blurredCanvas;
+            };
+
+            const glowFrames = {
+                base: canvas,
+                near: createBlurredVariant(canvas, 'blur(3px)', 6),
+                far: createBlurredVariant(canvas, 'blur(8px)', 16)
+            };
+            spriteWarmGlowFrameCache.set(cacheKey, glowFrames);
+            return glowFrames;
         }
 
         function getHitFlashAlpha(hitFlashUntilMs, nowMs, durationMs = HIT_FLASH_DURATION_MS) {
@@ -7056,7 +7124,7 @@
                 return;
             }
 
-            const glowFrame = getWarmGlowFrameCanvas(
+            const glowFrames = getWarmGlowFrameCanvas(
                 `warm|${frameInfo.cacheKey}`,
                 frameInfo.image,
                 frameInfo.frameX,
@@ -7071,15 +7139,21 @@
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
             ctx.globalAlpha = 0.22 * pulse;
-            if ('filter' in ctx) {
-                ctx.filter = 'blur(8px)';
-            }
-            ctx.drawImage(glowFrame, drawX - 2, drawY - 2, frameInfo.renderDims.width + 4, frameInfo.renderDims.height + 4);
+            ctx.drawImage(
+                glowFrames.far,
+                drawX - 16,
+                drawY - 16,
+                frameInfo.renderDims.width + 32,
+                frameInfo.renderDims.height + 32
+            );
             ctx.globalAlpha = 0.3 * pulse;
-            if ('filter' in ctx) {
-                ctx.filter = 'blur(3px)';
-            }
-            ctx.drawImage(glowFrame, drawX, drawY, frameInfo.renderDims.width, frameInfo.renderDims.height);
+            ctx.drawImage(
+                glowFrames.near,
+                drawX - 6,
+                drawY - 6,
+                frameInfo.renderDims.width + 12,
+                frameInfo.renderDims.height + 12
+            );
             ctx.restore();
         }
 
@@ -7231,7 +7305,7 @@
             };
         }
 
-        function drawAttachedPlayerBurnsForPlayer(sid, now) {
+        function drawAttachedPlayerBurnsForPlayer(sid, now, visibleBounds = null) {
             attachedPlayerBurns = attachedPlayerBurns.filter((burn) => now - burn.startTime < burn.duration && playerState[burn.sid]);
             const burn = attachedPlayerBurns.find((entry) => entry.sid === sid);
             if (!burn) return;
@@ -7240,6 +7314,15 @@
             if (!frameInfo) return;
             const anchor = resolveAttachedBurnAnchor(frameInfo, burn);
             if (!anchor) return;
+            if (
+                visibleBounds &&
+                (anchor.x < visibleBounds.left - 96 ||
+                 anchor.x > visibleBounds.right + 96 ||
+                 anchor.y < visibleBounds.top - 96 ||
+                 anchor.y > visibleBounds.bottom + 96)
+            ) {
+                return;
+            }
             const progress = Math.max(0, Math.min(1, (now - burn.startTime) / burn.duration));
             const alpha = (1 - progress) * 0.9;
             const flameRadius = burn.radius * (0.82 + (1 - progress) * 0.18);
@@ -7552,6 +7635,33 @@
             return Math.max(0, Math.min(1, value));
         }
 
+        function getVisibleWorldBounds(padding = 0) {
+            const safeZoom = Math.max(cameraZoom, 0.001);
+            return {
+                left: cameraX - padding,
+                top: cameraY - padding,
+                right: cameraX + canvas.width / safeZoom + padding,
+                bottom: cameraY + canvas.height / safeZoom + padding
+            };
+        }
+
+        function isWorldRectVisible(x, y, width, height, padding = 0, bounds = null) {
+            const effectiveBounds = bounds
+                ? {
+                    left: bounds.left - padding,
+                    top: bounds.top - padding,
+                    right: bounds.right + padding,
+                    bottom: bounds.bottom + padding
+                }
+                : getVisibleWorldBounds(padding);
+            return !(
+                x + width < effectiveBounds.left ||
+                x > effectiveBounds.right ||
+                y + height < effectiveBounds.top ||
+                y > effectiveBounds.bottom
+            );
+        }
+
         function drawPixelFlameBody(centerX, centerY, angle, scale, intensity, timeSeed, options = {}) {
             if (!Number.isFinite(centerX) || !Number.isFinite(centerY) || !Number.isFinite(scale) || scale <= 0 || intensity <= 0) {
                 return;
@@ -7770,14 +7880,20 @@
             }
         }
 
-        function drawBurnMarks() {
-            const now = Date.now();
+        function drawBurnMarks(now = Date.now(), visibleBounds = null) {
             burnMarks = burnMarks.filter((mark) => now - mark.startTime < mark.duration);
 
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
             for (const mark of burnMarks) {
+                if (
+                    visibleBounds &&
+                    !isWorldRectVisible(mark.x - mark.radius * 3, mark.y - mark.radius * 3, mark.radius * 6, mark.radius * 6, 64, visibleBounds)
+                ) {
+                    continue;
+                }
+
                 const elapsed = now - mark.startTime;
                 const progress = Math.max(0, Math.min(1, elapsed / mark.duration));
                 const alpha = (1 - progress) * 0.9;
@@ -7839,13 +7955,14 @@
             ctx.restore();
         }
 
-        function collectDynamicLights() {
+        function collectDynamicLights(now = Date.now(), renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs, visibleBounds = null) {
             const lights = [];
-            const now = Date.now();
-            const renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs;
 
             for (const id in explosions) {
                 const explosion = explosions[id];
+                if (visibleBounds && !isWorldRectVisible(explosion.x - 420, explosion.y - 420, 840, 840, 120, visibleBounds)) {
+                    continue;
+                }
                 let age = (now - explosion.spawnTime) / 1000;
                 if (typeof explosion.spawn_time_ms === 'number') {
                     age = (renderServerTimeMs - explosion.spawn_time_ms) / 1000;
@@ -7867,6 +7984,9 @@
 
             for (const id in fireballs) {
                 const fireball = fireballs[id];
+                if (visibleBounds && !isWorldRectVisible(fireball.x - 260, fireball.y - 260, 520, 520, 120, visibleBounds)) {
+                    continue;
+                }
                 lights.push({
                     x: (fireball.x - cameraX) * cameraZoom,
                     y: (fireball.y - cameraY) * cameraZoom,
@@ -7876,6 +7996,9 @@
             }
 
             for (const mark of burnMarks) {
+                if (visibleBounds && !isWorldRectVisible(mark.x - 220, mark.y - 220, 440, 440, 120, visibleBounds)) {
+                    continue;
+                }
                 const age = now - mark.startTime;
                 if (age >= mark.duration) {
                     continue;
@@ -7894,7 +8017,7 @@
             return lights.slice(0, MAX_DYNAMIC_LIGHTS);
         }
 
-        function drawChargingFireballs(renderServerTimeMs) {
+        function drawChargingFireballs(renderServerTimeMs, visibleBounds = null) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
@@ -7922,6 +8045,12 @@
                 const shakeX = (Math.sin(renderServerTimeMs * 0.09 + sid.length) + Math.cos(renderServerTimeMs * 0.05 + sid.length * 0.7)) * jitter;
                 const shakeY = Math.cos(renderServerTimeMs * 0.12 + sid.length * 1.3) * jitter * 0.7;
                 const flameRadius = 10 + progress * 15;
+                if (
+                    visibleBounds &&
+                    !isWorldRectVisible(orbX - flameRadius * 3.2, orbY - flameRadius * 3.2, flameRadius * 6.4, flameRadius * 6.4, 80, visibleBounds)
+                ) {
+                    continue;
+                }
 
                 drawFireballGlow(orbX + shakeX, orbY + shakeY, flameRadius * 2.8, 'rgba(255, 248, 220, __A__)', 'rgba(255, 130, 30, __A__)', 0.44 + progress * 0.28);
                 drawFireballGlow(orbX + shakeX * 0.5, orbY + shakeY * 0.5, flameRadius * 1.7, 'rgba(255, 255, 235, __A__)', 'rgba(255, 210, 70, __A__)', 0.54 + progress * 0.24);
@@ -7950,13 +8079,17 @@
             ctx.restore();
         }
 
-        function drawFireballs() {
-            const now = Date.now();
+        function drawFireballs(now = Date.now(), visibleBounds = null) {
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
             for (const id in fireballs) {
                 const fireball = fireballs[id];
+                const projectileScale = typeof fireball.render_scale === 'number' ? fireball.render_scale : 1;
+                const flameRadius = FIREBALL_SIZE * 1.08 * projectileScale;
+                if (!isWorldRectVisible(fireball.x - flameRadius * 4, fireball.y - flameRadius * 4, flameRadius * 8, flameRadius * 8, 120, visibleBounds)) {
+                    continue;
+                }
                 const angle = Math.atan2(fireball.vy || 0, fireball.vx || 0);
                 const dirX = Math.cos(angle);
                 const dirY = Math.sin(angle);
@@ -8046,8 +8179,6 @@
                 }
 
                 const flickerTime = now * 0.0018 + stableStringNoise(id) * 10;
-                const projectileScale = typeof fireball.render_scale === 'number' ? fireball.render_scale : 1;
-                const flameRadius = FIREBALL_SIZE * 1.08 * projectileScale;
                 const flickerX = Math.sin(flickerTime * 5.2) * 1.9;
                 const flameLift = Math.abs(Math.cos(flickerTime * 4.4)) * 1.2;
                 const sway = Math.sin(flickerTime * 1.2) * 0.14;
@@ -8305,6 +8436,8 @@
             // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
             if (ctx && canvas) {
                 updateInterpolatedRenderState(currentTime);
+                const nowMs = Date.now();
+                const renderServerTimeMs = nowMs - renderDelayMs - serverClockOffsetMs;
 
                 // Clear main canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -8358,6 +8491,8 @@
                 const clampedCamera = clampCameraToMapBounds(cameraX, cameraY);
                 cameraX = clampedCamera.x;
                 cameraY = clampedCamera.y;
+                const visibleBounds = getVisibleWorldBounds(0);
+                const effectVisibleBounds = getVisibleWorldBounds(120);
 
                 // Draw tiles if map is loaded
                 if (currentMap && tilesetImage) {
@@ -8367,8 +8502,8 @@
                     const visibleH = canvas.height / cameraZoom;
                     drawForegroundBackdrops(ctx, cameraX, cameraY);
                     drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH);
-                    drawBurnMarks();
-                    drawChargingFireballs(Date.now() - renderDelayMs - serverClockOffsetMs);
+                    drawBurnMarks(nowMs, visibleBounds);
+                    drawChargingFireballs(renderServerTimeMs, visibleBounds);
 
                     // Debug mode: Show collision boxes and platforms
                     if (debugMode) {
@@ -8428,7 +8563,6 @@
                         continue;
                     }
 
-                    const nowMs = Date.now();
                     if (!state.alive) {
                         const despawnAtMs = typeof state.despawn_at_ms === 'number' ? state.despawn_at_ms : 0;
                         if (!despawnAtMs || nowMs >= despawnAtMs) {
@@ -8438,6 +8572,11 @@
 
                     const frameInfo = getEnemyFrameRenderInfo(enemyId);
                     if (frameInfo) {
+                        const enemyDrawX = state.x - cameraX - frameInfo.renderDims.width / 2;
+                        const enemyDrawY = state.y - cameraY - frameInfo.renderDims.height / 2;
+                        if (!isWorldRectVisible(state.x - frameInfo.renderDims.width / 2, state.y - frameInfo.renderDims.height / 2, frameInfo.renderDims.width, frameInfo.renderDims.height, 96, visibleBounds)) {
+                            continue;
+                        }
                         let enemyOpacity = 1;
                         if (!state.alive && typeof state.despawn_at_ms === 'number' && state.despawn_at_ms > 0) {
                             const fadeDurationMs = 900;
@@ -8454,8 +8593,8 @@
                             frameY: frameInfo.frameY,
                             frameW: frameInfo.frameW,
                             frameH: frameInfo.frameH,
-                            drawX: state.x - cameraX - frameInfo.renderDims.width / 2,
-                            drawY: state.y - cameraY - frameInfo.renderDims.height / 2,
+                            drawX: enemyDrawX,
+                            drawY: enemyDrawY,
                             drawW: frameInfo.renderDims.width,
                             drawH: frameInfo.renderDims.height,
                             direction: state.direction,
@@ -8552,6 +8691,12 @@
 
                             // Calculate aspect-ratio-preserving render dimensions
                             const renderDims = calculateRenderDimensions(frameW, frameH);
+                            const playerWorldX = pos.x - renderDims.width / 2;
+                            const playerWorldY = pos.y - renderDims.height / 2;
+                            if (!isWorldRectVisible(playerWorldX, playerWorldY, renderDims.width, renderDims.height, 96, visibleBounds)) {
+                                playerRenderDimensions[sid] = renderDims;
+                                continue;
+                            }
                             
                             // Send dimensions to server if they changed
                             playerRenderDimensions[sid] = renderDims;
@@ -8580,7 +8725,7 @@
                         }
                         // If assets are still loading, don't render anything (player will appear when assets are ready)
 
-                        drawAttachedPlayerBurnsForPlayer(sid, Date.now());
+                        drawAttachedPlayerBurnsForPlayer(sid, nowMs, visibleBounds);
 
 
                         // Debug mode: Draw player hitbox AFTER character
@@ -8658,7 +8803,7 @@
                 }
 
                 // Draw dying players with death animation and fade-out
-                const now = Date.now();
+                const now = nowMs;
                 const deathAnimDuration = 10000; // 10 seconds hold on last frame before fade
                 const fadeDuration = 1000; // 1 second fade out
 
@@ -8813,7 +8958,7 @@
                 drawDustParticles();
 
                 // Draw fireballs with particle trails
-                drawFireballs();
+                drawFireballs(nowMs, effectVisibleBounds);
 
                 // Draw explosions
                 drawExplosions();
@@ -8833,6 +8978,9 @@
                     const pos = { x: state.x, y: state.y };
                     const displayName = state.name || `P${sid.substring(0, 4)}`;
                     const renderDims = playerRenderDimensions[sid] || { width: 60, height: 60 };
+                    if (!isWorldRectVisible(pos.x - renderDims.width / 2, pos.y - renderDims.height / 2, renderDims.width, renderDims.height, 60, visibleBounds)) {
+                        continue;
+                    }
                     
                     // Position exactly where it was before to avoid shifting
                     const nameY = pos.y - cameraY - renderDims.height / 2 - 10;
@@ -8855,6 +9003,9 @@
                 for (const sid in chatMessages) {
                     const pos = getPlayerPosition(sid);
                     if (!pos) continue;
+                    if (!isWorldRectVisible(pos.x - 40, pos.y - 120, 80, 80, 40, visibleBounds)) {
+                        continue;
+                    }
 
                     const chatMsg = chatMessages[sid];
                     const elapsed = now - chatMsg.startTime;
@@ -8939,7 +9090,7 @@
                         gl.uniform2f(glLightPosLocation, centerX, centerY);
                     }
 
-                    const dynamicLights = collectDynamicLights();
+                    const dynamicLights = collectDynamicLights(nowMs, renderServerTimeMs, effectVisibleBounds);
                     const dynamicLightBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
                     for (let i = 0; i < dynamicLights.length && i < MAX_DYNAMIC_LIGHTS; i++) {
                         const light = dynamicLights[i];
