@@ -96,7 +96,9 @@ function updateDeathsAndRespawns(input) {
 function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
+  let lastFairyBroadcastMs = 0;
   const broadcastIntervalMs = 1000 / 20;
+  const fairyBroadcastIntervalMs = 250;
 
   setInterval(() => {
     const nowMs = Date.now();
@@ -115,7 +117,11 @@ function startGameLoop(input) {
 
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
-      broadcastState({ io: input.io, state: input.state, includeFairies: true });
+      const includeFairies = nowMs - lastFairyBroadcastMs >= fairyBroadcastIntervalMs;
+      if (includeFairies) {
+        lastFairyBroadcastMs = nowMs;
+      }
+      broadcastState({ io: input.io, state: input.state, includeFairies });
     }
   }, FRAME_TIME * 1000);
 }

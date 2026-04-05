@@ -1269,6 +1269,92 @@
         let frameCount = 0;
         let lastPerformanceCheck = performance.now();
         const PERFORMANCE_CHECK_INTERVAL = 2000; // Check every 2 seconds
+        const EFFECT_QUALITY_PROFILES = {
+            high: {
+                fireballTrailSampleIntervalMs: 40,
+                fireballTrailMaxPoints: 6,
+                fireballTrailStep: 1,
+                drawTrailSmoke: true,
+                drawTrailSecondaryFlame: true,
+                fireballCoreLayers: 4,
+                chargingEmbers: 6,
+                explosionSmokeBursts: 10,
+                explosionBurstLobes: 6,
+                explosionSparks: 9,
+                drawExplosionShockwave: true,
+                drawBurnSecondaryFlame: true,
+                drawBurnSmoke: true,
+                drawDecorSecondaryFlame: true,
+                drawDecorSmoke: true,
+                maxRenderedFairies: 80,
+                drawFairyGlow: true,
+                dynamicLights: 8,
+                spatialAudioIntervalMs: 33
+            },
+            medium: {
+                fireballTrailSampleIntervalMs: 55,
+                fireballTrailMaxPoints: 4,
+                fireballTrailStep: 2,
+                drawTrailSmoke: true,
+                drawTrailSecondaryFlame: false,
+                fireballCoreLayers: 3,
+                chargingEmbers: 4,
+                explosionSmokeBursts: 7,
+                explosionBurstLobes: 4,
+                explosionSparks: 6,
+                drawExplosionShockwave: true,
+                drawBurnSecondaryFlame: true,
+                drawBurnSmoke: true,
+                drawDecorSecondaryFlame: false,
+                drawDecorSmoke: true,
+                maxRenderedFairies: 48,
+                drawFairyGlow: true,
+                dynamicLights: 5,
+                spatialAudioIntervalMs: 50
+            },
+            low: {
+                fireballTrailSampleIntervalMs: 70,
+                fireballTrailMaxPoints: 3,
+                fireballTrailStep: 3,
+                drawTrailSmoke: false,
+                drawTrailSecondaryFlame: false,
+                fireballCoreLayers: 2,
+                chargingEmbers: 2,
+                explosionSmokeBursts: 4,
+                explosionBurstLobes: 3,
+                explosionSparks: 4,
+                drawExplosionShockwave: false,
+                drawBurnSecondaryFlame: false,
+                drawBurnSmoke: false,
+                drawDecorSecondaryFlame: false,
+                drawDecorSmoke: false,
+                maxRenderedFairies: 24,
+                drawFairyGlow: false,
+                dynamicLights: 3,
+                spatialAudioIntervalMs: 66
+            }
+        };
+        let currentEffectQuality = 'high';
+        let currentEffectProfile = EFFECT_QUALITY_PROFILES.high;
+
+        function setEffectQuality(nextQuality) {
+            if (!EFFECT_QUALITY_PROFILES[nextQuality] || currentEffectQuality === nextQuality) {
+                return;
+            }
+
+            currentEffectQuality = nextQuality;
+            currentEffectProfile = EFFECT_QUALITY_PROFILES[nextQuality];
+        }
+
+        function getCurrentEffectLoadScore() {
+            return (
+                Object.keys(fireballs).length +
+                Object.keys(explosions).length * 3 +
+                burnMarks.length +
+                attachedPlayerBurns.length +
+                Math.min(12, Math.round(currentMapDecorFireCount * 0.08))
+            );
+        }
 
         // Performance settings
         let showPerformanceInfo = false; // Toggle for FPS display
@@ -4186,6 +4272,7 @@
         
         let PLATFORMS = [];
         let currentMap = null;
+        let currentMapDecorFireCount = 0;
         let tilesetImage = null;
         let backgroundImage = null;
         let backgroundImageCache = {};
@@ -4203,6 +4290,21 @@
         const BACKGROUND_PARALLAX_STRENGTH = 0.155;
         const BACKGROUND_PARALLAX_OVERSCAN = 1.26;
         const BACKGROUND_SEAM_BLEED = 72;
+
+        function refreshCurrentMapDecorStats() {
+            if (!currentMap || !Array.isArray(currentMap.decor)) {
+                currentMapDecorFireCount = 0;
+                return;
+            }
+
+            let fireCount = 0;
+            for (const decor of currentMap.decor) {
+                if (decor?.type === DECOR_FIRE_SMALL_TYPE) {
+                    fireCount += 1;
+                }
+            }
+            currentMapDecorFireCount = fireCount;
+        }
         const BACKGROUND_SEAM_BRIDGE_WIDTH = 220;
 
         function getForegroundEffectLayers(bitmap) {
@@ -4675,6 +4777,7 @@
                     PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
                     spawnPoints = [{x: 100, y: 500, id: 0}];
                     currentMap = null;
+                    refreshCurrentMapDecorStats();
                     resetChunkedMapRenderer();
                     return;
                 }
@@ -4683,6 +4786,7 @@
                 if (!Array.isArray(currentMap.decor)) {
                     currentMap.decor = [];
                 }
+                refreshCurrentMapDecorStats();
                 loadedMapName = mapName;
                 console.log('Map data loaded:', mapData);
 
@@ -4718,6 +4822,7 @@
                 PLATFORMS = [{x: 0, y: 550, w: 800, h: 50}];
                 spawnPoints = [{x: 100, y: 500, id: 0}];
                 currentMap = null;
+                refreshCurrentMapDecorStats();
                 loadedMapName = null;
                 resetChunkedMapRenderer();
                 return null;
@@ -5218,6 +5323,7 @@
         const spriteFrameAlphaCache = new Map();
         const spriteWhiteFrameCache = new Map();
         const spriteWarmGlowFrameCache = new Map();
+        const stableNoiseCache = new Map();
         let mousePosition = { x: 0, y: 0 };
         const FIREBALL_SIZE = 34;
         const FIREBALL_RADIUS = FIREBALL_SIZE / 2;
@@ -5229,8 +5335,7 @@
         let screenShakeOffsetY = 0;
         const FIREBALL_NOISE_SCALE = 0.0016;
         const MAX_DYNAMIC_LIGHTS = 8;
-        const FIREBALL_TRAIL_SAMPLE_INTERVAL_MS = 40;
-        const FIREBALL_TRAIL_MAX_POINTS = 6;
+        const dynamicLightUniformBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
         const radialSpriteCache = new Map();
         let enemyHitboxDebugEnabled = false;
         
@@ -5798,6 +5903,7 @@
             if (!Array.isArray(currentMap.decor)) {
                 currentMap.decor = [];
             }
+            refreshCurrentMapDecorStats();
             fairies = [];
             for (const fairyId in authoritativeFairyState) {
                 delete authoritativeFairyState[fairyId];
@@ -6324,10 +6430,10 @@
                 fireballs[id].spawn_time_ms = fireballMeta.spawn_time_ms;
                 fireballs[id].render_scale = fireballMeta.render_scale ?? 1;
                 const lastTrailPoint = fireballs[id].trail[fireballs[id].trail.length - 1];
-                if (!lastTrailPoint || renderNowTs - lastTrailPoint.time >= FIREBALL_TRAIL_SAMPLE_INTERVAL_MS) {
+                if (!lastTrailPoint || renderNowTs - lastTrailPoint.time >= currentEffectProfile.fireballTrailSampleIntervalMs) {
                     fireballs[id].trail.push({ x: fireballs[id].x, y: fireballs[id].y, time: renderNowTs });
                 }
-                if (fireballs[id].trail.length > FIREBALL_TRAIL_MAX_POINTS) {
+                while (fireballs[id].trail.length > currentEffectProfile.fireballTrailMaxPoints) {
                     fireballs[id].trail.shift();
                 }
             }
@@ -6397,19 +6503,18 @@
         }
 
         let lastSpatialAudioUpdateTime = 0;
-        const SPATIAL_AUDIO_INTERVAL_MS = 33;
         let lastCombatMusicUpdateTime = 0;
 
         function updateSpatialAudio(nowMs) {
             if (combatMusic) {
                 const dtSeconds = lastCombatMusicUpdateTime > 0
                     ? Math.max(0, Math.min(0.1, (nowMs - lastCombatMusicUpdateTime) / 1000))
-                    : SPATIAL_AUDIO_INTERVAL_MS / 1000;
+                    : currentEffectProfile.spatialAudioIntervalMs / 1000;
                 lastCombatMusicUpdateTime = nowMs;
                 combatMusic.tick(nowMs, dtSeconds);
             }
 
-            if (nowMs - lastSpatialAudioUpdateTime < SPATIAL_AUDIO_INTERVAL_MS) {
+            if (nowMs - lastSpatialAudioUpdateTime < currentEffectProfile.spatialAudioIntervalMs) {
                 return;
             }
 
@@ -7654,12 +7759,21 @@
 
         function stableStringNoise(value) {
             const text = String(value ?? '');
+            const cached = stableNoiseCache.get(text);
+            if (typeof cached === 'number') {
+                return cached;
+            }
             let hash = 2166136261;
             for (let i = 0; i < text.length; i++) {
                 hash ^= text.charCodeAt(i);
                 hash = Math.imul(hash, 16777619);
             }
-            return Math.abs(hash % 100000) / 100000;
+            const normalized = Math.abs(hash % 100000) / 100000;
+            if (stableNoiseCache.size > 4096) {
+                stableNoiseCache.clear();
+            }
+            stableNoiseCache.set(text, normalized);
+            return normalized;
         }
 
         function clamp01(value) {
@@ -7913,6 +8027,7 @@
 
         function drawBurnMarks(now = Date.now(), visibleBounds = null) {
             burnMarks = burnMarks.filter((mark) => now - mark.startTime < mark.duration);
+            const profile = currentEffectProfile;
 
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
@@ -7958,29 +8073,33 @@
                     emberChance: 0.12,
                     palette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8']
                 });
-                drawPixelFlameBody(secondaryX, secondaryY, secondaryAngle, flameRadius * 0.46, alpha * 0.56, flickerTime + 1.7, {
-                    cellScale: 0.18,
-                    tailLength: 0.72,
-                    noseLength: 0.24,
-                    width: 0.34,
-                    alpha: 0.78,
-                    emberChance: 0.08,
-                    palette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f']
-                });
+                if (profile.drawBurnSecondaryFlame) {
+                    drawPixelFlameBody(secondaryX, secondaryY, secondaryAngle, flameRadius * 0.46, alpha * 0.56, flickerTime + 1.7, {
+                        cellScale: 0.18,
+                        tailLength: 0.72,
+                        noseLength: 0.24,
+                        width: 0.34,
+                        alpha: 0.78,
+                        emberChance: 0.08,
+                        palette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f']
+                    });
+                }
 
-                const smokeAlpha = Math.max(0, 1 - progress * 0.85);
-                drawSmokePuff(
-                    mark.x + riseX * flameRadius * (0.34 + progress * 0.32),
-                    mark.y + riseY * flameRadius * (0.34 + progress * 0.32),
-                    flameRadius * (0.42 + progress * 0.75),
-                    smokeAlpha * 0.95
-                );
-                drawSmokePuff(
-                    mark.x + riseX * flameRadius * (0.18 + progress * 0.18) - tangentX * flameRadius * 0.12,
-                    mark.y + riseY * flameRadius * (0.18 + progress * 0.18) - tangentY * flameRadius * 0.12,
-                    flameRadius * (0.26 + progress * 0.45),
-                    smokeAlpha * 0.7
-                );
+                if (profile.drawBurnSmoke) {
+                    const smokeAlpha = Math.max(0, 1 - progress * 0.85);
+                    drawSmokePuff(
+                        mark.x + riseX * flameRadius * (0.34 + progress * 0.32),
+                        mark.y + riseY * flameRadius * (0.34 + progress * 0.32),
+                        flameRadius * (0.42 + progress * 0.75),
+                        smokeAlpha * 0.95
+                    );
+                    drawSmokePuff(
+                        mark.x + riseX * flameRadius * (0.18 + progress * 0.18) - tangentX * flameRadius * 0.12,
+                        mark.y + riseY * flameRadius * (0.18 + progress * 0.18) - tangentY * flameRadius * 0.12,
+                        flameRadius * (0.26 + progress * 0.45),
+                        smokeAlpha * 0.7
+                    );
+                }
             }
 
             ctx.restore();
@@ -7991,6 +8110,7 @@
                 return;
             }
 
+            const profile = currentEffectProfile;
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
@@ -8027,17 +8147,21 @@
                     extraCellSize: 0,
                     palette: ['#2a0c00', '#6e1d00', '#be4300', '#ff7c20', '#ffc65d', '#fff1c8']
                 });
-                drawPixelFlameBody(secondaryX, secondaryY, -Math.PI / 2 + Math.cos(flickerTime * 1.1) * 0.06, flameRadius * 0.44, 0.46, flickerTime + 1.4, {
-                    cellScale: 0.17,
-                    tailLength: 0.68,
-                    noseLength: 0.18,
-                    width: 0.26,
-                    alpha: 0.68,
-                    emberChance: 0.03,
-                    extraCellSize: 0,
-                    palette: ['#2c0e00', '#7f2500', '#df560a', '#ffb03b', '#ffe07f']
-                });
-                drawSmokePuff(x, y - flameRadius * 1.45, flameRadius * 0.44, 0.36, 0, -2);
+                if (profile.drawDecorSecondaryFlame) {
+                    drawPixelFlameBody(secondaryX, secondaryY, -Math.PI / 2 + Math.cos(flickerTime * 1.1) * 0.06, flameRadius * 0.44, 0.46, flickerTime + 1.4, {
+                        cellScale: 0.17,
+                        tailLength: 0.68,
+                        noseLength: 0.18,
+                        width: 0.26,
+                        alpha: 0.68,
+                        emberChance: 0.03,
+                        extraCellSize: 0,
+                        palette: ['#2c0e00', '#7f2500', '#df560a', '#ffb03b', '#ffe07f']
+                    });
+                }
+                if (profile.drawDecorSmoke) {
+                    drawSmokePuff(x, y - flameRadius * 1.45, flameRadius * 0.44, 0.36, 0, -2);
+                }
 
                 ctx.globalCompositeOperation = 'source-over';
                 ctx.fillStyle = 'rgba(26, 11, 5, 0.58)';
@@ -8050,6 +8174,7 @@
 
         function collectDynamicLights(now = Date.now(), renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs, visibleBounds = null) {
             const lights = [];
+            const profile = currentEffectProfile;
 
             for (const id in explosions) {
                 const explosion = explosions[id];
@@ -8129,10 +8254,19 @@
             }
 
             lights.sort((a, b) => (b.strength * b.radius) - (a.strength * a.radius));
-            return lights.slice(0, MAX_DYNAMIC_LIGHTS);
+            return lights.slice(0, profile.dynamicLights);
         }
 
         function drawChargingFireballs(renderServerTimeMs, visibleBounds = null) {
+            const profile = currentEffectProfile;
+            const ownersWithActiveProjectiles = new Set();
+            for (const id in fireballs) {
+                const ownerSid = fireballs[id]?.owner_sid;
+                if (ownerSid) {
+                    ownersWithActiveProjectiles.add(ownerSid);
+                }
+            }
+
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
@@ -8142,13 +8276,7 @@
                     continue;
                 }
 
-                const hasLiveOwnedProjectile = Object.values(fireballs).some((fireball) =>
-                    fireball &&
-                    fireball.owner_sid === sid &&
-                    typeof fireball.x === 'number' &&
-                    typeof fireball.y === 'number'
-                );
-                if (hasLiveOwnedProjectile) {
+                if (ownersWithActiveProjectiles.has(sid)) {
                     continue;
                 }
 
@@ -8180,8 +8308,8 @@
                 drawSmokePuff(orbX - flameRadius * 0.3, orbY + flameRadius * 0.2, flameRadius * 1.1, 0.3 + progress * 0.18, -2, -3);
 
                 ctx.globalAlpha = 0.38 + progress * 0.18;
-                for (let i = 0; i < 6; i++) {
-                    const emberAngle = (Math.PI * 2 * i) / 6 + renderServerTimeMs * 0.003 + sid.length;
+                for (let i = 0; i < profile.chargingEmbers; i++) {
+                    const emberAngle = (Math.PI * 2 * i) / Math.max(1, profile.chargingEmbers) + renderServerTimeMs * 0.003 + sid.length;
                     const emberRadius = flameRadius * (1.2 + 0.25 * Math.sin(renderServerTimeMs * 0.01 + i));
                     const emberX = orbX + Math.cos(emberAngle) * emberRadius;
                     const emberY = orbY + Math.sin(emberAngle) * emberRadius;
@@ -8195,6 +8323,7 @@
         }
 
         function drawFireballs(now = Date.now(), visibleBounds = null) {
+            const profile = currentEffectProfile;
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
@@ -8213,7 +8342,7 @@
                 const flightPhase = now * 0.012 + Number(id) * 0.37;
 
                 if (fireball.trail && fireball.trail.length > 0) {
-                    for (let i = 0; i < fireball.trail.length; i++) {
+                    for (let i = 0; i < fireball.trail.length; i += profile.fireballTrailStep) {
                         const trailPoint = fireball.trail[i];
                         const age = (now - trailPoint.time) / 1000;
                         if (age >= 0.45) {
@@ -8237,15 +8366,17 @@
                         const trailAngle = angle + Math.sin(vortexPhase * 1.7) * 0.18 + Math.cos(vortexPhase * 1.25) * 0.08;
                         const counterAngle = angle - Math.sin(vortexPhase * 1.45) * 0.22;
 
-                        drawSmokePuff(smokeX, smokeY, smokeSize * 0.48, alpha * 0.82);
-                        drawSmokePuff(
-                            smokeX - tangentX * swirlRadius * 0.32,
-                            smokeY - tangentY * swirlRadius * 0.32,
-                            smokeSize * 0.24,
-                            alpha * 0.44,
-                            tangentX * 1.4,
-                            tangentY * 1.4
-                        );
+                        if (profile.drawTrailSmoke) {
+                            drawSmokePuff(smokeX, smokeY, smokeSize * 0.48, alpha * 0.82);
+                            drawSmokePuff(
+                                smokeX - tangentX * swirlRadius * 0.32,
+                                smokeY - tangentY * swirlRadius * 0.32,
+                                smokeSize * 0.24,
+                                alpha * 0.44,
+                                tangentX * 1.4,
+                                tangentY * 1.4
+                            );
+                        }
                         drawFireballGlow(
                             wakeX,
                             wakeY,
@@ -8272,24 +8403,26 @@
                                 palette: ['#220700', '#581600', '#9e2a00', '#ef5f12', '#ffb443', '#fff0c8']
                             }
                         );
-                        drawPixelFlameBody(
-                            wakeX - tangentX * swirlRadius * 0.28,
-                            wakeY - tangentY * swirlRadius * 0.28,
-                            counterAngle,
-                            (4.6 + alpha * 6.4) * 0.5,
-                            alpha * 0.42,
-                            now * 0.0016 + i * 0.7,
-                            {
-                                cellScale: 0.18,
-                                tailLength: 0.74,
-                                noseLength: 0.18,
-                                width: 0.24,
-                                alpha: 0.64,
-                                emberChance: 0.06,
-                                extraCellSize: 0,
-                                palette: ['#1b0600', '#4d1400', '#8d2400', '#db4d0b', '#ff9e2c', '#ffe39e']
-                            }
-                        );
+                        if (profile.drawTrailSecondaryFlame) {
+                            drawPixelFlameBody(
+                                wakeX - tangentX * swirlRadius * 0.28,
+                                wakeY - tangentY * swirlRadius * 0.28,
+                                counterAngle,
+                                (4.6 + alpha * 6.4) * 0.5,
+                                alpha * 0.42,
+                                now * 0.0016 + i * 0.7,
+                                {
+                                    cellScale: 0.18,
+                                    tailLength: 0.74,
+                                    noseLength: 0.18,
+                                    width: 0.24,
+                                    alpha: 0.64,
+                                    emberChance: 0.06,
+                                    extraCellSize: 0,
+                                    palette: ['#1b0600', '#4d1400', '#8d2400', '#db4d0b', '#ff9e2c', '#ffe39e']
+                                }
+                            );
+                        }
                     }
                 }
 
@@ -8326,68 +8459,73 @@
                         palette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8']
                     }
                 );
-                drawPixelFlameBody(
-                    secondaryX,
-                    secondaryY,
-                    secondaryAngle,
-                    flameRadius * 0.58,
-                    0.62,
-                    flickerTime + 1.7,
-                    {
-                        cellScale: 0.18,
-                        tailLength: 0.78,
-                        noseLength: 0.26,
-                        width: 0.34,
-                        alpha: 0.8,
-                        emberChance: 0.08,
-                        extraCellSize: 0,
-                        palette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f']
-                    }
-                );
-                drawPixelFlameBody(
-                    fireball.x + dirX * 1.2,
-                    fireball.y + dirY * 1.2,
-                    angle,
-                    flameRadius * 0.42,
-                    0.78,
-                    now * 0.001 + Number(id) * 0.11,
-                    {
-                        cellScale: 0.14,
-                        tailLength: 0.5,
-                        noseLength: 0.22,
-                        width: 0.24,
-                        alpha: 0.84,
-                        emberChance: 0.06,
-                        extraCellSize: 0,
-                        palette: ['#250800', '#5c1700', '#a82f00', '#ff6818', '#ffbe4f', '#fff3cf']
-                    }
-                );
-                drawPixelFlameBody(
-                    fireball.x + dirX * 1.5 + tangentX * flickerX * 0.12,
-                    fireball.y + dirY * 1.1 + tangentY * flickerX * 0.12,
-                    angle + Math.cos(flickerTime * 1.3) * 0.08,
-                    FIREBALL_SIZE * 0.52 * projectileScale,
-                    0.88,
-                    now * 0.0013 + Number(id) * 0.07,
-                    {
-                        cellScale: 0.15,
-                        tailLength: 0.7,
-                        noseLength: 0.24,
-                        width: 0.3,
-                        alpha: 0.9,
-                        emberChance: 0.06,
-                        extraCellSize: 0,
-                        palette: ['#4d1200', '#9c2600', '#e85b08', '#ffaf35', '#ffe89a']
-                    }
-                );
+                if (profile.fireballCoreLayers >= 2) {
+                    drawPixelFlameBody(
+                        secondaryX,
+                        secondaryY,
+                        secondaryAngle,
+                        flameRadius * 0.58,
+                        0.62,
+                        flickerTime + 1.7,
+                        {
+                            cellScale: 0.18,
+                            tailLength: 0.78,
+                            noseLength: 0.26,
+                            width: 0.34,
+                            alpha: 0.8,
+                            emberChance: 0.08,
+                            extraCellSize: 0,
+                            palette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f']
+                        }
+                    );
+                }
+                if (profile.fireballCoreLayers >= 3) {
+                    drawPixelFlameBody(
+                        fireball.x + dirX * 1.2,
+                        fireball.y + dirY * 1.2,
+                        angle,
+                        flameRadius * 0.42,
+                        0.78,
+                        now * 0.001 + Number(id) * 0.11,
+                        {
+                            cellScale: 0.14,
+                            tailLength: 0.5,
+                            noseLength: 0.22,
+                            width: 0.24,
+                            alpha: 0.84,
+                            emberChance: 0.06,
+                            extraCellSize: 0,
+                            palette: ['#250800', '#5c1700', '#a82f00', '#ff6818', '#ffbe4f', '#fff3cf']
+                        }
+                    );
+                }
+                if (profile.fireballCoreLayers >= 4) {
+                    drawPixelFlameBody(
+                        fireball.x + dirX * 1.5 + tangentX * flickerX * 0.12,
+                        fireball.y + dirY * 1.1 + tangentY * flickerX * 0.12,
+                        angle + Math.cos(flickerTime * 1.3) * 0.08,
+                        FIREBALL_SIZE * 0.52 * projectileScale,
+                        0.88,
+                        now * 0.0013 + Number(id) * 0.07,
+                        {
+                            cellScale: 0.15,
+                            tailLength: 0.7,
+                            noseLength: 0.24,
+                            width: 0.3,
+                            alpha: 0.9,
+                            emberChance: 0.06,
+                            extraCellSize: 0,
+                            palette: ['#4d1200', '#9c2600', '#e85b08', '#ffaf35', '#ffe89a']
+                        }
+                    );
+                }
             }
 
             ctx.restore();
         }
 
-        function drawExplosions() {
-            const now = Date.now();
-            const renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs;
+        function drawExplosions(now = Date.now(), renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs, visibleBounds = null) {
+            const profile = currentEffectProfile;
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
@@ -8407,6 +8545,12 @@
                     const progress = age / EXPLOSION_DURATION;
                     const blastRadius = EXPLOSION_RADIUS * (0.9 + progress * 2.35);
                     const smokeRadius = EXPLOSION_RADIUS * (1.35 + progress * 3.15);
+                    if (
+                        visibleBounds &&
+                        !isWorldRectVisible(explosion.x - smokeRadius * 1.8, explosion.y - smokeRadius * 1.8, smokeRadius * 3.6, smokeRadius * 3.6, 120, visibleBounds)
+                    ) {
+                        continue;
+                    }
                     const alpha = Math.max(0, 1 - progress);
                     const blastSeed = stableStringNoise(id) * 10 + now * 0.0007;
                     const flashAlpha = alpha * (progress < 0.22 ? 1.2 : 0.72);
@@ -8416,7 +8560,7 @@
                     drawFireballGlow(explosion.x, explosion.y, blastRadius * 1.2, 'rgba(255, 255, 240, __A__)', 'rgba(255, 186, 70, __A__)', flashAlpha);
                     drawFireballGlow(explosion.x, explosion.y, blastRadius * 0.6, 'rgba(255, 255, 250, __A__)', 'rgba(255, 228, 145, __A__)', flashAlpha * 1.15);
 
-                    for (let i = 0; i < 10; i++) {
+                    for (let i = 0; i < profile.explosionSmokeBursts; i++) {
                         const puffAngle = blastSeed + i * 0.91 + Math.sin(progress * 8 + i * 1.7) * 0.55;
                         const puffDistance = smokeRadius * (0.08 + 0.42 * Math.max(0, Math.sin(i * 2.37 + progress * 4.8)));
                         drawSmokePuff(
@@ -8451,7 +8595,7 @@
                         blastSeed
                     );
 
-                    for (let i = 0; i < 6; i++) {
+                    for (let i = 0; i < profile.explosionBurstLobes; i++) {
                         const burstAngle = blastSeed + i * 1.04 + Math.cos(i + progress * 4.7) * 0.14;
                         const burstDistance = blastRadius * (0.03 + 0.11 * Math.max(0, Math.sin(i * 1.6 + progress * 5.2)));
                         drawExplosionLobe(
@@ -8471,7 +8615,7 @@
                         flashAlpha
                     );
 
-                    if (progress < 0.35) {
+                    if (profile.drawExplosionShockwave && progress < 0.35) {
                         ctx.globalAlpha = alpha * 0.44;
                         ctx.strokeStyle = 'rgba(255, 210, 118, 0.85)';
                         ctx.lineWidth = Math.max(3, Math.round(6 - progress * 8));
@@ -8490,8 +8634,8 @@
                         coreSize
                     );
 
-                    for (let i = 0; i < 9; i++) {
-                        const sparkAngle = (Math.PI * 2 * i) / 9 + progress * 3.4;
+                    for (let i = 0; i < profile.explosionSparks; i++) {
+                        const sparkAngle = (Math.PI * 2 * i) / Math.max(1, profile.explosionSparks) + progress * 3.4;
                         const sparkDistance = blastRadius * (0.5 + progress * 1.1);
                         const sparkX = explosion.x + Math.cos(sparkAngle) * sparkDistance;
                         const sparkY = explosion.y + Math.sin(sparkAngle) * sparkDistance;
@@ -8520,6 +8664,14 @@
             frameCount++;
             if (currentTime - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
                 const actualFps = (frameCount * 1000) / (currentTime - lastPerformanceCheck);
+                const effectLoad = getCurrentEffectLoadScore();
+                let nextQuality = 'high';
+                if (actualFps < 42 || effectLoad >= 28) {
+                    nextQuality = 'low';
+                } else if (actualFps < 55 || effectLoad >= 12) {
+                    nextQuality = 'medium';
+                }
+                setEffectQuality(nextQuality);
                 
                 // If we consistently drop below 55 FPS on a 60Hz/120Hz target, 
                 // cap it to 30 to stabilize the physics and prevent stuttering.
@@ -8880,7 +9032,9 @@
 
                 // Draw fairies
                 if (fairies && fairies.length > 0) {
-                    fairies.forEach(fairy => {
+                    const fairyStep = Math.max(1, Math.ceil(fairies.length / currentEffectProfile.maxRenderedFairies));
+                    for (let fairyIndex = 0; fairyIndex < fairies.length; fairyIndex += fairyStep) {
+                        const fairy = fairies[fairyIndex];
                         const fairyX = fairy.x - cameraX;
                         const fairyY = fairy.y - cameraY;
                         
@@ -8904,18 +9058,20 @@
                             );
                             
                             // Add a subtle glow effect
-                            ctx.save();
-                            ctx.globalAlpha = 0.3;
-                            ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
-                            ctx.fillRect(
-                                fairyX * cameraZoom - fairySize,
-                                fairyY * cameraZoom - fairySize,
-                                fairySize * 2,
-                                fairySize * 2
-                            );
-                            ctx.restore();
+                            if (currentEffectProfile.drawFairyGlow) {
+                                ctx.save();
+                                ctx.globalAlpha = 0.3;
+                                ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                                ctx.fillRect(
+                                    fairyX * cameraZoom - fairySize,
+                                    fairyY * cameraZoom - fairySize,
+                                    fairySize * 2,
+                                    fairySize * 2
+                                );
+                                ctx.restore();
+                            }
                         }
-                    });
+                    }
                 }
 
                 // Draw dying players with death animation and fade-out
@@ -9077,7 +9233,7 @@
                 drawFireballs(nowMs, effectVisibleBounds);
 
                 // Draw explosions
-                drawExplosions();
+                drawExplosions(nowMs, renderServerTimeMs, effectVisibleBounds);
 
 
                 // --- DRAW PLAYER NAMES BEFORE WEBGL ---
@@ -9207,15 +9363,15 @@
                     }
 
                     const dynamicLights = collectDynamicLights(nowMs, renderServerTimeMs, effectVisibleBounds);
-                    const dynamicLightBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
+                    dynamicLightUniformBuffer.fill(0);
                     for (let i = 0; i < dynamicLights.length && i < MAX_DYNAMIC_LIGHTS; i++) {
                         const light = dynamicLights[i];
-                        dynamicLightBuffer[i * 4 + 0] = light.x;
-                        dynamicLightBuffer[i * 4 + 1] = light.y;
-                        dynamicLightBuffer[i * 4 + 2] = light.radius;
-                        dynamicLightBuffer[i * 4 + 3] = light.strength;
+                        dynamicLightUniformBuffer[i * 4 + 0] = light.x;
+                        dynamicLightUniformBuffer[i * 4 + 1] = light.y;
+                        dynamicLightUniformBuffer[i * 4 + 2] = light.radius;
+                        dynamicLightUniformBuffer[i * 4 + 3] = light.strength;
                     }
-                    gl.uniform4fv(glDynamicLightsLocation, dynamicLightBuffer);
+                    gl.uniform4fv(glDynamicLightsLocation, dynamicLightUniformBuffer);
 
                     // Bind buffers
                     gl.enableVertexAttribArray(glPositionLocation);
