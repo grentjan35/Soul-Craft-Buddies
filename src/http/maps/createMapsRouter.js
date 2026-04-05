@@ -23,6 +23,7 @@ function createMapsRouter(deps) {
     const tileCollisions = req.body?.tileCollisions ?? {};
     const backgrounds = req.body?.backgrounds ?? [];
     const enemies = normalizeEnemySpawns(req.body?.enemies ?? [], enemyCatalog);
+    const decor = Array.isArray(req.body?.decor) ? req.body.decor : [];
 
     if (!name) {
       res.status(400).json({ error: 'Map name is required' });
@@ -81,6 +82,24 @@ function createMapsRouter(deps) {
       }
     }
 
+    for (const entry of decor) {
+      if (!entry || typeof entry !== 'object') {
+        res.status(400).json({ error: 'Invalid decor format' });
+        return;
+      }
+
+      const type = String(entry.type ?? '').trim().toLowerCase();
+      if (type !== 'fire_small') {
+        res.status(400).json({ error: `Invalid decor type: ${type || '(missing)'}` });
+        return;
+      }
+
+      if (!Number.isFinite(entry.x) || !Number.isFinite(entry.y)) {
+        res.status(400).json({ error: 'Decor must have numeric x and y coordinates' });
+        return;
+      }
+    }
+
     if (Array.isArray(req.body?.enemies) && enemies.length !== req.body.enemies.length) {
       res.status(400).json({ error: 'Enemy spawns must have valid ids, types, and coordinates' });
       return;
@@ -104,6 +123,7 @@ function createMapsRouter(deps) {
         tileCollisions,
         backgrounds,
         enemies,
+        decor,
       })
     );
 
@@ -130,6 +150,9 @@ function createMapsRouter(deps) {
       }
       if (!Array.isArray(mapData.enemies)) {
         mapData.enemies = [];
+      }
+      if (!Array.isArray(mapData.decor)) {
+        mapData.decor = [];
       }
       res.json(mapData);
     } catch {
@@ -213,6 +236,9 @@ function createMapsRouter(deps) {
       if (!Array.isArray(mapData.backgrounds)) {
         mapData.backgrounds = [];
       }
+      if (!Array.isArray(mapData.decor)) {
+        mapData.decor = [];
+      }
       if (!mapData.tileCollisions) {
         mapData.tileCollisions = {};
       }
@@ -229,6 +255,9 @@ function createMapsRouter(deps) {
       if (!Array.isArray(mapData.backgrounds)) {
         mapData.backgrounds = [];
       }
+      if (!Array.isArray(mapData.decor)) {
+        mapData.decor = [];
+      }
       if (!mapData.tileCollisions) {
         mapData.tileCollisions = {};
       }
@@ -244,6 +273,7 @@ function createMapsRouter(deps) {
       spawnPoints: [],
       backgrounds: [],
       enemies: [],
+      decor: [],
     });
   });
 

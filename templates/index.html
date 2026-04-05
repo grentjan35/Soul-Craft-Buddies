@@ -1502,7 +1502,7 @@
             canvas.addEventListener('touchstart', handleCanvasTouchStart, { passive: false });
             canvas.addEventListener('touchmove', handleCanvasTouchMove, { passive: false });
             canvas.addEventListener('touchcancel', handleCanvasTouchEnd, { passive: false });
-            canvas.addEventListener('touchend', handleCanvasTapAttack, { passive: false });
+            canvas.addEventListener('touchend', handleCanvasTouchRelease, { passive: false });
         }
 
         function handleCanvasTouchStart(e) {
@@ -1538,6 +1538,11 @@
                     suppressNextCanvasTap = false;
                 }, 120);
             }
+        }
+
+        function handleCanvasTouchRelease(e) {
+            handleCanvasTouchEnd(e);
+            handleCanvasTapAttack(e);
         }
 
         function handleCanvasWheelZoom(e) {
@@ -3569,12 +3574,11 @@
         function resizeCanvas() {
             const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
             const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
-            const viewportScale = Math.min(viewportWidth / GAME_VIEWPORT_WIDTH, viewportHeight / GAME_VIEWPORT_HEIGHT);
-            const displayWidth = Math.max(1, Math.round(GAME_VIEWPORT_WIDTH * viewportScale));
-            const displayHeight = Math.max(1, Math.round(GAME_VIEWPORT_HEIGHT * viewportScale));
+            const displayWidth = Math.max(1, viewportWidth);
+            const displayHeight = Math.max(1, viewportHeight);
 
-            canvas.width = GAME_VIEWPORT_WIDTH;
-            canvas.height = GAME_VIEWPORT_HEIGHT;
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
             canvas.style.width = `${displayWidth}px`;
             canvas.style.height = `${displayHeight}px`;
             document.documentElement.style.setProperty('--game-display-width', `${displayWidth}px`);
@@ -4189,8 +4193,9 @@
         let backgroundCatalogPromise = null;
         let backgroundCompanionMap = {};
         let foregroundOverlayCache = new Map();
-        let foregroundEffectLayerCache = new Map();
+        let foregroundEffectLayerCache = new WeakMap();
         let seamBridgeCache = new Map();
+        const DECOR_FIRE_SMALL_TYPE = 'fire_small';
         let activeMapLoadPromise = null;
         let loadedMapName = null;
         let mapBounds = { minX: 0, maxX: 800, minY: 0, maxY: 600 };
@@ -4205,8 +4210,7 @@
                 return null;
             }
 
-            const cacheKey = `${bitmap.width}x${bitmap.height}`;
-            const cached = foregroundEffectLayerCache.get(cacheKey);
+            const cached = foregroundEffectLayerCache.get(bitmap);
             if (cached) {
                 return cached;
             }
@@ -4249,7 +4253,7 @@
             }
 
             const layers = { dimLayer, softLayer, bloomLayer };
-            foregroundEffectLayerCache.set(cacheKey, layers);
+            foregroundEffectLayerCache.set(bitmap, layers);
             return layers;
         }
 
@@ -4676,6 +4680,9 @@
                 }
                 
                 currentMap = mapData;
+                if (!Array.isArray(currentMap.decor)) {
+                    currentMap.decor = [];
+                }
                 loadedMapName = mapName;
                 console.log('Map data loaded:', mapData);
 
@@ -4736,7 +4743,7 @@
             mapChunkBuildQueue = [];
             mapChunkQueuedKeys.clear();
             foregroundOverlayCache.clear();
-            foregroundEffectLayerCache.clear();
+            foregroundEffectLayerCache = new WeakMap();
             seamBridgeCache.clear();
             mapChunkGeneration += 1;
             if (mapChunkBuildFrameId) {
@@ -5128,6 +5135,12 @@
 
         function setCameraZoom(nextZoom) {
             cameraZoom = clampGameZoom(nextZoom);
+            const clampedCamera = clampCameraToMapBounds(cameraX, cameraY);
+            cameraX = clampedCamera.x;
+            cameraY = clampedCamera.y;
+            const clampedTargetCamera = clampCameraToMapBounds(targetCameraX, targetCameraY);
+            targetCameraX = clampedTargetCamera.x;
+            targetCameraY = clampedTargetCamera.y;
             saveCameraZoomPreference();
         }
 
@@ -5782,6 +5795,9 @@
         socket.on('map_loaded', async (mapData) => {
             console.log('Map loaded from server:', mapData.name);
             currentMap = mapData;
+            if (!Array.isArray(currentMap.decor)) {
+                currentMap.decor = [];
+            }
             fairies = [];
             for (const fairyId in authoritativeFairyState) {
                 delete authoritativeFairyState[fairyId];
@@ -6356,6 +6372,21 @@
                 activeBurnIds.add(mark.id);
                 fireballAudio.startBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport, 0.34);
                 fireballAudio.updateBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport);
+            }
+
+            if (currentMap && Array.isArray(currentMap.decor)) {
+                currentMap.decor.forEach((decor, index) => {
+                    if (decor?.type !== DECOR_FIRE_SMALL_TYPE) {
+                        return;
+                    }
+
+                    const x = Number(decor.x) || 0;
+                    const y = Number(decor.y) || 0;
+                    const decorLoopId = `decor_fire_${decor.id ?? index}`;
+                    activeBurnIds.add(decorLoopId);
+                    fireballAudio.startBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport, 0.238);
+                    fireballAudio.updateBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport);
+                });
             }
 
             for (const staleId of Array.from(fireballAudio.activeBurnLoopIds?.() ?? [])) {
@@ -7955,6 +7986,68 @@
             ctx.restore();
         }
 
+        function drawMapDecor(now = Date.now(), visibleBounds = null) {
+            if (!currentMap || !Array.isArray(currentMap.decor) || currentMap.decor.length === 0) {
+                return;
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+
+            currentMap.decor.forEach((decor, index) => {
+                if (decor?.type !== DECOR_FIRE_SMALL_TYPE) {
+                    return;
+                }
+
+                const x = Number(decor.x) || 0;
+                const y = Number(decor.y) || 0;
+                if (visibleBounds && !isWorldRectVisible(x - 60, y - 86, 120, 120, 48, visibleBounds)) {
+                    return;
+                }
+
+                const flickerTime = now * 0.0019 + stableStringNoise(`decor_fire_${index}_${x}_${y}`) * 10;
+                const glowRadius = 34 + Math.sin(flickerTime * 2.5) * 4;
+                const flameRadius = 18 + Math.cos(flickerTime * 3.7) * 1.8;
+                const sway = Math.sin(flickerTime * 4.8) * 2.8;
+                const rise = Math.abs(Math.cos(flickerTime * 3.1)) * 5.5;
+                const primaryX = x + sway * 0.28;
+                const primaryY = y - 8 - rise;
+                const secondaryX = x - sway * 0.16;
+                const secondaryY = y - 6 - rise * 0.7;
+
+                drawFireballGlow(x, y - 10, glowRadius * 1.7, 'rgba(255, 236, 170, __A__)', 'rgba(255, 110, 28, __A__)', 0.28);
+                drawFireballGlow(x, y - 8, glowRadius * 0.95, 'rgba(255, 244, 220, __A__)', 'rgba(255, 182, 72, __A__)', 0.2);
+                drawPixelFlameBody(primaryX, primaryY, -Math.PI / 2 + Math.sin(flickerTime * 0.9) * 0.08, flameRadius * 0.78, 0.74, flickerTime, {
+                    cellScale: 0.15,
+                    tailLength: 0.78,
+                    noseLength: 0.24,
+                    width: 0.34,
+                    alpha: 0.76,
+                    emberChance: 0.05,
+                    extraCellSize: 0,
+                    palette: ['#2a0c00', '#6e1d00', '#be4300', '#ff7c20', '#ffc65d', '#fff1c8']
+                });
+                drawPixelFlameBody(secondaryX, secondaryY, -Math.PI / 2 + Math.cos(flickerTime * 1.1) * 0.06, flameRadius * 0.44, 0.46, flickerTime + 1.4, {
+                    cellScale: 0.17,
+                    tailLength: 0.68,
+                    noseLength: 0.18,
+                    width: 0.26,
+                    alpha: 0.68,
+                    emberChance: 0.03,
+                    extraCellSize: 0,
+                    palette: ['#2c0e00', '#7f2500', '#df560a', '#ffb03b', '#ffe07f']
+                });
+                drawSmokePuff(x, y - flameRadius * 1.45, flameRadius * 0.44, 0.36, 0, -2);
+
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.fillStyle = 'rgba(26, 11, 5, 0.58)';
+                ctx.fillRect(x - 10, y + 1, 20, 5);
+                ctx.globalCompositeOperation = 'lighter';
+            });
+
+            ctx.restore();
+        }
+
         function collectDynamicLights(now = Date.now(), renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs, visibleBounds = null) {
             const lights = [];
 
@@ -8010,6 +8103,28 @@
                     y: (mark.y - cameraY) * cameraZoom,
                     radius: 190 * (1 - progress * 0.18),
                     strength: 0.54 * (1 - progress)
+                });
+            }
+
+            if (currentMap && Array.isArray(currentMap.decor)) {
+                currentMap.decor.forEach((decor, index) => {
+                    if (decor?.type !== DECOR_FIRE_SMALL_TYPE) {
+                        return;
+                    }
+
+                    const x = Number(decor.x) || 0;
+                    const y = Number(decor.y) || 0;
+                    if (visibleBounds && !isWorldRectVisible(x - 90, y - 120, 180, 180, 90, visibleBounds)) {
+                        return;
+                    }
+
+                    const pulse = 0.92 + Math.sin(now * 0.012 + index * 1.7) * 0.08;
+                    lights.push({
+                        x: (x - cameraX) * cameraZoom,
+                        y: (y - 12 - cameraY) * cameraZoom,
+                        radius: 120 * pulse,
+                        strength: 0.34 * pulse
+                    });
                 });
             }
 
@@ -8502,6 +8617,7 @@
                     const visibleH = canvas.height / cameraZoom;
                     drawForegroundBackdrops(ctx, cameraX, cameraY);
                     drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH);
+                    drawMapDecor(nowMs, visibleBounds);
                     drawBurnMarks(nowMs, visibleBounds);
                     drawChargingFireballs(renderServerTimeMs, visibleBounds);
 

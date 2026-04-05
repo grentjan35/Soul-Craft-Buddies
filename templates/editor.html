@@ -105,6 +105,7 @@
                     <option value="tile">Tile Paint</option>
                     <option value="spawn">Spawn Point</option>
                     <option value="background">Background Editor</option>
+                    <option value="decor">Decor</option>
                 </select>
             </div>
             <div class="control-group" style="margin-left: auto;">
@@ -177,6 +178,26 @@
                     <div style="margin-top: 16px;">
                         <h3 style="margin-bottom: 10px;">Placed Backgrounds</h3>
                         <div id="backgroundStack" class="stack-list"></div>
+                    </div>
+                </div>
+                <div id="decorPalettePanel" style="display: none;">
+                    <h3>Decor</h3>
+                    <div class="control-group" style="margin-bottom: 12px;">
+                        <label>Effect</label>
+                        <select id="decorTypeSelect" onchange="setSelectedDecorType(this.value)">
+                            <option value="fire_small">Fire</option>
+                        </select>
+                    </div>
+                    <div class="info">
+                        <p>Selected effect: <span id="selectedDecorInfo">fire_small</span></p>
+                        <p>Left click: place decor</p>
+                        <p>Right click: remove nearby decor</p>
+                        <p>Decor is saved with the map and rendered in game</p>
+                        <p>Fire decor uses a lighter ambient flame + glow</p>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <h3 style="margin-bottom: 10px;">Placed Decor</h3>
+                        <div id="decorStack" class="stack-list"></div>
                     </div>
                 </div>
             </div>
@@ -278,6 +299,9 @@
         let selectedPlacedBackgroundId = null;
         let draggingBackgroundId = null;
         let backgroundDragOffset = { x: 0, y: 0 };
+        let decorPlacements = [];
+        let nextDecorId = 1;
+        let selectedDecorType = 'fire_small';
         const backgroundImageCache = new Map();
         let nextBackgroundId = 1;
         let editorBackgroundPreviewFront = false;
@@ -900,6 +924,25 @@
             nextBackgroundId = Math.max(nextBackgroundId, maxId + 1);
         }
 
+        function normalizeDecorPlacement(raw) {
+            const type = String(raw?.type ?? '').trim().toLowerCase();
+            if (type !== 'fire_small') {
+                return null;
+            }
+
+            return {
+                id: Number.isInteger(raw?.id) ? raw.id : nextDecorId++,
+                type,
+                x: Number(raw?.x) || 0,
+                y: Number(raw?.y) || 0
+            };
+        }
+
+        function syncDecorIdentityCounter() {
+            const maxId = decorPlacements.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
+            nextDecorId = Math.max(nextDecorId, maxId + 1);
+        }
+
         // Resize canvas to fit map
         function resizeCanvas() {
             canvas.width = mapWidth * TILE_SIZE;
@@ -1058,6 +1101,7 @@
             });
 
             drawEnemySpawns();
+            drawDecorPlacements();
 
             if (editorBackgroundPreviewFront) {
                 drawBackgrounds();
@@ -1189,6 +1233,57 @@
             });
         }
 
+        function drawDecorPlacements() {
+            decorPlacements.forEach((decor, index) => {
+                const drawX = decor.x;
+                const drawY = decor.y;
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+
+                if (decor.type === 'fire_small') {
+                    const flickerTime = performance.now() * 0.0017 + index * 0.63;
+                    const glowRadius = 24 + Math.sin(flickerTime * 2.6) * 3;
+                    const flameRadius = 14 + Math.cos(flickerTime * 3.4) * 1.6;
+                    const sway = Math.sin(flickerTime * 4.2) * 2.5;
+                    const rise = Math.abs(Math.cos(flickerTime * 3.1)) * 4.5;
+
+                    const glow = ctx.createRadialGradient(drawX, drawY - 6, 2, drawX, drawY - 6, glowRadius);
+                    glow.addColorStop(0, 'rgba(255, 236, 165, 0.5)');
+                    glow.addColorStop(0.45, 'rgba(255, 132, 42, 0.26)');
+                    glow.addColorStop(1, 'rgba(255, 78, 10, 0)');
+                    ctx.fillStyle = glow;
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY - 6, glowRadius, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = 'rgba(32, 10, 3, 0.65)';
+                    ctx.fillRect(drawX - 10, drawY + 2, 20, 6);
+
+                    ctx.fillStyle = '#ff9f2a';
+                    ctx.beginPath();
+                    ctx.ellipse(drawX + sway * 0.2, drawY - rise - 6, flameRadius * 0.42, flameRadius * 0.72, sway * 0.02, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#ffd36a';
+                    ctx.beginPath();
+                    ctx.ellipse(drawX + sway * 0.08, drawY - rise - 7, flameRadius * 0.24, flameRadius * 0.42, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+
+                ctx.save();
+                ctx.strokeStyle = '#ffb85c';
+                ctx.lineWidth = 2 / zoomLevel;
+                ctx.strokeRect(drawX - 10 / zoomLevel, drawY - 24 / zoomLevel, 20 / zoomLevel, 28 / zoomLevel);
+                ctx.fillStyle = '#ffd8aa';
+                ctx.font = `${12 / zoomLevel}px sans-serif`;
+                ctx.fillText(`D${index + 1}`, drawX + 8 / zoomLevel, drawY - 8 / zoomLevel);
+                ctx.restore();
+            });
+        }
+
         function serializeEnemies() {
             return enemySpawns.map((enemy) => ({
                 id: enemy.id,
@@ -1250,6 +1345,52 @@
             }
 
             return null;
+        }
+
+        function setSelectedDecorType(decorType) {
+            selectedDecorType = decorType === 'fire_small' ? 'fire_small' : 'fire_small';
+            document.getElementById('selectedDecorInfo').textContent = selectedDecorType;
+        }
+
+        function serializeDecor() {
+            return decorPlacements.map((decor) => ({
+                id: decor.id,
+                type: decor.type,
+                x: decor.x,
+                y: decor.y
+            }));
+        }
+
+        function addDecorPlacement(worldX, worldY) {
+            decorPlacements.push({
+                id: nextDecorId++,
+                type: selectedDecorType,
+                x: worldX,
+                y: worldY
+            });
+            renderDecorStack();
+            draw();
+        }
+
+        function removeDecorAtWorldPoint(worldX, worldY) {
+            const threshold = 28;
+            const index = decorPlacements.findIndex((decor) => Math.hypot(decor.x - worldX, decor.y - worldY) <= threshold);
+            if (index !== -1) {
+                decorPlacements.splice(index, 1);
+                renderDecorStack();
+                draw();
+            }
+        }
+
+        function removeDecor(decorId) {
+            const index = decorPlacements.findIndex((item) => item.id === decorId);
+            if (index === -1) {
+                return;
+            }
+
+            decorPlacements.splice(index, 1);
+            renderDecorStack();
+            draw();
         }
 
         function selectPlacedBackground(backgroundId) {
@@ -1351,6 +1492,41 @@
             });
         }
 
+        function renderDecorStack() {
+            const stack = document.getElementById('decorStack');
+            stack.innerHTML = '';
+
+            if (decorPlacements.length === 0) {
+                stack.innerHTML = '<div class="empty-state">No decor placed yet.</div>';
+                return;
+            }
+
+            decorPlacements.forEach((decor, index) => {
+                const item = document.createElement('div');
+                item.className = 'stack-item';
+
+                const title = document.createElement('strong');
+                title.textContent = `${index + 1}. ${decor.type}`;
+
+                const details = document.createElement('div');
+                details.textContent = `x=${decor.x}, y=${decor.y}`;
+
+                const actions = document.createElement('div');
+                actions.className = 'stack-actions';
+
+                const removeButton = document.createElement('button');
+                removeButton.textContent = 'Remove';
+                removeButton.className = 'danger';
+                removeButton.addEventListener('click', () => removeDecor(decor.id));
+
+                actions.appendChild(removeButton);
+                item.appendChild(title);
+                item.appendChild(details);
+                item.appendChild(actions);
+                stack.appendChild(item);
+            });
+        }
+
         // Canvas event handlers
         canvas.addEventListener('mousedown', (e) => {
             // Check for panning (middle mouse or space+left click)
@@ -1405,6 +1581,15 @@
                     }
                 }
 
+                return;
+            }
+
+            if (toolMode === 'decor') {
+                if (e.button === 0) {
+                    addDecorPlacement(world.x, world.y);
+                } else if (e.button === 2) {
+                    removeDecorAtWorldPoint(world.x, world.y);
+                }
                 return;
             }
 
@@ -1553,9 +1738,12 @@
             document.getElementById('tilePalettePanel').style.display = mode === 'tile' ? 'block' : 'none';
             document.getElementById('spawnPalettePanel').style.display = mode === 'spawn' ? 'block' : 'none';
             document.getElementById('backgroundPalettePanel').style.display = mode === 'background' ? 'block' : 'none';
+            document.getElementById('decorPalettePanel').style.display = mode === 'decor' ? 'block' : 'none';
 
             const label = mode === 'background'
                 ? 'Background Editor'
+                : mode === 'decor'
+                    ? 'Decor'
                 : mode === 'spawn'
                     ? 'Spawn / Enemies'
                     : 'Tile Paint';
@@ -1578,20 +1766,19 @@
             }));
         }
 
-        // Save map
-        async function saveMap() {
+        async function persistMap() {
             const mapName = document.getElementById('mapName').value.trim();
             
             if (!mapName) {
                 showStatus('Please enter a map name', 'error');
-                return;
+                return false;
             }
             
             // Validate map has at least one tile, spawn point, or background
             const hasTiles = mapData.some(row => row.some(tile => tile >= 0));
-            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0 && enemySpawns.length === 0) {
-                showStatus('Map must have at least one tile, spawn point, enemy, or background', 'error');
-                return;
+            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0 && enemySpawns.length === 0 && decorPlacements.length === 0) {
+                showStatus('Map must have at least one tile, spawn point, enemy, background, or decor', 'error');
+                return false;
             }
             
             try {
@@ -1606,7 +1793,8 @@
                         spawnPoints: spawnPoints,
                         tileCollisions: tileCollisions,
                         backgrounds: serializeBackgrounds(),
-                        enemies: serializeEnemies()
+                        enemies: serializeEnemies(),
+                        decor: serializeDecor()
                     })
                 });
                 
@@ -1615,13 +1803,21 @@
                 if (response.ok) {
                     showStatus(`Map "${mapName}" saved successfully`, 'success');
                     loadMapList();
+                    return true;
                 } else {
                     showStatus(result.error || 'Error saving map', 'error');
+                    return false;
                 }
             } catch (error) {
                 console.error('Error saving map:', error);
                 showStatus('Error saving map', 'error');
+                return false;
             }
+        }
+
+        // Save map
+        async function saveMap() {
+            await persistMap();
         }
 
         // Load map
@@ -1647,6 +1843,9 @@
                     placedBackgrounds = Array.isArray(result.backgrounds)
                         ? result.backgrounds.map((background) => normalizeBackgroundPlacement(background)).filter(Boolean)
                         : [];
+                    decorPlacements = Array.isArray(result.decor)
+                        ? result.decor.map((decor) => normalizeDecorPlacement(decor)).filter(Boolean)
+                        : [];
                     enemySpawns.forEach((enemy) => {
                         if (enemy?.type) {
                             loadEnemyPreviewResources(enemy.type).catch((error) => {
@@ -1656,7 +1855,9 @@
                     });
                     ensureDefaultBackgroundPlacement();
                     syncBackgroundIdentityCounter();
+                    syncDecorIdentityCounter();
                     renderPlacedBackgroundStack();
+                    renderDecorStack();
                     
                     document.getElementById('mapWidth').value = mapWidth;
                     document.getElementById('mapHeight').value = mapHeight;
@@ -1679,17 +1880,29 @@
                 spawnPoints = [];
                 enemySpawns = [];
                 placedBackgrounds = [];
+                decorPlacements = [];
                 selectedPlacedBackgroundId = null;
                 ensureDefaultBackgroundPlacement();
                 renderPlacedBackgroundStack();
+                renderDecorStack();
                 draw();
                 showStatus('Map cleared', 'success');
             }
         }
 
         // Play map in game
-        function playMap() {
+        async function playMap() {
             const mapName = document.getElementById('mapName').value.trim();
+            if (!mapName) {
+                showStatus('Please enter a map name', 'error');
+                return;
+            }
+
+            const saved = await persistMap();
+            if (!saved) {
+                return;
+            }
+
             window.open(`/?map=${encodeURIComponent(mapName)}`, '_blank');
         }
 
@@ -1801,6 +2014,7 @@
         updateZoomDisplay();
         initCollisionsPanel();
         renderPlacedBackgroundStack();
+        renderDecorStack();
         setToolMode('tile');
 
         // Collisions panel functions
@@ -1977,7 +2191,8 @@
                         spawnPoints: spawnPoints,
                         tileCollisions: tileCollisions,
                         backgrounds: serializeBackgrounds(),
-                        enemies: serializeEnemies()
+                        enemies: serializeEnemies(),
+                        decor: serializeDecor()
                     })
                 });
                 

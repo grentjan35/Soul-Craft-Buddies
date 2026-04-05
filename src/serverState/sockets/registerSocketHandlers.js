@@ -333,6 +333,7 @@ function handleLoadMap(input) {
     spawnPoints: input.state.spawnPoints,
     backgrounds: Array.isArray(mapData.backgrounds) ? mapData.backgrounds : [],
     enemies: input.state.enemySpawns,
+    decor: Array.isArray(mapData.decor) ? mapData.decor : [],
   };
 
   if (isSameMap) {
