@@ -1786,7 +1786,7 @@ function damagePlayerFromEnemyHit(input) {
     player.health = 0;
     player.is_dying = true;
     player.death_time = nowSec;
-    input.io.emit('player_dying', {
+    input.io.compress(false).emit('player_dying', {
       sid: input.sid,
       x: player.x,
       y: player.y,
@@ -1798,7 +1798,7 @@ function damagePlayerFromEnemyHit(input) {
     });
   }
 
-  input.io.emit('player_hit', {
+  input.io.compress(false).emit('player_hit', {
     sid: input.sid,
     damage: definition.stats.contactDamage,
     health: player.health,
