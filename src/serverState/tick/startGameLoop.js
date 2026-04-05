@@ -188,7 +188,7 @@ function broadcastState(input) {
     };
   }
 
-  input.io.emit('state', {
+  input.io.volatile.emit('state', {
     ts,
     seq: input.state.stateSeq,
     players: playersPayload,

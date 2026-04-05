@@ -210,6 +210,10 @@ function sendProtectedBinaryFile(input) {
   stream.pipe(input.res);
 }
 
+function setPublicAssetCacheHeaders(res) {
+  res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+}
+
 /**
  * Creates the secure asset routes.
  * @param {{secretKey: string, projectRoot: string, staticDir: string, chunkDir: string, manifestPath: string}} deps
@@ -278,7 +282,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -296,7 +300,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -314,7 +318,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -332,7 +336,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -350,7 +354,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -368,7 +372,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -386,7 +390,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });
@@ -404,7 +408,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
     res.sendFile(soundPath);
   });

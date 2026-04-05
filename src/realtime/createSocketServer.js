@@ -11,7 +11,10 @@ function createSocketServer(input) {
   const io = new Server(input.httpServer, {
     path: '/socket.io/',
     cors: { origin: '*' },
+    serveClient: false,
     transports: ['websocket', 'polling'],
+    httpCompression: false,
+    perMessageDeflate: false,
     pingTimeout: 60000,
     pingInterval: 25000,
   });
