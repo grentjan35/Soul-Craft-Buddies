@@ -188,7 +188,7 @@ function broadcastState(input) {
     };
   }
 
-  input.io.volatile.compress(false).emit('state', {
+  input.io.volatile.emit('state', {
     ts,
     seq: input.state.stateSeq,
     players: playersPayload,
@@ -346,7 +346,7 @@ function spawnFireball(input) {
     active: true,
   });
 
-  input.io.volatile.compress(false).emit('projectile_created', {
+  input.io.emit('projectile_created', {
     id: fireballId,
     owner_sid: input.ownerSid ?? null,
     owner_type: input.ownerType ?? 'player',
@@ -573,8 +573,8 @@ function isPlayerPlacementValid(input) {
  */
 function updateFireballs(input) {
   const nowSec = Date.now() / 1000;
-  /** @type {Set<number>} */
-  const toRemove = new Set();
+  /** @type {number[]} */
+  const toRemove = [];
 
   for (const [id, f] of input.state.fireballs.entries()) {
     if (!f.active) continue;
@@ -590,7 +590,7 @@ function updateFireballs(input) {
     const age = nowSec - f.spawn_time;
     const fireballMaxDistance = Math.max(48, Number(f.max_distance) || FIREBALL_MAX_DISTANCE);
     if (age > FIREBALL_LIFETIME || f.distance_traveled > fireballMaxDistance) {
-      toRemove.add(id);
+      toRemove.push(id);
       createExplosion({
         state: input.state,
         io: input.io,
@@ -613,7 +613,7 @@ function updateFireballs(input) {
     });
 
     if (nearby.some((plat) => checkFireballPlatformCollision({ fireball: f, platform: plat }))) {
-      toRemove.add(id);
+      toRemove.push(id);
       createExplosion({
         state: input.state,
         io: input.io,
@@ -648,12 +648,12 @@ function updateFireballs(input) {
           sourceVy: f.vy,
         });
 
-        toRemove.add(id);
+        toRemove.push(id);
         break;
       }
     }
 
-    if (toRemove.has(id)) {
+    if (toRemove.includes(id)) {
       continue;
     }
 
@@ -678,7 +678,7 @@ function updateFireballs(input) {
           sourceVx: f.vx,
           sourceVy: f.vy,
         });
-        toRemove.add(id);
+        toRemove.push(id);
         break;
       }
     }
@@ -688,7 +688,7 @@ function updateFireballs(input) {
     if (input.state.fireballs.has(id)) {
       const fireball = input.state.fireballs.get(id);
       input.state.fireballs.delete(id);
-      input.io.volatile.compress(false).emit('projectile_destroyed', {
+      input.io.emit('projectile_destroyed', {
         id,
         destroy_time_ms: Date.now(),
         x: fireball?.x,
@@ -718,7 +718,7 @@ function updateExplosions(input) {
   for (const id of toRemove) {
     if (input.state.explosions.has(id)) {
       input.state.explosions.delete(id);
-      input.io.volatile.compress(false).emit('explosion_destroyed', { id, destroy_time_ms: nowMs });
+      input.io.emit('explosion_destroyed', { id, destroy_time_ms: nowMs });
     }
   }
 }
@@ -774,7 +774,7 @@ function applyExplosionDamage(input) {
       player.health = 0;
       player.is_dying = true;
       player.death_time = nowSec;
-      input.io.compress(false).emit('player_dying', {
+      input.io.emit('player_dying', {
         sid,
         x: player.x,
         y: player.y,
@@ -786,7 +786,7 @@ function applyExplosionDamage(input) {
       });
     }
 
-    input.io.compress(false).emit('player_hit', {
+    input.io.emit('player_hit', {
       sid,
       damage,
       health: player.health,
@@ -844,7 +844,7 @@ function createExplosion(input) {
   const nowSec = nowMs / 1000;
 
   input.state.explosions.set(id, { id, x: input.x, y: input.y, spawn_time: nowSec, spawn_time_ms: nowMs, active: true });
-  input.io.volatile.compress(false).emit('explosion_created', { id, x: input.x, y: input.y, spawn_time_ms: nowMs });
+  input.io.emit('explosion_created', { id, x: input.x, y: input.y, spawn_time_ms: nowMs });
   applyExplosionDamage(input);
 }
 
