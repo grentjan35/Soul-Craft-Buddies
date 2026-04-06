@@ -259,6 +259,7 @@ function updateGameState(input) {
     clampToBounds({ p, hb: getPlayerHitbox(p), mapBounds: input.state.mapBounds });
 
     resolveVerticalPlatformCollisions({ p, prevY: yAfterHorizontal, nearby });
+    resolveEmbeddedPlayerInTerrain({ state: input.state, p, nearby });
 
     if (p.is_attacking) {
       const attackStart = p.attack_start_time ?? 0;
@@ -966,6 +967,112 @@ function resolveVerticalPlatformCollisions(input) {
       }
     }
   }
+}
+
+/**
+ * Attempts to recover a player if they ended up embedded in terrain.
+ * Why: collision edge cases should never leave a player trapped inside the level.
+ * @param {{state:any, p:any, nearby:any[]}} input
+ */
+function resolveEmbeddedPlayerInTerrain(input) {
+  const maxPasses = 6;
+
+  for (let pass = 0; pass < maxPasses; pass += 1) {
+    const overlaps = input.nearby.filter((plat) => checkPlayerPlatformCollision({ player: input.p, platform: plat }));
+    if (overlaps.length === 0) {
+      return;
+    }
+
+    let resolvedThisPass = false;
+    for (const plat of overlaps) {
+      if (tryResolvePlayerOverlapWithPlatform({ state: input.state, p: input.p, platform: plat })) {
+        clampToBounds({ p: input.p, hb: getPlayerHitbox(input.p), mapBounds: input.state.mapBounds });
+        resolvedThisPass = true;
+        break;
+      }
+    }
+
+    if (!resolvedThisPass) {
+      break;
+    }
+  }
+}
+
+/**
+ * Tries to move a player to the nearest valid non-overlapping position relative to one platform.
+ * @param {{state:any, p:any, platform:any}} input
+ * @returns {boolean}
+ */
+function tryResolvePlayerOverlapWithPlatform(input) {
+  const hb = getPlayerHitbox(input.p);
+  const overlapLeft = hb.x + PLAYER_HITBOX_WIDTH - input.platform.x;
+  const overlapRight = input.platform.x + input.platform.w - hb.x;
+  const overlapTop = hb.y + PLAYER_HITBOX_HEIGHT - input.platform.y;
+  const overlapBottom = input.platform.y + input.platform.h - hb.y;
+
+  if (overlapLeft <= 0 || overlapRight <= 0 || overlapTop <= 0 || overlapBottom <= 0) {
+    return false;
+  }
+
+  const candidates = [
+    { axis: 'y', delta: -overlapTop, priority: 0 },
+    { axis: 'x', delta: -overlapLeft, priority: 1 },
+    { axis: 'x', delta: overlapRight, priority: 1 },
+    { axis: 'y', delta: overlapBottom, priority: 2 },
+  ];
+
+  candidates.sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    return Math.abs(a.delta) - Math.abs(b.delta);
+  });
+
+  for (const candidate of candidates) {
+    const nextX = candidate.axis === 'x' ? input.p.x + candidate.delta : input.p.x;
+    const nextY = candidate.axis === 'y' ? input.p.y + candidate.delta : input.p.y;
+
+    if (!isPlayerPlacementValid({ state: input.state, player: input.p, x: nextX, y: nextY })) {
+      continue;
+    }
+
+    input.p.x = nextX;
+    input.p.y = nextY;
+
+    if (candidate.axis === 'x') {
+      input.p.vx = 0;
+    } else {
+      input.p.vy = 0;
+      if (candidate.delta < 0) {
+        input.p.on_ground = true;
+        input.p.jumps_remaining = 2;
+      }
+    }
+
+    return true;
+  }
+
+  return tryNudgePlayerUpward({ state: input.state, p: input.p });
+}
+
+/**
+ * Fallback recovery when a simple minimal translation is not enough.
+ * @param {{state:any, p:any}} input
+ * @returns {boolean}
+ */
+function tryNudgePlayerUpward(input) {
+  for (let offset = 2; offset <= PLAYER_HITBOX_HEIGHT + 32; offset += 2) {
+    const nextY = input.p.y - offset;
+    if (!isPlayerPlacementValid({ state: input.state, player: input.p, x: input.p.x, y: nextY })) {
+      continue;
+    }
+
+    input.p.y = nextY;
+    input.p.vy = 0;
+    input.p.on_ground = true;
+    input.p.jumps_remaining = 2;
+    return true;
+  }
+
+  return false;
 }
 
 /**
