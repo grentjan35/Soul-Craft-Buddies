@@ -860,6 +860,18 @@ function getPlayerHitbox(p) {
 }
 
 /**
+ * Returns true when two 1D ranges overlap.
+ * @param {number} minA
+ * @param {number} maxA
+ * @param {number} minB
+ * @param {number} maxB
+ * @returns {boolean}
+ */
+function rangesOverlap(minA, maxA, minB, maxB) {
+  return minA < maxB && maxA > minB;
+}
+
+/**
  * Clamps player within map bounds.
  * @param {{p: any, hb: {x:number,y:number}, mapBounds: any}} input
  */
@@ -916,24 +928,42 @@ function resolveHorizontalPlatformCollisions(input) {
  */
 function resolveVerticalPlatformCollisions(input) {
   const halfH = PLAYER_HITBOX_HEIGHT / 2;
+  const halfW = PLAYER_HITBOX_WIDTH / 2;
   const prevHbY = input.prevY - halfH;
+  const prevHbX = input.p.x - halfW;
+  const prevBottom = prevHbY + PLAYER_HITBOX_HEIGHT;
+  const prevTop = prevHbY;
 
   for (const plat of input.nearby) {
-    if (!checkPlayerPlatformCollision({ player: input.p, platform: plat })) continue;
+    const currentHb = getPlayerHitbox(input.p);
+    const currentBottom = currentHb.y + PLAYER_HITBOX_HEIGHT;
+    const currentTop = currentHb.y;
+    const currentOverlaps = checkPlayerPlatformCollision({ player: input.p, platform: plat });
+    const horizontalOverlap = rangesOverlap(
+      Math.min(prevHbX, currentHb.x),
+      Math.max(prevHbX + PLAYER_HITBOX_WIDTH, currentHb.x + PLAYER_HITBOX_WIDTH),
+      plat.x,
+      plat.x + plat.w
+    );
 
-    const wasOutside =
-      prevHbY + PLAYER_HITBOX_HEIGHT <= plat.y || prevHbY >= plat.y + plat.h;
+    if (input.p.vy > 0 && horizontalOverlap) {
+      const crossedPlatformTop = prevBottom <= plat.y && currentBottom >= plat.y;
+      if (crossedPlatformTop || currentOverlaps) {
+        input.p.y = plat.y - halfH;
+        input.p.vy = 0;
+        input.p.on_ground = true;
+        input.p.jumps_remaining = 2;
+        continue;
+      }
+    }
 
-    if (!wasOutside) continue;
-
-    if (input.p.vy > 0) {
-      input.p.y = plat.y - halfH;
-      input.p.vy = 0;
-      input.p.on_ground = true;
-      input.p.jumps_remaining = 2;
-    } else if (input.p.vy < 0) {
-      input.p.y = plat.y + plat.h + halfH;
-      input.p.vy = 0;
+    if (input.p.vy < 0 && horizontalOverlap) {
+      const platformBottom = plat.y + plat.h;
+      const crossedPlatformBottom = prevTop >= platformBottom && currentTop <= platformBottom;
+      if (crossedPlatformBottom || currentOverlaps) {
+        input.p.y = platformBottom + halfH;
+        input.p.vy = 0;
+      }
     }
   }
 }

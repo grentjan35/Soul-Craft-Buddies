@@ -186,6 +186,7 @@
                         <label>Effect</label>
                         <select id="decorTypeSelect" onchange="setSelectedDecorType(this.value)">
                             <option value="fire_small">Fire</option>
+                            <option value="fire_purple">Purple Fire</option>
                         </select>
                     </div>
                     <div class="info">
@@ -193,7 +194,7 @@
                         <p>Left click: place decor</p>
                         <p>Right click: remove nearby decor</p>
                         <p>Decor is saved with the map and rendered in game</p>
-                        <p>Fire decor uses a lighter ambient flame + glow</p>
+                        <p>Fire decor uses an ambient flame + glow</p>
                     </div>
                     <div style="margin-top: 16px;">
                         <h3 style="margin-bottom: 10px;">Placed Decor</h3>
@@ -302,6 +303,30 @@
         let decorPlacements = [];
         let nextDecorId = 1;
         let selectedDecorType = 'fire_small';
+        const DECOR_TYPES = {
+            fire_small: {
+                label: 'Fire',
+                stroke: '#ffb85c',
+                text: '#ffd8aa',
+                ember: '#ff9f2a',
+                core: '#ffd36a',
+                glowInner: 'rgba(255, 236, 165, 0.5)',
+                glowMid: 'rgba(255, 132, 42, 0.26)',
+                glowOuter: 'rgba(255, 78, 10, 0)',
+                base: 'rgba(32, 10, 3, 0.65)'
+            },
+            fire_purple: {
+                label: 'Purple Fire',
+                stroke: '#b98cff',
+                text: '#efe2ff',
+                ember: '#8b4dff',
+                core: '#d7b8ff',
+                glowInner: 'rgba(205, 170, 255, 0.52)',
+                glowMid: 'rgba(120, 56, 255, 0.3)',
+                glowOuter: 'rgba(46, 12, 88, 0)',
+                base: 'rgba(22, 7, 34, 0.72)'
+            }
+        };
         const backgroundImageCache = new Map();
         let nextBackgroundId = 1;
         let editorBackgroundPreviewFront = false;
@@ -926,7 +951,7 @@
 
         function normalizeDecorPlacement(raw) {
             const type = String(raw?.type ?? '').trim().toLowerCase();
-            if (type !== 'fire_small') {
+            if (!DECOR_TYPES[type]) {
                 return null;
             }
 
@@ -1237,11 +1262,12 @@
             decorPlacements.forEach((decor, index) => {
                 const drawX = decor.x;
                 const drawY = decor.y;
+                const decorProfile = DECOR_TYPES[decor.type] || DECOR_TYPES.fire_small;
 
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
 
-                if (decor.type === 'fire_small') {
+                if (decor.type === 'fire_small' || decor.type === 'fire_purple') {
                     const flickerTime = performance.now() * 0.0017 + index * 0.63;
                     const glowRadius = 24 + Math.sin(flickerTime * 2.6) * 3;
                     const flameRadius = 14 + Math.cos(flickerTime * 3.4) * 1.6;
@@ -1249,23 +1275,23 @@
                     const rise = Math.abs(Math.cos(flickerTime * 3.1)) * 4.5;
 
                     const glow = ctx.createRadialGradient(drawX, drawY - 6, 2, drawX, drawY - 6, glowRadius);
-                    glow.addColorStop(0, 'rgba(255, 236, 165, 0.5)');
-                    glow.addColorStop(0.45, 'rgba(255, 132, 42, 0.26)');
-                    glow.addColorStop(1, 'rgba(255, 78, 10, 0)');
+                    glow.addColorStop(0, decorProfile.glowInner);
+                    glow.addColorStop(0.45, decorProfile.glowMid);
+                    glow.addColorStop(1, decorProfile.glowOuter);
                     ctx.fillStyle = glow;
                     ctx.beginPath();
                     ctx.arc(drawX, drawY - 6, glowRadius, 0, Math.PI * 2);
                     ctx.fill();
 
-                    ctx.fillStyle = 'rgba(32, 10, 3, 0.65)';
+                    ctx.fillStyle = decorProfile.base;
                     ctx.fillRect(drawX - 10, drawY + 2, 20, 6);
 
-                    ctx.fillStyle = '#ff9f2a';
+                    ctx.fillStyle = decorProfile.ember;
                     ctx.beginPath();
                     ctx.ellipse(drawX + sway * 0.2, drawY - rise - 6, flameRadius * 0.42, flameRadius * 0.72, sway * 0.02, 0, Math.PI * 2);
                     ctx.fill();
 
-                    ctx.fillStyle = '#ffd36a';
+                    ctx.fillStyle = decorProfile.core;
                     ctx.beginPath();
                     ctx.ellipse(drawX + sway * 0.08, drawY - rise - 7, flameRadius * 0.24, flameRadius * 0.42, 0, 0, Math.PI * 2);
                     ctx.fill();
@@ -1274,10 +1300,10 @@
                 ctx.restore();
 
                 ctx.save();
-                ctx.strokeStyle = '#ffb85c';
+                ctx.strokeStyle = decorProfile.stroke;
                 ctx.lineWidth = 2 / zoomLevel;
                 ctx.strokeRect(drawX - 10 / zoomLevel, drawY - 24 / zoomLevel, 20 / zoomLevel, 28 / zoomLevel);
-                ctx.fillStyle = '#ffd8aa';
+                ctx.fillStyle = decorProfile.text;
                 ctx.font = `${12 / zoomLevel}px sans-serif`;
                 ctx.fillText(`D${index + 1}`, drawX + 8 / zoomLevel, drawY - 8 / zoomLevel);
                 ctx.restore();
@@ -1348,7 +1374,8 @@
         }
 
         function setSelectedDecorType(decorType) {
-            selectedDecorType = decorType === 'fire_small' ? 'fire_small' : 'fire_small';
+            selectedDecorType = DECOR_TYPES[decorType] ? decorType : 'fire_small';
+            document.getElementById('decorTypeSelect').value = selectedDecorType;
             document.getElementById('selectedDecorInfo').textContent = selectedDecorType;
         }
 
@@ -1504,9 +1531,10 @@
             decorPlacements.forEach((decor, index) => {
                 const item = document.createElement('div');
                 item.className = 'stack-item';
+                const decorProfile = DECOR_TYPES[decor.type] || DECOR_TYPES.fire_small;
 
                 const title = document.createElement('strong');
-                title.textContent = `${index + 1}. ${decor.type}`;
+                title.textContent = `${index + 1}. ${decorProfile.label}`;
 
                 const details = document.createElement('div');
                 details.textContent = `x=${decor.x}, y=${decor.y}`;

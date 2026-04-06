@@ -4,6 +4,7 @@ const path = require('path');
 
 const { createBackup, listBackups, restoreBackup, getBackupDir } = require('./backupService');
 const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
+const VALID_DECOR_TYPES = new Set(['fire_small', 'fire_purple']);
 
 /**
  * Creates map + backup management endpoints.
@@ -89,7 +90,7 @@ function createMapsRouter(deps) {
       }
 
       const type = String(entry.type ?? '').trim().toLowerCase();
-      if (type !== 'fire_small') {
+      if (!VALID_DECOR_TYPES.has(type)) {
         res.status(400).json({ error: `Invalid decor type: ${type || '(missing)'}` });
         return;
       }

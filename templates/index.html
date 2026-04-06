@@ -4281,6 +4281,8 @@
         let foregroundEffectLayerCache = new WeakMap();
         let seamBridgeCache = new Map();
         const DECOR_FIRE_SMALL_TYPE = 'fire_small';
+        const DECOR_FIRE_PURPLE_TYPE = 'fire_purple';
+        const DECOR_FIRE_TYPES = new Set([DECOR_FIRE_SMALL_TYPE, DECOR_FIRE_PURPLE_TYPE]);
         let activeMapLoadPromise = null;
         let loadedMapName = null;
         let mapBounds = { minX: 0, maxX: 800, minY: 0, maxY: 600 };
@@ -4297,13 +4299,47 @@
 
             let fireCount = 0;
             for (const decor of currentMap.decor) {
-                if (decor?.type === DECOR_FIRE_SMALL_TYPE) {
+                if (DECOR_FIRE_TYPES.has(decor?.type)) {
                     fireCount += 1;
                 }
             }
             currentMapDecorFireCount = fireCount;
         }
         const BACKGROUND_SEAM_BRIDGE_WIDTH = 220;
+
+        function isFireDecorType(type) {
+            return DECOR_FIRE_TYPES.has(type);
+        }
+
+        function getDecorFireStyle(type) {
+            if (type === DECOR_FIRE_PURPLE_TYPE) {
+                return {
+                    loopVolume: 0.21,
+                    glowOuterColor: 'rgba(216, 186, 255, __A__)',
+                    glowInnerColor: 'rgba(110, 38, 255, __A__)',
+                    glowOuterAlpha: 0.3,
+                    glowInnerAlpha: 0.22,
+                    primaryPalette: ['#13071f', '#2d0a4f', '#5320a7', '#8d45ff', '#c08eff', '#f1e7ff'],
+                    secondaryPalette: ['#160726', '#341066', '#6430c7', '#ae72ff', '#dbc0ff'],
+                    shadowColor: 'rgba(14, 6, 24, 0.68)',
+                    smokeAlpha: 0.24,
+                    lightStrength: 0.3
+                };
+            }
+
+            return {
+                loopVolume: 0.238,
+                glowOuterColor: 'rgba(255, 236, 170, __A__)',
+                glowInnerColor: 'rgba(255, 110, 28, __A__)',
+                glowOuterAlpha: 0.28,
+                glowInnerAlpha: 0.2,
+                primaryPalette: ['#2a0c00', '#6e1d00', '#be4300', '#ff7c20', '#ffc65d', '#fff1c8'],
+                secondaryPalette: ['#2c0e00', '#7f2500', '#df560a', '#ffb03b', '#ffe07f'],
+                shadowColor: 'rgba(26, 11, 5, 0.58)',
+                smokeAlpha: 0.36,
+                lightStrength: 0.34
+            };
+        }
 
         function getForegroundEffectLayers(bitmap) {
             if (!bitmap) {
@@ -4415,8 +4451,8 @@
             const placementY = Number(placement.y) || 0;
             const clipWidth = bitmap.width;
             const clipHeight = bitmap.height;
-            const baseScreenX = placementX - cameraOffsetX;
-            const baseScreenY = placementY - cameraOffsetY;
+            const baseScreenX = Math.round(placementX - cameraOffsetX);
+            const baseScreenY = Math.round(placementY - cameraOffsetY);
 
             const scaledWidth = clipWidth * BACKGROUND_PARALLAX_OVERSCAN;
             const scaledHeight = clipHeight * BACKGROUND_PARALLAX_OVERSCAN;
@@ -4425,12 +4461,12 @@
             const parallaxOffsetX = cameraOffsetX * BACKGROUND_PARALLAX_STRENGTH;
             const parallaxOffsetY = cameraOffsetY * BACKGROUND_PARALLAX_STRENGTH;
             const time = performance.now() * 0.001;
-            const atmosphericDriftX = Math.sin(time * 0.27 + placementX * 0.002) * 7;
-            const atmosphericDriftY = Math.cos(time * 0.19 + placementY * 0.002) * 5;
+            const atmosphericDriftX = Math.sin(time * 0.27) * 7;
+            const atmosphericDriftY = Math.cos(time * 0.19) * 5;
             const effectLayers = getForegroundEffectLayers(bitmap);
 
-            const drawX = baseScreenX - extraWidth / 2 + parallaxOffsetX + atmosphericDriftX;
-            const drawY = baseScreenY - extraHeight / 2 + parallaxOffsetY + atmosphericDriftY;
+            const drawX = Math.round(baseScreenX - extraWidth / 2 + parallaxOffsetX + atmosphericDriftX);
+            const drawY = Math.round(baseScreenY - extraHeight / 2 + parallaxOffsetY + atmosphericDriftY);
 
             targetCtx.save();
             targetCtx.beginPath();
@@ -4558,8 +4594,8 @@
                 const rightX = rightPosition.x;
                 const rightY = rightPosition.y;
                 const leftRight = leftX + leftBitmap.width;
-                const seamCenterX = (leftRight + rightX) / 2;
-                const seamTop = Math.min(leftY, rightY);
+                const seamCenterX = Math.round((leftRight + rightX) / 2);
+                const seamTop = Math.round(Math.min(leftY, rightY));
                 const seamBottom = Math.max(leftY + leftBitmap.height, rightY + rightBitmap.height);
                 const seamHeight = seamBottom - seamTop;
 
@@ -6480,15 +6516,16 @@
 
             if (currentMap && Array.isArray(currentMap.decor)) {
                 currentMap.decor.forEach((decor, index) => {
-                    if (decor?.type !== DECOR_FIRE_SMALL_TYPE) {
+                    if (!isFireDecorType(decor?.type)) {
                         return;
                     }
 
                     const x = Number(decor.x) || 0;
                     const y = Number(decor.y) || 0;
                     const decorLoopId = `decor_fire_${decor.id ?? index}`;
+                    const decorStyle = getDecorFireStyle(decor?.type);
                     activeBurnIds.add(decorLoopId);
-                    fireballAudio.startBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport, 0.238);
+                    fireballAudio.startBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport, decorStyle.loopVolume);
                     fireballAudio.updateBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport);
                 });
             }
@@ -8113,7 +8150,7 @@
             ctx.globalCompositeOperation = 'lighter';
 
             currentMap.decor.forEach((decor, index) => {
-                if (decor?.type !== DECOR_FIRE_SMALL_TYPE) {
+                if (!isFireDecorType(decor?.type)) {
                     return;
                 }
 
@@ -8132,9 +8169,10 @@
                 const primaryY = y - 8 - rise;
                 const secondaryX = x - sway * 0.16;
                 const secondaryY = y - 6 - rise * 0.7;
+                const decorStyle = getDecorFireStyle(decor?.type);
 
-                drawFireballGlow(x, y - 10, glowRadius * 1.7, 'rgba(255, 236, 170, __A__)', 'rgba(255, 110, 28, __A__)', 0.28);
-                drawFireballGlow(x, y - 8, glowRadius * 0.95, 'rgba(255, 244, 220, __A__)', 'rgba(255, 182, 72, __A__)', 0.2);
+                drawFireballGlow(x, y - 10, glowRadius * 1.7, decorStyle.glowOuterColor, decorStyle.glowInnerColor, decorStyle.glowOuterAlpha);
+                drawFireballGlow(x, y - 8, glowRadius * 0.95, decorStyle.glowOuterColor, decorStyle.glowInnerColor, decorStyle.glowInnerAlpha);
                 drawPixelFlameBody(primaryX, primaryY, -Math.PI / 2 + Math.sin(flickerTime * 0.9) * 0.08, flameRadius * 0.78, 0.74, flickerTime, {
                     cellScale: 0.15,
                     tailLength: 0.78,
@@ -8143,7 +8181,7 @@
                     alpha: 0.76,
                     emberChance: 0.05,
                     extraCellSize: 0,
-                    palette: ['#2a0c00', '#6e1d00', '#be4300', '#ff7c20', '#ffc65d', '#fff1c8']
+                    palette: decorStyle.primaryPalette
                 });
                 if (profile.drawDecorSecondaryFlame) {
                     drawPixelFlameBody(secondaryX, secondaryY, -Math.PI / 2 + Math.cos(flickerTime * 1.1) * 0.06, flameRadius * 0.44, 0.46, flickerTime + 1.4, {
@@ -8154,15 +8192,15 @@
                         alpha: 0.68,
                         emberChance: 0.03,
                         extraCellSize: 0,
-                        palette: ['#2c0e00', '#7f2500', '#df560a', '#ffb03b', '#ffe07f']
+                        palette: decorStyle.secondaryPalette
                     });
                 }
                 if (profile.drawDecorSmoke) {
-                    drawSmokePuff(x, y - flameRadius * 1.45, flameRadius * 0.44, 0.36, 0, -2);
+                    drawSmokePuff(x, y - flameRadius * 1.45, flameRadius * 0.44, decorStyle.smokeAlpha, 0, -2);
                 }
 
                 ctx.globalCompositeOperation = 'source-over';
-                ctx.fillStyle = 'rgba(26, 11, 5, 0.58)';
+                ctx.fillStyle = decorStyle.shadowColor;
                 ctx.fillRect(x - 10, y + 1, 20, 5);
                 ctx.globalCompositeOperation = 'lighter';
             });
@@ -8231,7 +8269,7 @@
 
             if (currentMap && Array.isArray(currentMap.decor)) {
                 currentMap.decor.forEach((decor, index) => {
-                    if (decor?.type !== DECOR_FIRE_SMALL_TYPE) {
+                    if (!isFireDecorType(decor?.type)) {
                         return;
                     }
 
@@ -8242,11 +8280,12 @@
                     }
 
                     const pulse = 0.92 + Math.sin(now * 0.012 + index * 1.7) * 0.08;
+                    const decorStyle = getDecorFireStyle(decor?.type);
                     lights.push({
                         x: (x - cameraX) * cameraZoom,
                         y: (y - 12 - cameraY) * cameraZoom,
                         radius: 120 * pulse,
-                        strength: 0.34 * pulse
+                        strength: decorStyle.lightStrength * pulse
                     });
                 });
             }
@@ -9159,6 +9198,26 @@
                                 // Check if this is a ground collision (player falling onto platform)
                                 if (dying.vy > 0 && hitboxY + PLAYER_HITBOX_HEIGHT <= plat.y + dying.vy * dt + 1) {
                                     // Landed on platform
+                                    dying.y = plat.y - hitboxHalfHeight;
+                                    dying.vy = 0;
+                                    dying.landed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!dying.landed && dying.vy > 0) {
+                            const previousBottom = hitboxY + PLAYER_HITBOX_HEIGHT - dying.vy * dt;
+                            const currentLeft = hitboxX;
+                            const currentRight = hitboxX + PLAYER_HITBOX_WIDTH;
+
+                            for (const plat of PLATFORMS) {
+                                const horizontalOverlap = currentLeft < plat.x + plat.w && currentRight > plat.x;
+                                if (!horizontalOverlap) {
+                                    continue;
+                                }
+
+                                if (previousBottom <= plat.y && hitboxY + PLAYER_HITBOX_HEIGHT >= plat.y) {
                                     dying.y = plat.y - hitboxHalfHeight;
                                     dying.vy = 0;
                                     dying.landed = true;
