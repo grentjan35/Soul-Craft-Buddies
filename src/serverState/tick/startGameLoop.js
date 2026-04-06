@@ -22,6 +22,7 @@ const {
   updateEnemies,
 } = require('../enemies/runtime');
 const { updateFairies } = require('../state/fairies/fairySystem');
+const { pickSpawnPoint } = require('../sockets/spawn/pickSpawnPoint');
 
 /**
  * Starts the physics + broadcast loop.
@@ -76,7 +77,7 @@ function updateDeathsAndRespawns(input) {
     input.state.deadBodies.set(`${sid}_${Math.floor(nowSec)}`, deathData);
     input.io.emit('player_dying', deathData);
 
-    const spawn = input.state.spawnPoints?.[0] ?? { x: 100, y: 500 };
+    const spawn = pickSpawnPoint({ state: input.state });
     p.x = spawn.x;
     p.y = spawn.y;
     p.vx = 0;

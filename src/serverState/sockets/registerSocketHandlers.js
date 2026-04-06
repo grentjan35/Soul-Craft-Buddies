@@ -249,20 +249,22 @@ function handleDisconnect(input) {
 }
 
 /**
- * Respawns a player to spawnPoints[0] with reset health.
+ * Respawns a player onto a random valid platform with reset health.
  * @param {{socketId: string, state: any}} input
  */
 function respawnPlayer(input) {
   const player = input.state.players.get(input.socketId);
   if (!player) return;
 
-  const spawn = input.state.spawnPoints?.[0] ?? { x: 100, y: 500 };
+  const spawn = pickSpawnPoint({ state: input.state });
 
   player.x = spawn.x;
   player.y = spawn.y;
   player.vx = 0;
   player.vy = 0;
   player.knockback_vx = 0;
+  player.on_ground = false;
+  player.jumps_remaining = 2;
   player.health = PLAYER_MAX_HEALTH;
   player.is_dying = false;
   player.death_time = 0;
@@ -316,9 +318,10 @@ function handleLoadMap(input) {
   resetEnemiesForState({ state: input.state });
 
   const player = input.state.players.get(input.socket.id);
-  if (player && input.state.spawnPoints.length > 0) {
-    player.x = input.state.spawnPoints[0].x;
-    player.y = input.state.spawnPoints[0].y;
+  if (player) {
+    const spawn = pickSpawnPoint({ state: input.state });
+    player.x = spawn.x;
+    player.y = spawn.y;
     player.vx = 0;
     player.vy = 0;
     player.knockback_vx = 0;
