@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <link rel="icon" href="data:,">
     <title>SoulCraft - Combat RPG</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
     <style>
         :root {
             --mobile-controls-height: 184px;
@@ -4694,6 +4694,10 @@
                     setFootnote('Character cards failed to load. Refresh and try again.');
                     loadingStage = 'Card archive stalled';
                     updateLoadingScreen();
+                    selectionUiReady = false;
+                    syncSoulChooserVisibility();
+                    playBtn.disabled = true;
+                    await revealStartScreen();
                 }
             }
 

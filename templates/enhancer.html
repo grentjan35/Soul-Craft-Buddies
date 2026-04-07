@@ -147,7 +147,6 @@
         </div>
     </div>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         const TILE_SIZE = 32;
         const BACKGROUND_REFERENCE_WIDTH = 3200;
@@ -171,7 +170,10 @@
         const areaSelect = document.getElementById('areaSelect');
         const splitColumnsInput = document.getElementById('splitColumns');
         const splitRowsInput = document.getElementById('splitRows');
+        const JS_ZIP_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
         let assetSessionTokenPromise = null;
+        let jsZipLoaderPromise = null;
+        let renderedMapCanvas = null;
 
         async function getAssetSessionToken(forceRefresh = false) {
             if (!assetSessionTokenPromise || forceRefresh) {
@@ -197,6 +199,37 @@
             }
 
             return assetSessionTokenPromise;
+        }
+
+        async function ensureJsZipLoaded() {
+            if (typeof window.JSZip === 'function') {
+                return window.JSZip;
+            }
+
+            if (!jsZipLoaderPromise) {
+                jsZipLoaderPromise = new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = JS_ZIP_CDN_URL;
+                    script.async = true;
+                    script.onload = () => {
+                        if (typeof window.JSZip === 'function') {
+                            resolve(window.JSZip);
+                            return;
+                        }
+
+                        reject(new Error('JSZip loaded without exposing a usable API.'));
+                    };
+                    script.onerror = () => {
+                        reject(new Error('Unable to load JSZip. The page can still render, but zip downloads are unavailable.'));
+                    };
+                    document.head.appendChild(script);
+                }).catch((error) => {
+                    jsZipLoaderPromise = null;
+                    throw error;
+                });
+            }
+
+            return jsZipLoaderPromise;
         }
 
         async function fetchWithAssetSession(url, options = {}) {
@@ -252,6 +285,7 @@
                 }
                 
                 currentMap = mapData;
+                renderedMapCanvas = null;
                 syncGridToBackgroundAreas();
                 document.getElementById('mapInfo').textContent =
                     `Map: ${mapData.width}x${mapData.height} tiles (${mapData.width * TILE_SIZE}x${mapData.height * TILE_SIZE}px)`;
@@ -274,6 +308,7 @@
                 const bytes = await response.arrayBuffer();
                 const blob = new Blob([bytes], { type: 'image/png' });
                 tilesetImage = await createImageBitmap(blob);
+                renderedMapCanvas = null;
                 return tilesetImage;
             } catch (error) {
                 console.error('Error loading tileset:', error);
@@ -285,6 +320,10 @@
         function renderMapWithoutGrid() {
             if (!currentMap || !tilesetImage) {
                 return null;
+            }
+
+            if (renderedMapCanvas) {
+                return renderedMapCanvas;
             }
             
             const tempCanvas = document.createElement('canvas');
@@ -317,7 +356,8 @@
                 }
             }
             
-            return tempCanvas;
+            renderedMapCanvas = tempCanvas;
+            return renderedMapCanvas;
         }
 
         function getAreaDimensions(col, row) {
@@ -502,6 +542,14 @@
                 return;
             }
 
+            let JSZip;
+            try {
+                JSZip = await ensureJsZipLoaded();
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+
             const zip = new JSZip();
             
             for (const area of areaOptions) {
@@ -544,6 +592,14 @@
 
             const splitWidth = selectedArea.width / splitColumns;
             const splitHeight = selectedArea.height / splitRows;
+            let JSZip;
+            try {
+                JSZip = await ensureJsZipLoaded();
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
+
             const zip = new JSZip();
 
             for (let row = 0; row < splitRows; row++) {
