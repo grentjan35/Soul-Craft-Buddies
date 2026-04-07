@@ -874,6 +874,7 @@
             background: transparent;
             box-shadow: none;
             letter-spacing: 0;
+            margin-inline: auto;
             margin-bottom: max(2px, env(safe-area-inset-bottom, 0px));
         }
 
@@ -1288,6 +1289,12 @@
         .loading-container {
             text-align: center;
             /* Removed scaling - normal size loading UI */
+        }
+
+        .loading-container.is-boot-hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
         }
         
         .loading-title {
@@ -2362,6 +2369,21 @@
             return new Blob([bytes], { type: mimeType });
         }
 
+        async function withTimeout(promise, timeoutMs, label = 'operation') {
+            let timeoutId = null;
+            const timeoutPromise = new Promise((_, reject) => {
+                timeoutId = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+            });
+
+            try {
+                return await Promise.race([promise, timeoutPromise]);
+            } finally {
+                if (timeoutId !== null) {
+                    clearTimeout(timeoutId);
+                }
+            }
+        }
+
         async function fetchProtectedText(url) {
             const response = await fetchWithAssetSession(url);
             if (!response.ok) {
@@ -2957,6 +2979,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const startScreen = document.getElementById('start-screen');
             const loadingScreen = document.getElementById('loading-screen');
+            const loadingContainer = loadingScreen?.querySelector('.loading-container');
             const nameInput = document.getElementById('player-name-input');
             const playBtn = document.getElementById('play-btn');
             const ui = document.getElementById('ui-wrapper');
@@ -2982,9 +3005,18 @@
             let dragging = false;
             let pointerDownCardIndex = -1;
             let selectionUiReady = false;
+            let startScreenReady = false;
             let characterCards = [];
             const hoveredMenuElements = new WeakSet();
             menuAudio = createMenuAudioSystem();
+
+            startScreen.style.opacity = '0';
+            startScreen.style.visibility = 'hidden';
+            loadingStage = 'Forging cards...';
+            updateLoadingScreen();
+            loadingScreen.style.display = 'flex';
+            loadingScreen.style.opacity = '1';
+            loadingContainer?.classList.add('is-boot-hidden');
 
             window.addEventListener('mousemove', (e) => {
                 targetX = (e.clientX / window.innerWidth - 0.5);
@@ -3302,7 +3334,11 @@
                     try {
                         const nextPlayer = await ensurePlayer();
                         await syncVideoToMode();
-                        nextPlayer.setVolume(Math.round(MAX_VOLUME * getMusicSetting()));
+                        targetVolume = MAX_VOLUME * getMusicSetting();
+                        if (currentMode === 'menu') {
+                            currentVolume = targetVolume;
+                        }
+                        nextPlayer.setVolume(Math.round(currentVolume));
                         nextPlayer.playVideo();
                         shouldBePlaying = true;
                     } catch (_error) {
@@ -3315,6 +3351,15 @@
                     shouldBePlaying = true;
                     targetVolume = MAX_VOLUME * getMusicSetting();
                     if (player) {
+                        if (currentMode === 'menu') {
+                            currentVolume = targetVolume;
+                            try {
+                                player.setVolume(Math.round(currentVolume));
+                                player.playVideo();
+                            } catch (_error) {
+                                // Ignore immediate menu-mode sync failures.
+                            }
+                        }
                         syncVideoToMode().catch(() => {});
                     }
                 }
@@ -4599,6 +4644,21 @@
                 });
             }
 
+            async function revealStartScreen() {
+                if (startScreenReady) {
+                    return;
+                }
+
+                startScreenReady = true;
+                startScreen.style.visibility = 'visible';
+                startScreen.style.transition = 'opacity 0.35s ease';
+                loadingScreen.style.transition = 'opacity 0.35s ease';
+                startScreen.style.opacity = '1';
+                loadingScreen.style.opacity = '0';
+                await new Promise((resolve) => setTimeout(resolve, 360));
+                loadingScreen.style.display = 'none';
+            }
+
             function syncSoulChooserVisibility() {
                 const shouldShow = selectionUiReady;
                 characterShell.classList.toggle('is-visible', shouldShow);
@@ -4706,26 +4766,53 @@
             async function loadCharacterSelections() {
                 try {
                     updateSelectionCopy('Forging cards...');
-                    characterFootnote.textContent = 'The archive is opening.';
+                    setFootnote('The archive is opening.');
+                    loadingStage = 'Forging cards...';
+                    updateLoadingScreen();
 
-                    availableCharacterSelections = await getCharacterSelectionManifest();
+                    availableCharacterSelections = await withTimeout(
+                        getCharacterSelectionManifest(),
+                        8000,
+                        'character manifest'
+                    );
                     if (!availableCharacterSelections.length) {
                         throw new Error('No character cards were found.');
                     }
 
                     const cardsWithBitmaps = await Promise.all(
                         availableCharacterSelections.map(async (entry) => {
-                            const cardToken = await getCharacterCardToken(entry.character);
-                            const cardBlob = await fetchProtectedBlob(
-                                `/api/character_card/${cardToken}/${entry.character}`,
-                                'image/png'
-                            );
-                            const cardBitmap = await createImageBitmap(cardBlob);
+                            let lastError = null;
+                            for (let attempt = 0; attempt < 2; attempt += 1) {
+                                try {
+                                    const cardToken = await withTimeout(
+                                        getCharacterCardToken(entry.character),
+                                        6000,
+                                        `${entry.character} card token`
+                                    );
+                                    const cardBlob = await withTimeout(
+                                        fetchProtectedBlob(
+                                            `/api/character_card/${cardToken}/${entry.character}`,
+                                            'image/png'
+                                        ),
+                                        8000,
+                                        `${entry.character} card blob`
+                                    );
+                                    const cardBitmap = await withTimeout(
+                                        createImageBitmap(cardBlob),
+                                        4000,
+                                        `${entry.character} card bitmap`
+                                    );
 
-                            return {
-                                ...entry,
-                                cardBitmap
-                            };
+                                    return {
+                                        ...entry,
+                                        cardBitmap
+                                    };
+                                } catch (error) {
+                                    lastError = error;
+                                }
+                            }
+
+                            throw lastError || new Error(`Failed to load card for ${entry.character}`);
                         })
                     );
 
@@ -4736,10 +4823,13 @@
                     setFootnote('Drag a card, tap it, then press play.');
                     syncSoulChooserVisibility();
                     playBtn.disabled = false;
+                    await revealStartScreen();
                 } catch (error) {
                     console.error('Failed to load character selection UI:', error);
                     updateSelectionCopy('Selection offline', true);
                     setFootnote('Character cards failed to load. Refresh and try again.');
+                    loadingStage = 'Card archive stalled';
+                    updateLoadingScreen();
                 }
             }
 
@@ -4881,12 +4971,15 @@
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
                 combatMusic.setMode('game');
+                loadingContainer?.classList.remove('is-boot-hidden');
                 
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
                 setTimeout(() => {
                     stopMenuRendering();
                     startScreen.style.display = 'none';
+                    loadingScreen.style.transition = '';
+                    loadingScreen.style.opacity = '1';
                     loadingScreen.style.display = 'flex'; // Show loading screen
                     
                     // Start the smooth loading animation loop
@@ -6658,6 +6751,7 @@
         const enemyState = {};
         const authoritativeEnemyState = {};
         const soulOrbState = {};
+        const collectedSoulAnimations = [];
         const enemySnapshots = {};
         const previousEnemyAudioState = {};
         const enemyAmbientAudioState = {};
@@ -7087,6 +7181,34 @@
 
             for (const orbId in soulOrbState) {
                 if (!serverSoulOrbs[orbId]) {
+                    const removedOrb = soulOrbState[orbId];
+                    if (removedOrb) {
+                        let targetSid = null;
+                        let targetDistance = Number.POSITIVE_INFINITY;
+                        for (const sid in playerState) {
+                            const player = playerState[sid];
+                            if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) {
+                                continue;
+                            }
+                            const distance = Math.hypot(player.x - removedOrb.x, player.y - removedOrb.y);
+                            if (distance < targetDistance) {
+                                targetDistance = distance;
+                                targetSid = sid;
+                            }
+                        }
+                        if (targetSid && targetDistance <= 180) {
+                            collectedSoulAnimations.push({
+                                x: Number.isFinite(removedOrb.renderX) ? removedOrb.renderX : removedOrb.x,
+                                y: Number.isFinite(removedOrb.renderY) ? removedOrb.renderY : removedOrb.y,
+                                startX: Number.isFinite(removedOrb.renderX) ? removedOrb.renderX : removedOrb.x,
+                                startY: Number.isFinite(removedOrb.renderY) ? removedOrb.renderY : removedOrb.y,
+                                targetSid,
+                                startTime: performance.now(),
+                                size: typeof removedOrb.size === 'number' ? removedOrb.size : 1,
+                                phase: typeof removedOrb.phase === 'number' ? removedOrb.phase : 0,
+                            });
+                        }
+                    }
                     delete soulOrbState[orbId];
                 }
             }
@@ -8008,7 +8130,7 @@
 
         function drawSoulOrbs(nowMs = Date.now(), visibleBounds = null) {
             const orbIds = Object.keys(soulOrbState);
-            if (!orbIds.length) {
+            if (!orbIds.length && !collectedSoulAnimations.length) {
                 return;
             }
 
@@ -8064,6 +8186,59 @@
                     Math.round(drawY - 1.5),
                     3,
                     3
+                );
+            }
+
+            for (let index = collectedSoulAnimations.length - 1; index >= 0; index -= 1) {
+                const animation = collectedSoulAnimations[index];
+                const targetPlayer = playerState[animation.targetSid];
+                if (!targetPlayer) {
+                    collectedSoulAnimations.splice(index, 1);
+                    continue;
+                }
+
+                const progress = Math.max(0, Math.min(1, (performance.now() - animation.startTime) / 240));
+                if (progress >= 1) {
+                    collectedSoulAnimations.splice(index, 1);
+                    continue;
+                }
+
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const targetX = targetPlayer.x;
+                const targetY = targetPlayer.y - 18;
+                const drawX = animation.startX + (targetX - animation.startX) * eased;
+                const drawY = animation.startY + (targetY - animation.startY) * eased;
+                const baseSize = 9 * (animation.size || 1) * (1 - eased * 0.82);
+                const phase = (animation.phase ?? 0) + nowMs * 0.004;
+                const alpha = 1 - eased * 0.92;
+
+                drawFireballGlow(drawX, drawY, baseSize * 4.8, 'rgba(244, 248, 255, __A__)', 'rgba(102, 76, 255, __A__)', alpha * 0.95);
+                drawFireballGlow(drawX, drawY, baseSize * 2.7, 'rgba(240, 250, 255, __A__)', 'rgba(86, 182, 255, __A__)', alpha);
+
+                for (let i = 0; i < 3; i += 1) {
+                    const angle = phase * 1.35 + i * (Math.PI * 2 / 3);
+                    const radius = baseSize * (0.42 + (1 - eased) * 0.2);
+                    const px = drawX + Math.cos(angle) * radius;
+                    const py = drawY + Math.sin(angle) * radius * 0.8;
+                    const size = Math.max(1, Math.round((2 + (i % 2)) * (1 - eased * 0.7)));
+                    ctx.globalAlpha = alpha * 0.82;
+                    ctx.fillStyle = i === 1 ? '#a8d5ff' : '#b59bff';
+                    ctx.fillRect(
+                        Math.round(px - size / 2),
+                        Math.round(py - size / 2),
+                        size,
+                        size
+                    );
+                }
+
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = '#edf7ff';
+                const coreSize = Math.max(1, Math.round(3 * (1 - eased * 0.75)));
+                ctx.fillRect(
+                    Math.round(drawX - coreSize / 2),
+                    Math.round(drawY - coreSize / 2),
+                    coreSize,
+                    coreSize
                 );
             }
 
