@@ -13,6 +13,17 @@ function secondsFromMs(ms) {
 
 const MIN_ENEMY_RESPAWN_DELAY_SECONDS = 60;
 const ENEMY_DEATH_HOLD_SECONDS = 10;
+const ENEMY_PLATFORM_INSET = 10;
+const ENEMY_SPAWN_EDGE_PADDING_X = 32;
+const ENEMY_SPAWN_EDGE_PADDING_Y = 40;
+const BAT_MIN_PLATFORM_WIDTH = 260;
+const BAT_REQUIRED_HEADROOM = 220;
+const SLIME_WALL_STICK_SECONDS = 0.6;
+const SLIME_ATTACH_OFFSET_Y = -4;
+const SLIME_SPLAT_RADIUS = 30;
+const GARGOYLE_PERCH_OPACITY = 0;
+const GARGOYLE_ACTIVE_OPACITY = 1;
+const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
 
 function isFlyingEnemy(definition) {
   return definition?.behavior?.movementMode === 'flying';
@@ -20,6 +31,33 @@ function isFlyingEnemy(definition) {
 
 function usesProjectileAttack(definition) {
   return definition?.behavior?.attackMode === 'projectile';
+}
+
+function isSlimeEnemy(input) {
+  if (!input) {
+    return false;
+  }
+  if (typeof input === 'string') {
+    return input === 'slime';
+  }
+  return input.type === 'slime' || input.id === 'slime';
+}
+
+function isGargoyleEnemy(input) {
+  if (!input) {
+    return false;
+  }
+  if (typeof input === 'string') {
+    return input === 'gargoyle';
+  }
+  return input.type === 'gargoyle' || input.id === 'gargoyle';
+}
+
+function usesProjectileAttackForEnemy(enemy, definition) {
+  if (isGargoyleEnemy(definition)) {
+    return enemy?.gargoyle_mode !== 'swoop';
+  }
+  return usesProjectileAttack(definition);
 }
 
 function getFacingFromSign(sign, fallbackDirection = 'right') {
@@ -1223,6 +1261,7 @@ function setBrainState(enemy, nextState, nowSec) {
 function buildEnemyInstance(spawn, definition) {
   const nowSec = Date.now() / 1000;
   const startsFlying = isFlyingEnemy(definition);
+  const startsAsPerchedGargoyle = isGargoyleEnemy(definition) && Math.random() < 0.55;
   return {
     id: spawn.id,
     spawn_id: spawn.id,
@@ -1273,12 +1312,307 @@ function buildEnemyInstance(spawn, definition) {
     attack_altitude_bias: -definition.behavior.hoverHeight,
     next_altitude_swap_at: nowSec + 0.8 + Math.random() * 0.9,
     movement_mode: startsFlying ? 'flying' : 'ground',
+    attached_sid: null,
+    attached_offset_x: 0,
+    attached_offset_y: SLIME_ATTACH_OFFSET_Y,
+    surface_stick_until: 0,
+    gargoyle_mode: startsAsPerchedGargoyle ? 'perch' : (isGargoyleEnemy(definition) ? 'swoop' : null),
+    gargoyle_mode_until: nowSec + 2.4 + Math.random() * 2.6,
+    gargoyle_perch_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
+    render_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
+    attack_repeat_next_at: 0,
   };
+}
+
+function emitSlimeSplatter(io, x, y, targetSid = null, radius = SLIME_SPLAT_RADIUS) {
+  if (!io || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return;
+  }
+
+  io.emit('slime_splatter', {
+    x,
+    y,
+    radius,
+    target_sid: typeof targetSid === 'string' ? targetSid : null,
+  });
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function shuffleArray(items) {
+  const copy = items.slice();
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const current = copy[index];
+    copy[index] = copy[swapIndex];
+    copy[swapIndex] = current;
+  }
+  return copy;
+}
+
+function buildCandidatePoints(min, max, fallback) {
+  if (!(max > min)) {
+    return [fallback];
+  }
+
+  const values = [];
+  const span = max - min;
+  const steps = 7;
+  for (let index = 0; index < steps; index += 1) {
+    const ratio = steps === 1 ? 0.5 : index / (steps - 1);
+    values.push(min + span * ratio);
+  }
+
+  for (let index = 0; index < 5; index += 1) {
+    values.push(min + Math.random() * span);
+  }
+
+  return shuffleArray(values);
+}
+
+function getEnemyCenterFromHitboxPosition(definition, hitboxX, hitboxY) {
+  const shape = getEnemyShape(definition);
+  return {
+    x: hitboxX - shape.localX,
+    y: hitboxY - shape.localY,
+  };
+}
+
+function getMapTileArea(state) {
+  const width = Math.max(0, (state.mapBounds?.max_x ?? 0) - (state.mapBounds?.min_x ?? 0));
+  const height = Math.max(0, (state.mapBounds?.max_y ?? 0) - (state.mapBounds?.min_y ?? 0));
+  return (width * height) / (32 * 32);
+}
+
+function canFitEnemyWithinBounds(state, definition, position) {
+  const hitbox = getEnemyHitboxForPosition(definition, position.x, position.y);
+  if (!hitbox || !state.mapBounds) {
+    return false;
+  }
+
+  return (
+    hitbox.x >= state.mapBounds.min_x + ENEMY_SPAWN_EDGE_PADDING_X &&
+    hitbox.x + hitbox.width <= state.mapBounds.max_x - ENEMY_SPAWN_EDGE_PADDING_X &&
+    hitbox.y >= state.mapBounds.min_y + ENEMY_SPAWN_EDGE_PADDING_Y &&
+    hitbox.y + hitbox.height <= state.mapBounds.max_y
+  );
+}
+
+function overlapsOtherEnemySpawn(definition, position, occupiedSpawns) {
+  const hitbox = getEnemyHitboxForPosition(definition, position.x, position.y);
+  if (!hitbox) {
+    return true;
+  }
+
+  return occupiedSpawns.some((spawn) => {
+    const otherHitbox = getEnemyHitboxForPosition(spawn.definition, spawn.x, spawn.y);
+    if (!otherHitbox) {
+      return false;
+    }
+
+    const paddingX = 24;
+    const paddingY = 20;
+    return (
+      hitbox.x < otherHitbox.x + otherHitbox.width + paddingX &&
+      hitbox.x + hitbox.width + paddingX > otherHitbox.x &&
+      hitbox.y < otherHitbox.y + otherHitbox.height + paddingY &&
+      hitbox.y + hitbox.height + paddingY > otherHitbox.y
+    );
+  });
+}
+
+function collidesWithPlatforms(state, definition, position) {
+  const hitbox = getEnemyHitboxForPosition(definition, position.x, position.y);
+  if (!hitbox) {
+    return true;
+  }
+
+  return state.platforms.some((platform) => (
+    hitbox.x < platform.x + platform.w &&
+    hitbox.x + hitbox.width > platform.x &&
+    hitbox.y < platform.y + platform.h &&
+    hitbox.y + hitbox.height > platform.y
+  ));
+}
+
+function hasOpenAirAbove(state, hitbox, requiredHeight) {
+  const airBox = {
+    x: hitbox.x,
+    y: hitbox.y - requiredHeight,
+    width: hitbox.width,
+    height: requiredHeight,
+  };
+
+  if (airBox.y < (state.mapBounds?.min_y ?? 0) + ENEMY_SPAWN_EDGE_PADDING_Y) {
+    return false;
+  }
+
+  return !state.platforms.some((platform) => (
+    airBox.x < platform.x + platform.w &&
+    airBox.x + airBox.width > platform.x &&
+    airBox.y < platform.y + platform.h &&
+    airBox.y + airBox.height > platform.y
+  ));
+}
+
+function isEnemySpawnPlacementValid(state, definition, position, occupiedSpawns, options = {}) {
+  if (!canFitEnemyWithinBounds(state, definition, position)) {
+    return false;
+  }
+
+  if (collidesWithPlatforms(state, definition, position)) {
+    return false;
+  }
+
+  if (overlapsOtherEnemySpawn(definition, position, occupiedSpawns)) {
+    return false;
+  }
+
+  const hitbox = getEnemyHitboxForPosition(definition, position.x, position.y);
+  if (!hitbox) {
+    return false;
+  }
+
+  if (options.requiresSupport) {
+    const supported = state.platforms.some((platform) => (
+      hitbox.x < platform.x + platform.w &&
+      hitbox.x + hitbox.width > platform.x &&
+      Math.abs(hitbox.y + hitbox.height - platform.y) <= 2
+    ));
+
+    if (!supported) {
+      return false;
+    }
+  }
+
+  if (options.requiredHeadroom && !hasOpenAirAbove(state, hitbox, options.requiredHeadroom)) {
+    return false;
+  }
+
+  return true;
+}
+
+function getEnemyTargetCount(state, enemyType) {
+  const tileArea = getMapTileArea(state);
+  const platformCount = Array.isArray(state.platforms) ? state.platforms.length : 0;
+  const widePlatforms = Array.isArray(state.platforms)
+    ? state.platforms.filter((platform) => platform.w >= BAT_MIN_PLATFORM_WIDTH).length
+    : 0;
+
+  if (enemyType === 'bat') {
+    return clamp(Math.round(tileArea / 260) + Math.floor(widePlatforms / 10), 1, 4);
+  }
+
+  if (enemyType === 'spider') {
+    return clamp(Math.round(tileArea / 180) + Math.floor(platformCount / 16), 2, 7);
+  }
+
+  if (enemyType === 'slime') {
+    return clamp(Math.round(tileArea / 240) + Math.floor(platformCount / 18), 1, 5);
+  }
+
+  if (enemyType === 'gargoyle') {
+    return clamp(Math.round(tileArea / 420) + Math.floor(platformCount / 28), 1, 3);
+  }
+
+  return clamp(Math.round(tileArea / 150), 1, 8);
+}
+
+function pickGroundEnemySpawn(state, definition, occupiedSpawns) {
+  const shape = getEnemyShape(definition);
+  const platforms = shuffleArray(Array.isArray(state.platforms) ? state.platforms : []).filter((platform) => (
+    platform.w >= shape.width + ENEMY_PLATFORM_INSET * 2
+  ));
+
+  for (const platform of platforms) {
+    const minHitboxX = platform.x + ENEMY_PLATFORM_INSET;
+    const maxHitboxX = platform.x + platform.w - shape.width - ENEMY_PLATFORM_INSET;
+    const candidateHitboxXs = buildCandidatePoints(
+      minHitboxX,
+      maxHitboxX,
+      platform.x + (platform.w - shape.width) / 2
+    );
+
+    for (const hitboxX of candidateHitboxXs) {
+      const position = getEnemyCenterFromHitboxPosition(definition, hitboxX, platform.y - shape.height);
+      if (isEnemySpawnPlacementValid(state, definition, position, occupiedSpawns, { requiresSupport: true })) {
+        return position;
+      }
+    }
+  }
+
+  return null;
+}
+
+function pickFlyingEnemySpawn(state, definition, occupiedSpawns) {
+  const shape = getEnemyShape(definition);
+  const platforms = shuffleArray(Array.isArray(state.platforms) ? state.platforms : []).filter((platform) => (
+    platform.w >= Math.max(BAT_MIN_PLATFORM_WIDTH, shape.width + ENEMY_PLATFORM_INSET * 2)
+  ));
+
+  for (const platform of platforms) {
+    const minHitboxX = platform.x + ENEMY_PLATFORM_INSET;
+    const maxHitboxX = platform.x + platform.w - shape.width - ENEMY_PLATFORM_INSET;
+    const candidateHitboxXs = buildCandidatePoints(minHitboxX, maxHitboxX, platform.x + (platform.w - shape.width) / 2);
+    const hoverOffset = Math.max(BAT_REQUIRED_HEADROOM, Math.round(definition.behavior.hoverHeight * 0.9));
+    const hitboxY = platform.y - hoverOffset - shape.height;
+
+    for (const hitboxX of candidateHitboxXs) {
+      const position = getEnemyCenterFromHitboxPosition(definition, hitboxX, hitboxY);
+      if (isEnemySpawnPlacementValid(state, definition, position, occupiedSpawns, { requiredHeadroom: BAT_REQUIRED_HEADROOM })) {
+        return position;
+      }
+    }
+  }
+
+  return null;
+}
+
+function pickEnemySpawnPosition(state, definition, occupiedSpawns) {
+  if (isFlyingEnemy(definition)) {
+    return pickFlyingEnemySpawn(state, definition, occupiedSpawns);
+  }
+  return pickGroundEnemySpawn(state, definition, occupiedSpawns);
+}
+
+function createProceduralEnemySpawns(state) {
+  const enemyTypes = Object.keys(state.enemyDefinitions ?? {});
+  const nextSpawns = [];
+  const occupiedSpawns = [];
+
+  for (const enemyType of enemyTypes) {
+    const definition = getEnemyDefinition(state, enemyType);
+    if (!definition) {
+      continue;
+    }
+
+    const targetCount = getEnemyTargetCount(state, enemyType);
+    for (let index = 0; index < targetCount; index += 1) {
+      const position = pickEnemySpawnPosition(state, definition, occupiedSpawns);
+      if (!position) {
+        break;
+      }
+
+      const spawn = {
+        id: `${enemyType}_${index}_${Math.random().toString(16).slice(2, 8)}`,
+        type: enemyType,
+        x: position.x,
+        y: position.y,
+      };
+      nextSpawns.push(spawn);
+      occupiedSpawns.push({ ...position, definition });
+    }
+  }
+
+  return nextSpawns;
 }
 
 function resetEnemiesForState(input) {
   const nextEnemies = new Map();
-  const enemySpawns = Array.isArray(input.state.enemySpawns) ? input.state.enemySpawns : [];
+  const enemySpawns = createProceduralEnemySpawns(input.state);
+  input.state.enemySpawns = enemySpawns;
 
   for (const spawn of enemySpawns) {
     const definition = getEnemyDefinition(input.state, spawn.type);
@@ -1367,7 +1701,7 @@ function beginPrepare(enemy, targetPlayer, nowSec, definition) {
 }
 
 function beginLunge(enemy, targetPlayer, nowSec, definition) {
-  if (usesProjectileAttack(definition)) {
+  if (usesProjectileAttackForEnemy(enemy, definition)) {
     setBrainState(enemy, 'lunge', nowSec);
     enemy.action = 'attack';
     enemy.vx = 0;
@@ -1397,8 +1731,80 @@ function beginLunge(enemy, targetPlayer, nowSec, definition) {
   enemy.vy = -definition.behavior.lungeLift + Math.min(0, dirY) * 180;
   enemy.on_ground = false;
   enemy.lunge_until = nowSec + secondsFromMs(definition.behavior.lungeDurationMs);
-  enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
+  enemy.attack_cooldown_until = nowSec + secondsFromMs(
+    isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'swoop'
+      ? definition.behavior.attackCooldownMs * 2.8
+      : definition.behavior.attackCooldownMs
+  );
   enemy.attack_hit_victims = [];
+}
+
+function randomizeGargoyleMode(enemy, nowSec, options = {}) {
+  const preferredMode = options.preferredMode === 'perch' || options.preferredMode === 'swoop'
+    ? options.preferredMode
+    : null;
+  const nextMode = preferredMode || (Math.random() < 0.92 ? 'perch' : 'swoop');
+  enemy.gargoyle_mode = nextMode;
+  enemy.gargoyle_perch_opacity = nextMode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.gargoyle_mode_until = nowSec + (
+    nextMode === 'perch'
+      ? 6.2 + Math.random() * 4.6
+      : 2 + Math.random() * 1.6
+  );
+  if (nextMode === 'perch') {
+    enemy.preferred_hover_offset_x = 0;
+    enemy.attack_altitude_bias = 0;
+  } else {
+    enemy.preferred_hover_offset_x = (Math.random() < 0.5 ? -1 : 1) * (88 + Math.random() * 90);
+    enemy.attack_altitude_bias = -Math.max(70, Math.min(140, Math.abs(enemy.attack_altitude_bias || 0) || 92));
+  }
+}
+
+function updateGargoyleMode(state, enemy, definition, targetPlayer, nowSec) {
+  if (!isGargoyleEnemy(definition)) {
+    return;
+  }
+
+  if (!enemy.gargoyle_mode) {
+    randomizeGargoyleMode(enemy, nowSec);
+  }
+
+  const distanceToTarget = targetPlayer
+    ? Math.hypot(targetPlayer.x - enemy.x, targetPlayer.y - enemy.y)
+    : Number.POSITIVE_INFINITY;
+
+  if (targetPlayer) {
+    if (
+      enemy.gargoyle_mode === 'perch' &&
+      distanceToTarget > definition.behavior.attackRange * 1.55 &&
+      nowSec >= enemy.gargoyle_mode_until - 0.35
+    ) {
+      randomizeGargoyleMode(enemy, nowSec, { preferredMode: 'swoop' });
+    } else if (
+      enemy.gargoyle_mode === 'swoop' &&
+      distanceToTarget <= definition.behavior.attackRange * 0.8 &&
+      Math.abs(targetPlayer.y - enemy.y) <= definition.behavior.hoverVariance + 80 &&
+      nowSec >= enemy.gargoyle_mode_until
+    ) {
+      randomizeGargoyleMode(enemy, nowSec, { preferredMode: 'perch' });
+    } else if (nowSec >= enemy.gargoyle_mode_until) {
+      randomizeGargoyleMode(enemy, nowSec);
+    }
+  } else if (nowSec >= enemy.gargoyle_mode_until) {
+    randomizeGargoyleMode(enemy, nowSec, { preferredMode: Math.random() < 0.94 ? 'perch' : 'swoop' });
+  }
+
+  const ambushDistance = targetPlayer
+    ? Math.hypot(targetPlayer.x - enemy.x, targetPlayer.y - enemy.y)
+    : Number.POSITIVE_INFINITY;
+  const isActivelyAttacking =
+    enemy.brain_state === 'prepare' ||
+    enemy.brain_state === 'lunge' ||
+    enemy.brain_state === 'recover' ||
+    ambushDistance <= GARGOYLE_AMBUSH_TRIGGER_RADIUS;
+  enemy.render_opacity = enemy.gargoyle_mode === 'perch' && !isActivelyAttacking
+    ? GARGOYLE_PERCH_OPACITY
+    : GARGOYLE_ACTIVE_OPACITY;
 }
 
 function beginRecover(enemy, nowSec) {
@@ -1776,10 +2182,12 @@ function damagePlayerFromEnemyHit(input) {
   }
 
   const directionSign = enemy.direction === 'left' ? -1 : 1;
-  player.knockback_vx = directionSign * 720;
-  player.vy = Math.min(player.vy, -420);
-  player.on_ground = false;
-  player.jumps_remaining = 0;
+  if (!input.skipKnockback) {
+    player.knockback_vx = directionSign * 720;
+    player.vy = Math.min(player.vy, -420);
+    player.on_ground = false;
+    player.jumps_remaining = 0;
+  }
   player.health -= definition.stats.contactDamage;
 
   if (player.health <= 0) {
@@ -1803,13 +2211,141 @@ function damagePlayerFromEnemyHit(input) {
     damage: definition.stats.contactDamage,
     health: player.health,
     is_dying: player.is_dying,
-    x: enemy.x,
-    y: enemy.y,
+    x: Number.isFinite(input.impactX) ? input.impactX : enemy.x,
+    y: Number.isFinite(input.impactY) ? input.impactY : enemy.y,
+    effect: input.effect || 'blood',
   });
 }
 
+function latchSlimeToPlayer(state, enemy, player, sid, nowSec, definition, io) {
+  enemy.attached_sid = sid;
+  enemy.attached_offset_x = enemy.direction === 'left' ? -14 : 14;
+  enemy.attached_offset_y = SLIME_ATTACH_OFFSET_Y - Math.min(8, getEnemyShape(definition).height * 0.08);
+  enemy.vx = 0;
+  enemy.vy = 0;
+  enemy.knockback_vx = 0;
+  enemy.jump_launch_vx = 0;
+  enemy.on_ground = false;
+  enemy.action = 'attack';
+  enemy.target_sid = sid;
+  enemy.surface_stick_until = 0;
+  setBrainState(enemy, 'cling', nowSec);
+  enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
+  enemy.x = player.x + enemy.attached_offset_x;
+  enemy.y = player.y + enemy.attached_offset_y;
+  emitSlimeSplatter(io, enemy.x, enemy.y, sid, SLIME_SPLAT_RADIUS);
+}
+
+function detachSlime(enemy, nowSec) {
+  enemy.attached_sid = null;
+  enemy.attached_offset_x = 0;
+  enemy.attached_offset_y = SLIME_ATTACH_OFFSET_Y;
+  enemy.surface_stick_until = 0;
+  enemy.target_sid = null;
+  enemy.vx = 0;
+  enemy.vy = Math.min(enemy.vy, -220);
+  enemy.knockback_vx *= 0.6;
+  enemy.jump_launch_vx = 0;
+  enemy.on_ground = false;
+  enemy.action = 'idle';
+  setBrainState(enemy, 'recover', nowSec);
+  enemy.recover_until = nowSec + 0.36;
+}
+
+function updateAttachedSlime(input) {
+  const { state, enemy, definition, io, nowSec } = input;
+  const targetSid = enemy.attached_sid;
+  if (!targetSid) {
+    return false;
+  }
+
+  const player = state.players.get(targetSid);
+  if (!player || player.is_dying) {
+    detachSlime(enemy, nowSec);
+    return true;
+  }
+
+  enemy.target_sid = targetSid;
+  enemy.direction = player.direction === 'left' ? 'left' : 'right';
+  const directionOffset = enemy.direction === 'left' ? -Math.abs(enemy.attached_offset_x || 14) : Math.abs(enemy.attached_offset_x || 14);
+  enemy.x = player.x + directionOffset;
+  enemy.y = player.y + (enemy.attached_offset_y || SLIME_ATTACH_OFFSET_Y);
+  enemy.vx = 0;
+  enemy.vy = 0;
+  enemy.knockback_vx = 0;
+  enemy.jump_launch_vx = 0;
+  enemy.on_ground = false;
+  enemy.action = 'attack';
+
+  if (nowSec >= enemy.attack_cooldown_until) {
+    damagePlayerFromEnemyHit({
+      state,
+      io,
+      sid: targetSid,
+      player,
+      enemy,
+      definition,
+      nowSec,
+      impactX: enemy.x,
+      impactY: enemy.y,
+      effect: 'slime',
+      skipKnockback: true,
+    });
+    emitSlimeSplatter(io, enemy.x, enemy.y, targetSid, SLIME_SPLAT_RADIUS);
+    enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
+  }
+
+  return true;
+}
+
+function maybeStickSlimeToSurface(state, enemy, definition, nowSec, io) {
+  if (!isSlimeEnemy(definition) || enemy.attached_sid || enemy.brain_state !== 'lunge') {
+    return;
+  }
+
+  const hitbox = getEnemyHitbox(state, enemy);
+  if (!hitbox) {
+    return;
+  }
+
+  const touchingBounds =
+    hitbox.x <= state.mapBounds.min_x + 2 ||
+    hitbox.x + hitbox.width >= state.mapBounds.max_x - 2;
+  const nearbyPlatforms = getNearbyPlatforms({
+    platformGrid: state.platformGrid,
+    x: enemy.x,
+    y: enemy.y,
+  });
+  const touchingWall = nearbyPlatforms.some((platform) => {
+    const verticallyAligned =
+      hitbox.y < platform.y + platform.h &&
+      hitbox.y + hitbox.height > platform.y;
+    if (!verticallyAligned) {
+      return false;
+    }
+
+    const distanceToLeft = Math.abs(hitbox.x + hitbox.width - platform.x);
+    const distanceToRight = Math.abs(platform.x + platform.w - hitbox.x);
+    return distanceToLeft <= 6 || distanceToRight <= 6;
+  });
+  const touchedSurface = enemy.on_ground || touchingBounds || touchingWall;
+  if (!touchedSurface) {
+    return;
+  }
+
+  emitSlimeSplatter(io, enemy.x, enemy.y, null, SLIME_SPLAT_RADIUS);
+  enemy.surface_stick_until = nowSec + SLIME_WALL_STICK_SECONDS;
+  enemy.vx = 0;
+  enemy.vy = 0;
+  enemy.knockback_vx = 0;
+  enemy.jump_launch_vx = 0;
+  enemy.action = 'attack';
+  setBrainState(enemy, 'recover', nowSec);
+  enemy.recover_until = Math.max(enemy.recover_until || 0, enemy.surface_stick_until);
+}
+
 function processEnemyAttackHits(input) {
-  if (usesProjectileAttack(input.definition)) {
+  if (usesProjectileAttackForEnemy(input.enemy, input.definition)) {
     return;
   }
 
@@ -1833,7 +2369,12 @@ function processEnemyAttackHits(input) {
       sid,
       player,
       nowSec: input.nowSec,
+      effect: isSlimeEnemy(input.definition) ? 'slime' : 'blood',
     });
+    if (isSlimeEnemy(input.definition)) {
+      latchSlimeToPlayer(input.state, input.enemy, player, sid, input.nowSec, input.definition, input.io);
+      break;
+    }
   }
 
   input.enemy.attack_hit_victims = Array.from(hitVictims);
@@ -1841,7 +2382,7 @@ function processEnemyAttackHits(input) {
 
 function maybeFireEnemyProjectile(input) {
   const { enemy, definition, targetPlayer, nowSec } = input;
-  if (!usesProjectileAttack(definition) || !targetPlayer || enemy.attack_shot_fired) {
+  if (!usesProjectileAttackForEnemy(enemy, definition) || !targetPlayer || enemy.attack_shot_fired) {
     return;
   }
   if (enemy.brain_state !== 'prepare' && enemy.brain_state !== 'lunge') {
@@ -1942,6 +2483,15 @@ function stageEnemyRespawn(enemy, definition, nowSec) {
   enemy.preferred_hover_y = enemy.spawn_y - definition.behavior.hoverHeight;
   enemy.attack_altitude_bias = -definition.behavior.hoverHeight;
   enemy.next_altitude_swap_at = nowSec + 0.7 + Math.random() * 0.8;
+  enemy.attached_sid = null;
+  enemy.attached_offset_x = 0;
+  enemy.attached_offset_y = SLIME_ATTACH_OFFSET_Y;
+  enemy.surface_stick_until = 0;
+  enemy.gargoyle_mode = isGargoyleEnemy(definition) ? (Math.random() < 0.55 ? 'perch' : 'swoop') : null;
+  enemy.gargoyle_mode_until = nowSec + 2.4 + Math.random() * 2.6;
+  enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.attack_repeat_next_at = 0;
 }
 
 function damageEnemy(input) {
@@ -1956,6 +2506,11 @@ function damageEnemy(input) {
   }
 
   const nowSec = Date.now() / 1000;
+  const wasAttachedSlime = isSlimeEnemy(definition) && enemy.attached_sid;
+  if (wasAttachedSlime) {
+    emitSlimeSplatter(input.io, enemy.x, enemy.y, enemy.attached_sid, SLIME_SPLAT_RADIUS);
+    detachSlime(enemy, nowSec);
+  }
   enemy.target_sid = typeof input.sourceSid === 'string' ? input.sourceSid : enemy.target_sid;
   enemy.aggro_until = nowSec + 6;
   enemy.direction = (input.sourceVx ?? 0) < 0 ? 'left' : 'right';
@@ -1978,6 +2533,28 @@ function damageEnemy(input) {
 }
 
 function respawnEnemy(state, enemy, definition) {
+  const occupiedSpawns = [];
+  for (const otherEnemy of state.enemies.values()) {
+    if (!otherEnemy || otherEnemy.id === enemy.id || !otherEnemy.alive) {
+      continue;
+    }
+    const otherDefinition = getEnemyDefinition(state, otherEnemy.type);
+    if (!otherDefinition) {
+      continue;
+    }
+    occupiedSpawns.push({
+      x: otherEnemy.x,
+      y: otherEnemy.y,
+      definition: otherDefinition,
+    });
+  }
+
+  const nextSpawn = pickEnemySpawnPosition(state, definition, occupiedSpawns);
+  if (nextSpawn) {
+    enemy.spawn_x = nextSpawn.x;
+    enemy.spawn_y = nextSpawn.y;
+  }
+
   enemy.x = enemy.spawn_x;
   enemy.y = enemy.spawn_y;
   enemy.vx = 0;
@@ -2020,6 +2597,15 @@ function respawnEnemy(state, enemy, definition) {
   enemy.preferred_hover_y = enemy.spawn_y - definition.behavior.hoverHeight;
   enemy.attack_altitude_bias = -definition.behavior.hoverHeight;
   enemy.next_altitude_swap_at = enemy.state_started_at + 0.7 + Math.random() * 0.8;
+  enemy.attached_sid = null;
+  enemy.attached_offset_x = 0;
+  enemy.attached_offset_y = SLIME_ATTACH_OFFSET_Y;
+  enemy.surface_stick_until = 0;
+  enemy.gargoyle_mode = isGargoyleEnemy(definition) ? (Math.random() < 0.55 ? 'perch' : 'swoop') : null;
+  enemy.gargoyle_mode_until = enemy.state_started_at + 2.4 + Math.random() * 2.6;
+  enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.attack_repeat_next_at = 0;
 }
 
 function updateDeadEnemy(state, enemy, definition, dt, nowSec) {
@@ -2040,8 +2626,13 @@ function updateDeadEnemy(state, enemy, definition, dt, nowSec) {
 
 function updateAliveEnemy(input) {
   const { state, enemy, definition, dt, nowSec } = input;
+  if (isSlimeEnemy(definition) && updateAttachedSlime(input)) {
+    return;
+  }
+
   const targetPlayer = chooseTargetPlayer(state, enemy, definition, nowSec);
   enemy.target_sid = targetPlayer ? enemy.target_sid : null;
+  updateGargoyleMode(state, enemy, definition, targetPlayer, nowSec);
   const flying = isFlyingEnemy(definition);
 
   let desiredVelocityX = 0;
@@ -2080,12 +2671,32 @@ function updateAliveEnemy(input) {
       desiredVelocityX = 0;
     }
   } else if (enemy.brain_state === 'recover') {
-    enemy.action = 'idle';
+    enemy.action = isSlimeEnemy(definition) && nowSec < enemy.surface_stick_until ? 'attack' : 'idle';
     if (nowSec >= enemy.recover_until) {
+      enemy.surface_stick_until = 0;
       setBrainState(enemy, targetPlayer ? 'chase' : 'idle', nowSec);
     }
   } else if (targetPlayer) {
-    if (flying) {
+    if (isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch') {
+      const ambushDx = targetPlayer.x - enemy.x;
+      const ambushDistance = Math.hypot(ambushDx, targetPlayer.y - enemy.y);
+      desiredVelocityX = 0;
+      desiredVelocityY = 0;
+      enemy.direction = targetPlayer.x < enemy.x ? 'left' : 'right';
+      enemy.attack_altitude_bias = 0;
+      setBrainState(enemy, 'idle', nowSec);
+
+      if (
+        nowSec >= enemy.attack_cooldown_until &&
+        ambushDistance <= GARGOYLE_AMBUSH_TRIGGER_RADIUS &&
+        Math.abs(targetPlayer.y - enemy.y) <= 72 &&
+        hasLineOfSightToPlayer(state, enemy, targetPlayer)
+      ) {
+        beginPrepare(enemy, targetPlayer, nowSec, definition);
+        desiredVelocityX = 0;
+        desiredVelocityY = 0;
+      }
+    } else if (flying) {
       maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
       const attackDx = targetPlayer.x - enemy.x;
       const orbitTarget = getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec);
@@ -2196,6 +2807,11 @@ function updateAliveEnemy(input) {
     enemy.nav_cache_key = '';
     enemy.nav_cache_until = 0;
     enemy.nav_cache_plan = null;
+    if (isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch') {
+      desiredVelocityX = 0;
+      desiredVelocityY = 0;
+      setBrainState(enemy, 'idle', nowSec);
+    } else {
     if (nowSec >= enemy.next_decision_at || Math.abs(enemy.wander_target_x - enemy.x) < 10) {
       pickWanderTarget(enemy, definition, nowSec);
       setBrainState(enemy, 'wander', nowSec);
@@ -2217,11 +2833,14 @@ function updateAliveEnemy(input) {
     if (moveIntent === 0) {
       setBrainState(enemy, 'idle', nowSec);
     }
+    }
   }
 
   if (enemy.brain_state !== 'prepare' && enemy.brain_state !== 'lunge' && enemy.brain_state !== 'recover') {
     if (flying) {
-      enemy.action = Math.abs(desiredVelocityX) > 0 || Math.abs(desiredVelocityY) > 0 ? 'run' : 'idle';
+      enemy.action = isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch'
+        ? 'idle'
+        : (Math.abs(desiredVelocityX) > 0 || Math.abs(desiredVelocityY) > 0 ? 'run' : 'idle');
     } else {
       updateEnemyProgressTracker(enemy, moveIntent, nowSec);
       maybeJumpTowardTarget(state, enemy, definition, moveIntent, targetPlayer, navigationPlan, nowSec);
@@ -2230,7 +2849,10 @@ function updateAliveEnemy(input) {
     }
   }
 
-  if (flying) {
+  const useGroundedGargoylePhysics = isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch';
+  const useGargoyleDivePhysics = isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'swoop' && enemy.brain_state === 'lunge';
+
+  if (flying && !useGroundedGargoylePhysics && !useGargoyleDivePhysics) {
     if (enemy.brain_state === 'prepare' || enemy.brain_state === 'lunge') {
       maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
       const attackTargetY = getFlyingEnemyTargetY(enemy, definition, targetPlayer, nowSec);
@@ -2242,6 +2864,7 @@ function updateAliveEnemy(input) {
     applyFlyingEnemyPhysics(state, enemy, definition, dt, desiredVelocityX, desiredVelocityY);
   } else {
     applyEnemyPhysics(state, enemy, definition, dt, desiredVelocityX);
+    maybeStickSlimeToSurface(state, enemy, definition, nowSec, input.io);
   }
   processEnemyAttackHits({
     state,
@@ -2306,6 +2929,9 @@ function serializeEnemiesForState(state) {
       despawn_at_ms: enemy.despawn_at ? Math.round(enemy.despawn_at * 1000) : 0,
       respawn_at_ms: enemy.respawn_at ? Math.round(enemy.respawn_at * 1000) : 0,
       target_sid: enemy.target_sid || null,
+      attached_sid: enemy.attached_sid || null,
+      gargoyle_mode: enemy.gargoyle_mode || null,
+      render_opacity: Number.isFinite(enemy.render_opacity) ? enemy.render_opacity : 1,
     };
   }
 

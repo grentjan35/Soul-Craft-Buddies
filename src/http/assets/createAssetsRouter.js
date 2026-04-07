@@ -231,6 +231,7 @@ function createAssetsRouter(deps) {
   const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
   const publicSpiderFootstepPattern = /^footstep([2-4])?\.mp3$/;
+  const publicSlimeFootstepPattern = /^footstep(\s\((2|3)\))?\.mp3$/;
   const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3']);
   const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
   const publicPlayerHurtPattern = /^hurt[1-5]?\.mp3$/;
@@ -253,6 +254,20 @@ function createAssetsRouter(deps) {
     'idle.mp3',
     'wander.mp3',
     'wandering.mp3',
+  ]);
+  const publicSlimeSounds = new Set([
+    'attack.mp3',
+    'death.mp3',
+    'growl.mp3',
+    'hurt.mp3',
+    'wander.mp3',
+  ]);
+  const publicGargoyleSounds = new Set([
+    'attack.mp3',
+    'flying.mp3',
+    'idle.mp3',
+    'not in combat.mp3',
+    'swoop.mp3',
   ]);
 
   router.post('/api/asset_session', (_req, res) => {
@@ -313,6 +328,24 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'spider footsteps', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/slime_footsteps/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicSlimeFootstepPattern.test(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'slime footsteps', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;
@@ -403,6 +436,42 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'bat', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/slime/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicSlimeSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'slime', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/gargoyle/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicGargoyleSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'gargoyle', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;

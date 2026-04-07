@@ -1976,6 +1976,7 @@
         let menuAudio = null;
         let footstepAudio = null;
         let spiderFootstepAudio = null;
+        let slimeFootstepAudio = null;
         let fallAudio = null;
         let fireballAudio = null;
         let combatAudio = null;
@@ -3009,6 +3010,7 @@
             loadingCompleteAudio.load();
             footstepAudio = createFootstepAudioSystem();
             spiderFootstepAudio = createSpiderFootstepAudioSystem();
+            slimeFootstepAudio = createSlimeFootstepAudioSystem();
             fallAudio = createFallAudioSystem();
             fireballAudio = createFireballAudioSystem();
             combatAudio = createCombatAudioSystem();
@@ -3728,6 +3730,89 @@
                 return registerGameAudioSystem({ unlockAudio, playAt });
             }
 
+            function createSlimeFootstepAudioSystem() {
+                const SLIME_FOOTSTEP_VOLUME_MULTIPLIER = 0.92;
+                const soundUrls = [
+                    '/audio/slime_footsteps/footstep.mp3',
+                    '/audio/slime_footsteps/footstep%20(2).mp3',
+                    '/audio/slime_footsteps/footstep%20(3).mp3'
+                ];
+                const audioContext = getSharedGameAudioContext();
+                const bufferCache = new Map();
+                let nextPoolIndex = 0;
+                let audioUnlocked = false;
+
+                async function loadBuffer(url) {
+                    if (!audioContext) {
+                        return null;
+                    }
+
+                    if (bufferCache.has(url)) {
+                        return bufferCache.get(url);
+                    }
+
+                    const bufferPromise = fetch(url)
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`Failed to load slime footstep sound: ${url}`);
+                            }
+                            return response.arrayBuffer();
+                        })
+                        .then((arrayBuffer) => audioContext.decodeAudioData(arrayBuffer.slice(0)));
+                    bufferCache.set(url, bufferPromise);
+                    return bufferPromise;
+                }
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+
+                    audioUnlocked = true;
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(() => {});
+                    }
+                    soundUrls.forEach((url) => loadBuffer(url).catch(() => {}));
+                }
+
+                async function playAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.3, minSemitone = -7, maxSemitone = -1) {
+                    if (!audioContext) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const { gain, pan } = computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport);
+                        if (gain <= 0.015) {
+                            return;
+                        }
+
+                        const url = soundUrls[nextPoolIndex % soundUrls.length];
+                        nextPoolIndex += 1;
+                        const buffer = await loadBuffer(url);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
+                        source.buffer = buffer;
+                        source.detune.value = (minSemitone + Math.random() * (maxSemitone - minSemitone)) * 100;
+                        gainNode.gain.value = Math.min(0.92, volume * SLIME_FOOTSTEP_VOLUME_MULTIPLIER) * gain * getSfxSetting();
+                        source.connect(gainNode);
+                        setPan(pan);
+                        source.start();
+                    } catch (_error) {
+                        // Ignore slime footstep failures so gameplay continues uninterrupted.
+                    }
+                }
+
+                return registerGameAudioSystem({ unlockAudio, playAt });
+            }
+
             function createFireballAudioSystem() {
                 const FIREBALL_VOLUME_MULTIPLIER = 1.1;
                 const soundUrls = {
@@ -3948,6 +4033,18 @@
                     batHit: '/audio/bat/hurt.mp3',
                     batDeath: '/audio/bat/death.mp3',
                     batFlight: '/audio/bat/flying.mp3',
+                    gargoyleAmbient: '/audio/gargoyle/not%20in%20combat.mp3',
+                    gargoyleIdle: '/audio/gargoyle/idle.mp3',
+                    gargoyleAttack: '/audio/gargoyle/attack.mp3',
+                    gargoyleSwoop: '/audio/gargoyle/swoop.mp3',
+                    gargoyleFlight: '/audio/gargoyle/flying.mp3',
+                    slimeAmbient: [
+                        '/audio/slime/growl.mp3',
+                        '/audio/slime/wander.mp3'
+                    ],
+                    slimeAttack: '/audio/slime/attack.mp3',
+                    slimeHit: '/audio/slime/hurt.mp3',
+                    slimeDeath: '/audio/slime/death.mp3',
                     playerHurt: [
                         '/audio/hurt/hurt.mp3',
                         '/audio/hurt/hurt2.mp3',
@@ -3957,6 +4054,7 @@
                 const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
                 const activeLoops = new Map();
+                const activeTransientSounds = new Map();
                 let audioUnlocked = false;
 
                 function stableHash(input) {
@@ -4028,6 +4126,15 @@
                         soundUrls.batHit,
                         soundUrls.batDeath,
                         soundUrls.batFlight,
+                        soundUrls.gargoyleAmbient,
+                        soundUrls.gargoyleIdle,
+                        soundUrls.gargoyleAttack,
+                        soundUrls.gargoyleSwoop,
+                        soundUrls.gargoyleFlight,
+                        ...soundUrls.slimeAmbient,
+                        soundUrls.slimeAttack,
+                        soundUrls.slimeHit,
+                        soundUrls.slimeDeath,
                         ...soundUrls.playerHurt
                     ];
                     warmUrls.forEach((url) => loadBuffer(url).catch(() => {}));
@@ -4057,9 +4164,22 @@
                         const { gainNode, setPan } = createSpatialPanNodes(audioContext);
                         source.buffer = buffer;
                         source.detune.value = detune;
-                        gainNode.gain.value = Math.min(1.2, volume * COMBAT_VOLUME_MULTIPLIER) * gain * getSfxSetting();
+                        const baseVolume = Math.min(1.2, volume * COMBAT_VOLUME_MULTIPLIER);
+                        gainNode.gain.value = baseVolume * gain * getSfxSetting();
                         source.connect(gainNode);
                         setPan(pan);
+                        const transientId = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+                        activeTransientSounds.set(transientId, {
+                            source,
+                            gainNode,
+                            setPan,
+                            baseVolume,
+                            worldX,
+                            worldY
+                        });
+                        source.onended = () => {
+                            activeTransientSounds.delete(transientId);
+                        };
                         source.start();
                     } catch (_error) {
                         // Ignore combat audio failures so gameplay keeps running.
@@ -4137,6 +4257,39 @@
 
                 async function playBatDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.86) {
                     await playUrlAt(soundUrls.batDeath, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playGargoyleAmbientAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.34) {
+                    await playUrlAt(soundUrls.gargoyleAmbient, worldX, worldY, listenerX, listenerY, viewport, volume, -30);
+                }
+
+                async function playGargoyleIdleAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.42) {
+                    await playUrlAt(soundUrls.gargoyleIdle, worldX, worldY, listenerX, listenerY, viewport, volume, -10);
+                }
+
+                async function playGargoyleAttackAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.82) {
+                    await playUrlAt(soundUrls.gargoyleAttack, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playGargoyleSwoopAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.88) {
+                    await playUrlAt(soundUrls.gargoyleSwoop, worldX, worldY, listenerX, listenerY, viewport, volume, 0);
+                }
+
+                async function playSlimeAmbientAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.46, key = 'slime-ambient') {
+                    const url = pickByKey(soundUrls.slimeAmbient, key);
+                    await playUrlAt(url, worldX, worldY, listenerX, listenerY, viewport, volume, detuneFromKey(`${key}|slime`, -0.35, 0.25));
+                }
+
+                async function playSlimeAttackAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.76) {
+                    await playUrlAt(soundUrls.slimeAttack, worldX, worldY, listenerX, listenerY, viewport, volume, -40);
+                }
+
+                async function playSlimeHitAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.7) {
+                    await playUrlAt(soundUrls.slimeHit, worldX, worldY, listenerX, listenerY, viewport, volume, -20);
+                }
+
+                async function playSlimeDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.84) {
+                    await playUrlAt(soundUrls.slimeDeath, worldX, worldY, listenerX, listenerY, viewport, volume, -30);
                 }
 
                 function getBatLoopCrowdingGain(listenerX, listenerY) {
@@ -4225,6 +4378,37 @@
                     }
                 }
 
+                async function startGargoyleFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.2) {
+                    await startBatFlightLoop(`gargoyle:${id}`, worldX, worldY, listenerX, listenerY, viewport, volume);
+                }
+
+                function updateGargoyleFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport = null) {
+                    updateBatFlightLoop(`gargoyle:${id}`, worldX, worldY, listenerX, listenerY, viewport);
+                }
+
+                function stopGargoyleFlightLoop(id) {
+                    stopBatFlightLoop(`gargoyle:${id}`);
+                }
+
+                function updateTransientSpatialSounds(listenerX, listenerY, viewport = null) {
+                    for (const [id, sound] of activeTransientSounds.entries()) {
+                        if (!sound) {
+                            activeTransientSounds.delete(id);
+                            continue;
+                        }
+
+                        const { gain, pan } = computeSpatialMix(
+                            sound.worldX,
+                            sound.worldY,
+                            listenerX,
+                            listenerY,
+                            viewport
+                        );
+                        sound.gainNode.gain.value = sound.baseVolume * gain * getSfxSetting();
+                        sound.setPan(pan);
+                    }
+                }
+
                 return registerGameAudioSystem({
                     unlockAudio,
                     playSpiderAmbientAt,
@@ -4235,10 +4419,22 @@
                     playBatDetectAt,
                     playBatHitAt,
                     playBatDeathAt,
+                    playGargoyleAmbientAt,
+                    playGargoyleIdleAt,
+                    playGargoyleAttackAt,
+                    playGargoyleSwoopAt,
+                    playSlimeAmbientAt,
+                    playSlimeAttackAt,
+                    playSlimeHitAt,
+                    playSlimeDeathAt,
                     startBatFlightLoop,
                     updateBatFlightLoop,
                     stopBatFlightLoop,
+                    startGargoyleFlightLoop,
+                    updateGargoyleFlightLoop,
+                    stopGargoyleFlightLoop,
                     stopAllBatFlightLoops,
+                    updateTransientSpatialSounds,
                     playPlayerHurtAt,
                     playPlayerHurtLocal
                 });
@@ -4538,6 +4734,7 @@
                 menuAudio.unlockAudio();
                 footstepAudio.unlockAudio();
                 spiderFootstepAudio.unlockAudio();
+                slimeFootstepAudio.unlockAudio();
                 fallAudio.unlockAudio();
                 fireballAudio.unlockAudio();
                 combatAudio.unlockAudio();
@@ -6372,7 +6569,9 @@
         
         // Dust particle system
         window.dustParticles = [];
+        window.slimeParticles = [];
         const MAX_DUST_PARTICLES = 50;
+        const MAX_SLIME_PARTICLES = 48;
         let lastOnGroundState = {};
         const FOOTSTEP_FRAME_INTERVAL = 5;
         const footstepFrameCounters = {};
@@ -6886,6 +7085,7 @@
                         id: id,
                         owner_sid: fb.owner_sid ?? authoritativeFireballs[id]?.owner_sid ?? null,
                         owner_type: fb.owner_type ?? authoritativeFireballs[id]?.owner_type ?? 'player',
+                        owner_enemy_id: fb.owner_enemy_id ?? authoritativeFireballs[id]?.owner_enemy_id ?? null,
                         x: fb.x,
                         y: fb.y,
                         vx: fb.vx,
@@ -6903,6 +7103,7 @@
                             id: id,
                             owner_sid: authoritativeFireballs[id].owner_sid,
                             owner_type: authoritativeFireballs[id].owner_type,
+                            owner_enemy_id: authoritativeFireballs[id].owner_enemy_id,
                             x: fb.x,
                             y: fb.y,
                             vx: fb.vx,
@@ -6914,6 +7115,7 @@
                     } else {
                         fireballs[id].owner_sid = authoritativeFireballs[id].owner_sid;
                         fireballs[id].owner_type = authoritativeFireballs[id].owner_type;
+                        fireballs[id].owner_enemy_id = authoritativeFireballs[id].owner_enemy_id;
                     }
                 }
                 
@@ -7088,11 +7290,12 @@
 
         // Handle projectile created event from server
         socket.on('projectile_created', (data) => {
-            const { id, owner_sid, owner_type, x, y, vx, vy } = data;
+            const { id, owner_sid, owner_type, owner_enemy_id, x, y, vx, vy } = data;
             authoritativeFireballs[id] = {
                 id: id,
                 owner_sid: owner_sid,
                 owner_type: owner_type ?? 'player',
+                owner_enemy_id: owner_enemy_id ?? null,
                 x: x,
                 y: y,
                 vx: vx,
@@ -7108,6 +7311,7 @@
                 id: id,
                 owner_sid: owner_sid,
                 owner_type: owner_type ?? 'player',
+                owner_enemy_id: owner_enemy_id ?? null,
                 x: x,
                 y: y,
                 vx: vx,
@@ -7179,7 +7383,7 @@
 
         // Handle player hit event from server
         socket.on('player_hit', (data) => {
-            const { sid, damage, health, is_dying, x, y } = data;
+            const { sid, damage, health, is_dying, x, y, effect } = data;
             console.log(`Player ${sid} hit for ${damage} damage, health: ${health}`);
             
             // Update player health if we have state for them
@@ -7212,7 +7416,22 @@
             }
 
             if (typeof x === 'number' && typeof y === 'number') {
-                createAttachedPlayerBurn(sid, x, y, EXPLOSION_RADIUS, 'blood');
+                createAttachedPlayerBurn(sid, x, y, EXPLOSION_RADIUS, effect === 'slime' ? 'slime' : 'blood');
+            }
+        });
+
+        socket.on('slime_splatter', (data) => {
+            const x = Number(data?.x);
+            const y = Number(data?.y);
+            const radius = Number(data?.radius);
+            const targetSid = typeof data?.target_sid === 'string' ? data.target_sid : null;
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return;
+            }
+
+            createBurnMark(x, y, Number.isFinite(radius) ? radius : EXPLOSION_RADIUS * 0.7, 'slime');
+            if (targetSid) {
+                createAttachedPlayerBurn(targetSid, x, y, Number.isFinite(radius) ? radius : EXPLOSION_RADIUS * 0.7, 'slime');
             }
         });
 
@@ -7476,6 +7695,7 @@
                         id: id,
                         owner_sid: fireballMeta.owner_sid,
                         owner_type: fireballMeta.owner_type ?? 'player',
+                        owner_enemy_id: fireballMeta.owner_enemy_id ?? null,
                         x: sampled.x,
                         y: sampled.y,
                         vx: sampled.vx ?? fireballMeta.vx,
@@ -7488,6 +7708,7 @@
 
                 fireballs[id].owner_sid = fireballMeta.owner_sid;
                 fireballs[id].owner_type = fireballMeta.owner_type ?? 'player';
+                fireballs[id].owner_enemy_id = fireballMeta.owner_enemy_id ?? null;
                 fireballs[id].x = sampled.x;
                 fireballs[id].y = sampled.y;
                 fireballs[id].vx = sampled.vx ?? fireballMeta.vx;
@@ -7655,25 +7876,26 @@
 
         function updateSpatialEnemyAudio(nowMs) {
             const listenerState = getAudioListenerState();
-            if (!listenerState && !combatAudio && !fallAudio && !spiderFootstepAudio) {
+            if (!listenerState && !combatAudio && !fallAudio && !spiderFootstepAudio && !slimeFootstepAudio) {
                 return;
             }
 
             const audibleViewport = listenerState ? getAudibleViewport() : null;
             const ambientCooldownBaseMs = 4200;
-            const enemyFootstepInterval = 3;
             let combatMusicActive = false;
             let combatMusicPanWeightedSum = 0;
             let combatMusicPanWeightTotal = 0;
 
             for (const enemyId in enemyState) {
                 const currentState = enemyState[enemyId];
-                if (!currentState || (currentState.type !== 'spider' && currentState.type !== 'bat')) {
+                if (!currentState || (currentState.type !== 'spider' && currentState.type !== 'bat' && currentState.type !== 'slime' && currentState.type !== 'gargoyle')) {
                     continue;
                 }
 
                 const isSpider = currentState.type === 'spider';
                 const isBat = currentState.type === 'bat';
+                const isSlime = currentState.type === 'slime';
+                const isGargoyle = currentState.type === 'gargoyle';
                 const previousState = previousEnemyAudioState[enemyId];
                 const ambientState = enemyAmbientAudioState[enemyId] || {
                     nextAt: nowMs + 1800 + Math.random() * 2200
@@ -7717,6 +7939,15 @@
                     combatMusicPanWeightTotal += threatWeight;
                 }
 
+                const movedHorizontally = previousState ? Math.abs(currentState.x - previousState.x) > 0.45 : false;
+                const horizontalVelocity = typeof currentState.vx === 'number' ? Math.abs(currentState.vx) : 0;
+                const isGroundedMover =
+                    currentState.alive &&
+                    currentState.on_ground &&
+                    currentState.action !== 'attack' &&
+                    currentState.action !== 'death' &&
+                    (movedHorizontally || horizontalVelocity > 18);
+
                 if (isBat && combatAudio && listenerState && currentState.alive) {
                     combatAudio.startBatFlightLoop(
                         enemyId,
@@ -7725,7 +7956,7 @@
                         listenerState.x,
                         listenerState.y,
                         audibleViewport,
-                        0.14
+                        enemyIsThreatening ? 0.22 : 0.18
                     );
                     combatAudio.updateBatFlightLoop(
                         enemyId,
@@ -7737,6 +7968,28 @@
                     );
                 } else if (isBat && combatAudio) {
                     combatAudio.stopBatFlightLoop(enemyId);
+                }
+
+                if (isGargoyle && combatAudio && listenerState && currentState.alive && currentState.gargoyle_mode === 'swoop') {
+                    combatAudio.startGargoyleFlightLoop(
+                        enemyId,
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport,
+                        currentState.brain_state === 'lunge' ? 0.28 : 0.2
+                    );
+                    combatAudio.updateGargoyleFlightLoop(
+                        enemyId,
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport
+                    );
+                } else if (isGargoyle && combatAudio) {
+                    combatAudio.stopGargoyleFlightLoop(enemyId);
                 }
 
                 if (previousState) {
@@ -7780,6 +8033,15 @@
                                 audibleViewport,
                                 0.72
                             );
+                        } else if (combatAudio && listenerState && isSlime) {
+                            combatAudio.playSlimeHitAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.74
+                            );
                         }
                     }
 
@@ -7800,7 +8062,17 @@
                                 `${enemyId}|${currentState.death_time_ms ?? nowMs}|death`
                             );
                         } else if (isBat) {
+                            combatAudio.stopBatFlightLoop(enemyId);
                             combatAudio.playBatDeathAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                1
+                            );
+                        } else if (isSlime) {
+                            combatAudio.playSlimeDeathAt(
                                 currentState.x,
                                 currentState.y,
                                 listenerState.x,
@@ -7808,7 +8080,6 @@
                                 audibleViewport,
                                 0.86
                             );
-                            combatAudio.stopBatFlightLoop(enemyId);
                         }
                         ambientState.nextAt = nowMs + ambientCooldownBaseMs;
                     } else if ((justDetectedPlayer || startedAttack) && combatAudio && listenerState) {
@@ -7823,6 +8094,35 @@
                             );
                         } else if (isBat && justDetectedPlayer) {
                             combatAudio.playBatDetectAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.78
+                            );
+                        } else if (isGargoyle) {
+                            if (currentState.gargoyle_mode === 'swoop') {
+                                combatAudio.playGargoyleSwoopAt(
+                                    currentState.x,
+                                    currentState.y,
+                                    listenerState.x,
+                                    listenerState.y,
+                                    audibleViewport,
+                                    0.88
+                                );
+                            } else {
+                                combatAudio.playGargoyleAttackAt(
+                                    currentState.x,
+                                    currentState.y,
+                                    listenerState.x,
+                                    listenerState.y,
+                                    audibleViewport,
+                                    0.82
+                                );
+                            }
+                        } else if (isSlime) {
+                            combatAudio.playSlimeAttackAt(
                                 currentState.x,
                                 currentState.y,
                                 listenerState.x,
@@ -7880,20 +8180,43 @@
                             0.42,
                             `${enemyId}|${currentState.brain_state}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
                         );
+                    } else if (isGargoyle) {
+                        if (currentState.gargoyle_mode === 'perch' && currentState.target_sid) {
+                            combatAudio.playGargoyleIdleAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.42
+                            );
+                        } else if (!currentState.target_sid) {
+                            combatAudio.playGargoyleAmbientAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.34
+                            );
+                        }
+                    } else if (isSlime) {
+                        combatAudio.playSlimeAmbientAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.48,
+                            `${enemyId}|${currentState.brain_state}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
+                        );
                     }
                     ambientState.nextAt = nowMs + ambientCooldownBaseMs + Math.random() * 3800;
                 }
 
-                const movedHorizontally = previousState ? Math.abs(currentState.x - previousState.x) > 0.6 : false;
-                const isWalking =
-                    currentState.alive &&
-                    currentState.on_ground &&
-                    currentState.action === 'run' &&
-                    movedHorizontally;
-
-                if (isSpider && isWalking && spiderFootstepAudio && listenerState) {
+                if (isSpider && isGroundedMover && spiderFootstepAudio && listenerState) {
                     enemyFootstepFrameCounters[enemyId] = (enemyFootstepFrameCounters[enemyId] || 0) + 1;
-                    if (enemyFootstepFrameCounters[enemyId] >= enemyFootstepInterval) {
+                    if (enemyFootstepFrameCounters[enemyId] >= 2) {
                         spiderFootstepAudio.playAt(
                             currentState.x,
                             currentState.y,
@@ -7906,7 +8229,22 @@
                         );
                         enemyFootstepFrameCounters[enemyId] = 0;
                     }
-                } else if (!currentState.on_ground || currentState.action !== 'run') {
+                } else if (isSlime && isGroundedMover && slimeFootstepAudio && listenerState) {
+                    enemyFootstepFrameCounters[enemyId] = (enemyFootstepFrameCounters[enemyId] || 0) + 1;
+                    if (enemyFootstepFrameCounters[enemyId] >= 3) {
+                        slimeFootstepAudio.playAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.28,
+                            -9,
+                            -3
+                        );
+                        enemyFootstepFrameCounters[enemyId] = 0;
+                    }
+                } else if (!currentState.on_ground || currentState.action === 'attack' || currentState.action === 'death') {
                     enemyFootstepFrameCounters[enemyId] = 0;
                 }
 
@@ -7926,11 +8264,16 @@
                 if (!enemyState[enemyId]) {
                     if (combatAudio) {
                         combatAudio.stopBatFlightLoop(enemyId);
+                        combatAudio.stopGargoyleFlightLoop(enemyId);
                     }
                     delete previousEnemyAudioState[enemyId];
                     delete enemyAmbientAudioState[enemyId];
                     delete enemyFootstepFrameCounters[enemyId];
                 }
+            }
+
+            if (combatAudio && listenerState && typeof combatAudio.updateTransientSpatialSounds === 'function') {
+                combatAudio.updateTransientSpatialSounds(listenerState.x, listenerState.y, audibleViewport);
             }
 
             if (combatMusic) {
@@ -8086,7 +8429,10 @@
                 return null;
             }
 
-            const action = state.action || 'idle';
+            const rawAction = state.action || 'idle';
+            const action = state.type === 'gargoyle' && state.gargoyle_mode === 'swoop' && (rawAction === 'attack' || rawAction === 'prepare')
+                ? 'run'
+                : rawAction;
             const animationMeta = metadata.animations?.[action] || metadata.animations?.idle;
             if (!animationMeta) {
                 return null;
@@ -8322,7 +8668,16 @@
         }
 
         function drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraOffsetX, cameraOffsetY) {
-            if (!frameInfo || state?.type !== 'bat') {
+            if (!frameInfo) {
+                return;
+            }
+
+            if (state?.type === 'slime') {
+                maybeSpawnAmbientSlimeDrip(state, nowMs);
+                return;
+            }
+
+            if (state?.type !== 'bat') {
                 return;
             }
 
@@ -8555,6 +8910,32 @@
                 return;
             }
 
+            if (burn.effect === 'slime') {
+                drawFireballGlow(anchor.x, anchor.y, flameRadius * 1.3, 'rgba(215, 255, 185, __A__)', 'rgba(58, 188, 82, __A__)', alpha * 0.28);
+                ctx.save();
+                ctx.translate(anchor.x - cameraX, anchor.y - cameraY);
+                ctx.rotate(flameAngle);
+                ctx.globalAlpha = alpha * 0.94;
+                const cell = Math.max(2, Math.round(flameRadius * 0.14));
+                ctx.fillStyle = '#1f6a2f';
+                ctx.fillRect(-cell * 3, cell, cell * 6, cell * 2);
+                ctx.fillRect(-cell * 2, cell * 3, cell * 3, cell);
+                ctx.fillStyle = '#2f9143';
+                ctx.fillRect(-cell * 3, -cell * 2, cell * 6, cell * 4);
+                ctx.fillRect(-cell * 2, cell * 2, cell * 3, cell);
+                ctx.fillStyle = '#49b85b';
+                ctx.fillRect(-cell * 3, -cell * 2, cell * 6, cell * 4);
+                ctx.fillRect(-cell * 2, -cell * 3, cell * 4, cell);
+                ctx.fillStyle = '#7de08f';
+                ctx.fillRect(-cell, -cell * 2, cell * 3, cell);
+                ctx.fillRect(cell, -cell, cell, cell);
+                ctx.fillStyle = '#caffd5';
+                ctx.fillRect(0, -cell, cell, cell);
+                ctx.fillRect(-cell, 0, cell, cell);
+                ctx.restore();
+                return;
+            }
+
             drawFireballGlow(anchor.x, anchor.y - flameRadius * 0.16, flameRadius * 1.55, 'rgba(255, 220, 130, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.36);
             drawPixelFlameBody(
                 anchor.x + Math.sin(flickerTime * 5.4) * 1.3,
@@ -8674,6 +9055,69 @@
                     window.dustParticles.splice(i, 1);
                 }
             }
+        }
+
+        function updateSlimeParticles(dt) {
+            for (let i = window.slimeParticles.length - 1; i >= 0; i--) {
+                const particle = window.slimeParticles[i];
+                particle.x += particle.vx * dt;
+                particle.y += particle.vy * dt;
+                particle.vy += 90 * dt;
+                particle.age += dt;
+                particle.alpha = Math.max(0, 0.8 * (1 - particle.age / particle.lifetime));
+                if (particle.age >= particle.lifetime) {
+                    window.slimeParticles.splice(i, 1);
+                }
+            }
+        }
+
+        function maybeSpawnAmbientSlimeDrip(enemyStateRef, nowMs) {
+            if (!enemyStateRef || enemyStateRef.type !== 'slime') {
+                return;
+            }
+            if (window.slimeParticles.length >= MAX_SLIME_PARTICLES) {
+                return;
+            }
+
+            const nextAt = enemyStateRef.nextAmbientSlimeDripAt ?? 0;
+            if (nowMs < nextAt) {
+                return;
+            }
+
+            enemyStateRef.nextAmbientSlimeDripAt = nowMs + 160 + Math.random() * 180;
+
+            window.slimeParticles.push({
+                x: enemyStateRef.x + (Math.random() - 0.5) * 10,
+                y: enemyStateRef.y + 4 + Math.random() * 6,
+                vx: (Math.random() - 0.5) * 5,
+                vy: 16 + Math.random() * 12,
+                size: 1.5 + Math.random() * 1.5,
+                alpha: 0.42,
+                lifetime: 0.3 + Math.random() * 0.18,
+                age: 0
+            });
+        }
+
+        function drawSlimeParticles() {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (const particle of window.slimeParticles) {
+                const glow = particle.size * 2.4;
+                drawFireballGlow(particle.x, particle.y, glow, 'rgba(210, 255, 180, __A__)', 'rgba(68, 190, 92, __A__)', particle.alpha * 0.24);
+                ctx.fillStyle = `rgba(96, 214, 116, ${particle.alpha})`;
+                ctx.beginPath();
+                ctx.ellipse(
+                    particle.x - cameraX,
+                    particle.y - cameraY,
+                    particle.size,
+                    particle.size * 1.3,
+                    0,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+            }
+            ctx.restore();
         }
 
         function drawDustParticles() {
@@ -9055,7 +9499,7 @@
             return bestAnchor;
         }
 
-        function createBurnMark(x, y, sourceRadius = EXPLOSION_RADIUS) {
+        function createBurnMark(x, y, sourceRadius = EXPLOSION_RADIUS, effect = 'burn') {
             const anchor = findNearestSurfaceAnchor(x, y, Math.max(80, sourceRadius * 2.4));
             if (!anchor) {
                 return;
@@ -9063,14 +9507,31 @@
 
             const existing = burnMarks.find((mark) => Math.hypot(mark.x - anchor.x, mark.y - anchor.y) < Math.max(18, sourceRadius * 0.75));
             if (existing) {
+                existing.effect = effect;
                 existing.x = existing.x * 0.72 + anchor.x * 0.28;
                 existing.y = existing.y * 0.72 + anchor.y * 0.28;
                 existing.radius = Math.max(existing.radius, Math.max(28, sourceRadius * 0.95));
                 existing.startTime = Date.now();
-                existing.duration = Math.min(6200, existing.duration + 900);
+                existing.duration = effect === 'slime'
+                    ? 5000
+                    : Math.min(6200, existing.duration + 900);
                 existing.baseAngle = anchor.angle;
                 existing.angle = anchor.angle + (Math.random() - 0.5) * 0.62;
                 existing.secondaryLean = (Math.random() - 0.5) * 0.44;
+                if (effect === 'slime') {
+                    for (let i = 0; i < 8 && window.slimeParticles.length < MAX_SLIME_PARTICLES; i++) {
+                        window.slimeParticles.push({
+                            x: anchor.x + (Math.random() - 0.5) * existing.radius * 0.7,
+                            y: anchor.y + Math.random() * 5,
+                            vx: (Math.random() - 0.5) * 10,
+                            vy: 16 + Math.random() * 24,
+                            size: 2 + Math.random() * 2.5,
+                            alpha: 0.82,
+                            lifetime: 0.55 + Math.random() * 0.45,
+                            age: 0
+                        });
+                    }
+                }
                 return;
             }
 
@@ -9080,11 +9541,27 @@
                 y: anchor.y,
                 radius: Math.max(28, sourceRadius * 0.95),
                 startTime: Date.now(),
-                duration: 4400,
+                duration: effect === 'slime' ? 5000 : 4400,
+                effect,
                 baseAngle: anchor.angle,
                 angle: anchor.angle + (Math.random() - 0.5) * 0.62,
                 secondaryLean: (Math.random() - 0.5) * 0.44
             });
+
+            if (effect === 'slime') {
+                for (let i = 0; i < 10 && window.slimeParticles.length < MAX_SLIME_PARTICLES; i++) {
+                    window.slimeParticles.push({
+                        x: anchor.x + (Math.random() - 0.5) * sourceRadius * 0.8,
+                        y: anchor.y + Math.random() * 6,
+                        vx: (Math.random() - 0.5) * 12,
+                        vy: 18 + Math.random() * 26,
+                        size: 2 + Math.random() * 3,
+                        alpha: 0.84,
+                        lifetime: 0.6 + Math.random() * 0.45,
+                        age: 0
+                    });
+                }
+            }
 
             if (burnMarks.length > 18) {
                 burnMarks = burnMarks.slice(-18);
@@ -9128,6 +9605,34 @@
                 const primaryY = mark.y + riseY * (flameRadius * 0.34 + flameLift) + tangentY * flickerX;
                 const secondaryX = mark.x + riseX * flameRadius * 0.26 - tangentX * flickerX * 0.4;
                 const secondaryY = mark.y + riseY * flameRadius * 0.26 - tangentY * flickerX * 0.4;
+
+                if (mark.effect === 'slime') {
+                    drawFireballGlow(glowX, glowY, flameRadius * 1.6, 'rgba(220, 255, 170, __A__)', 'rgba(72, 188, 86, __A__)', alpha * 0.34);
+                    ctx.save();
+                    ctx.globalAlpha = alpha * 0.92;
+                    const cell = Math.max(2, Math.round(flameRadius * 0.12));
+                    const baseX = Math.round(mark.x - cameraX);
+                    const baseY = Math.round(mark.y - cameraY);
+                    ctx.fillStyle = '#1c632d';
+                    ctx.fillRect(baseX - cell * 4, baseY, cell * 8, cell * 2);
+                    ctx.fillRect(baseX - cell * 2, baseY + cell * 2, cell * 4, cell);
+                    ctx.fillStyle = '#2c8d41';
+                    ctx.fillRect(baseX - cell * 4, baseY - cell * 2, cell * 8, cell * 4);
+                    ctx.fillRect(baseX - cell * 3, baseY - cell * 3, cell * 5, cell);
+                    ctx.fillRect(baseX - cell * 2, baseY + cell * 2, cell * 4, cell);
+                    ctx.fillStyle = '#46b657';
+                    ctx.fillRect(baseX - cell * 4, baseY - cell * 2, cell * 8, cell * 4);
+                    ctx.fillRect(baseX - cell * 3, baseY - cell * 3, cell * 5, cell);
+                    ctx.fillStyle = '#7ae08d';
+                    ctx.fillRect(baseX - cell * 2, baseY - cell, cell * 3, cell);
+                    ctx.fillRect(baseX + cell, baseY - cell, cell * 2, cell);
+                    ctx.fillStyle = '#c8ffd2';
+                    ctx.fillRect(Math.round(primaryX - cameraX), Math.round(primaryY - cameraY), cell, cell);
+                    ctx.fillRect(Math.round(secondaryX - cameraX), Math.round(secondaryY - cameraY), cell, cell);
+                    ctx.fillRect(baseX - cell, baseY, cell, cell);
+                    ctx.restore();
+                    continue;
+                }
 
                 drawFireballGlow(glowX, glowY, flameRadius * 2.1, 'rgba(255, 214, 120, __A__)', 'rgba(255, 92, 18, __A__)', alpha * 0.42);
                 drawPixelFlameBody(primaryX, primaryY, primaryAngle, flameRadius * 0.8, alpha * 0.92, flickerTime, {
@@ -9397,6 +9902,7 @@
 
             for (const id in fireballs) {
                 const fireball = fireballs[id];
+                const projectileStyle = getProjectileVisualStyle(fireball);
                 const projectileScale = typeof fireball.render_scale === 'number' ? fireball.render_scale : 1;
                 const flameRadius = FIREBALL_SIZE * 1.08 * projectileScale;
                 if (!isWorldRectVisible(fireball.x - flameRadius * 4, fireball.y - flameRadius * 4, flameRadius * 8, flameRadius * 8, 120, visibleBounds)) {
@@ -9449,9 +9955,9 @@
                             wakeX,
                             wakeY,
                             (8 + alpha * 10) * 0.72,
-                            'rgba(255, 220, 150, __A__)',
-                            'rgba(255, 98, 24, __A__)',
-                            alpha * 0.18
+                            projectileStyle.trailGlow[0],
+                            projectileStyle.trailGlow[1],
+                            alpha * projectileStyle.trailGlow[2]
                         );
                         drawPixelFlameBody(
                             wakeX,
@@ -9468,7 +9974,7 @@
                                 alpha: 0.8,
                                 emberChance: 0.09,
                                 extraCellSize: 0,
-                                palette: ['#220700', '#581600', '#9e2a00', '#ef5f12', '#ffb443', '#fff0c8']
+                                palette: projectileStyle.trailPalette
                             }
                         );
                         if (profile.drawTrailSecondaryFlame) {
@@ -9487,7 +9993,7 @@
                                     alpha: 0.64,
                                     emberChance: 0.06,
                                     extraCellSize: 0,
-                                    palette: ['#1b0600', '#4d1400', '#8d2400', '#db4d0b', '#ff9e2c', '#ffe39e']
+                                    palette: projectileStyle.trailSecondaryPalette
                                 }
                             );
                         }
@@ -9508,8 +10014,8 @@
                 const secondaryY = fireball.y - dirY * (flameRadius * 0.2 + flameLift) - tangentY * flickerX * 0.4;
 
                 ctx.globalAlpha = 1;
-                drawFireballGlow(glowX, glowY, flameRadius * 2.05, 'rgba(255, 214, 120, __A__)', 'rgba(255, 92, 18, __A__)', 0.46);
-                drawFireballGlow(fireball.x, fireball.y, flameRadius * 1.2, 'rgba(255, 248, 220, __A__)', 'rgba(255, 134, 28, __A__)', 0.42);
+                drawFireballGlow(glowX, glowY, flameRadius * 2.05, projectileStyle.glowOuter[0], projectileStyle.glowOuter[1], projectileStyle.glowOuter[2]);
+                drawFireballGlow(fireball.x, fireball.y, flameRadius * 1.2, projectileStyle.glowInner[0], projectileStyle.glowInner[1], projectileStyle.glowInner[2]);
                 drawPixelFlameBody(
                     primaryX,
                     primaryY,
@@ -9524,7 +10030,7 @@
                         width: 0.44,
                         alpha: 0.88,
                         emberChance: 0.12,
-                        palette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8']
+                        palette: projectileStyle.corePalette
                     }
                 );
                 if (profile.fireballCoreLayers >= 2) {
@@ -9543,7 +10049,7 @@
                             alpha: 0.8,
                             emberChance: 0.08,
                             extraCellSize: 0,
-                            palette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f']
+                            palette: projectileStyle.coreSecondaryPalette
                         }
                     );
                 }
@@ -9563,7 +10069,7 @@
                             alpha: 0.84,
                             emberChance: 0.06,
                             extraCellSize: 0,
-                            palette: ['#250800', '#5c1700', '#a82f00', '#ff6818', '#ffbe4f', '#fff3cf']
+                            palette: projectileStyle.coreTertiaryPalette
                         }
                     );
                 }
@@ -9583,13 +10089,46 @@
                             alpha: 0.9,
                             emberChance: 0.06,
                             extraCellSize: 0,
-                            palette: ['#4d1200', '#9c2600', '#e85b08', '#ffaf35', '#ffe89a']
+                            palette: projectileStyle.coreQuaternaryPalette
                         }
                     );
                 }
             }
 
             ctx.restore();
+        }
+
+        function getProjectileVisualStyle(fireball) {
+            const ownerEnemyId = fireball?.owner_enemy_id;
+            const ownerEnemyType = ownerEnemyId && enemyState[ownerEnemyId]
+                ? enemyState[ownerEnemyId].type
+                : (typeof ownerEnemyId === 'string' && ownerEnemyId.startsWith('gargoyle_') ? 'gargoyle' : null);
+
+            if (fireball?.owner_type === 'enemy' && ownerEnemyType === 'gargoyle') {
+                return {
+                    glowOuter: ['rgba(210, 142, 255, __A__)', 'rgba(112, 42, 198, __A__)', 0.5],
+                    glowInner: ['rgba(248, 224, 255, __A__)', 'rgba(160, 72, 255, __A__)', 0.44],
+                    trailGlow: ['rgba(210, 168, 255, __A__)', 'rgba(108, 34, 194, __A__)', 0.22],
+                    trailPalette: ['#140018', '#2f0849', '#5e1aa1', '#8f41e0', '#c889ff', '#f4d9ff'],
+                    trailSecondaryPalette: ['#100014', '#25053c', '#4f1384', '#7d34ca', '#c06fff', '#edd0ff'],
+                    corePalette: ['#19001d', '#39065e', '#6a1bb0', '#9d48f2', '#d297ff', '#f8e4ff'],
+                    coreSecondaryPalette: ['#170018', '#310752', '#5c1798', '#8b38dc', '#cb84ff'],
+                    coreTertiaryPalette: ['#120012', '#2c0547', '#521087', '#8734d8', '#c67aff', '#f7e1ff'],
+                    coreQuaternaryPalette: ['#1d0224', '#430a68', '#7b1cc5', '#ae55ff', '#e2b1ff']
+                };
+            }
+
+            return {
+                glowOuter: ['rgba(255, 214, 120, __A__)', 'rgba(255, 92, 18, __A__)', 0.46],
+                glowInner: ['rgba(255, 248, 220, __A__)', 'rgba(255, 134, 28, __A__)', 0.42],
+                trailGlow: ['rgba(255, 220, 150, __A__)', 'rgba(255, 98, 24, __A__)', 0.18],
+                trailPalette: ['#220700', '#581600', '#9e2a00', '#ef5f12', '#ffb443', '#fff0c8'],
+                trailSecondaryPalette: ['#1b0600', '#4d1400', '#8d2400', '#db4d0b', '#ff9e2c', '#ffe39e'],
+                corePalette: ['#2d0b00', '#6f1b00', '#c44500', '#ff7d1f', '#ffc860', '#fff2c8'],
+                coreSecondaryPalette: ['#341000', '#7d2100', '#dc5208', '#ffae38', '#ffe07f'],
+                coreTertiaryPalette: ['#250800', '#5c1700', '#a82f00', '#ff6818', '#ffbe4f', '#fff3cf'],
+                coreQuaternaryPalette: ['#4d1200', '#9c2600', '#e85b08', '#ffaf35', '#ffe89a']
+            };
         }
 
         function drawExplosions(now = Date.now(), renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs, visibleBounds = null) {
@@ -9921,23 +10460,31 @@
                                 enemyOpacity = Math.max(0, Math.min(1, (state.despawn_at_ms - nowMs) / fadeDurationMs));
                             }
                         }
+                        if (typeof state.render_opacity === 'number') {
+                            enemyOpacity *= Math.max(0, Math.min(1, state.render_opacity));
+                        }
+                        if (enemyOpacity <= 0.003) {
+                            enemyOpacity = 0;
+                        }
                         const flashAlpha = getHitFlashAlpha(enemyHitFlashUntilMs[enemyId], nowMs);
-                        drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraX, cameraY);
-                        drawSpriteFrameWithHitFlash({
-                            image: frameInfo.image,
-                            frameX: frameInfo.frameX,
-                            frameY: frameInfo.frameY,
-                            frameW: frameInfo.frameW,
-                            frameH: frameInfo.frameH,
-                            drawX: enemyDrawX,
-                            drawY: enemyDrawY,
-                            drawW: frameInfo.renderDims.width,
-                            drawH: frameInfo.renderDims.height,
-                            direction: state.direction,
-                            opacity: enemyOpacity,
-                            flashAlpha,
-                            cacheKey: `enemy|${frameInfo.cacheKey}`
-                        });
+                        if (enemyOpacity > 0) {
+                            drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraX, cameraY);
+                            drawSpriteFrameWithHitFlash({
+                                image: frameInfo.image,
+                                frameX: frameInfo.frameX,
+                                frameY: frameInfo.frameY,
+                                frameW: frameInfo.frameW,
+                                frameH: frameInfo.frameH,
+                                drawX: enemyDrawX,
+                                drawY: enemyDrawY,
+                                drawW: frameInfo.renderDims.width,
+                                drawH: frameInfo.renderDims.height,
+                                direction: state.direction,
+                                opacity: enemyOpacity,
+                                flashAlpha,
+                                cacheKey: `enemy|${frameInfo.cacheKey}`
+                            });
+                        }
                     } else if (failedEnemyTypes.has(state.type)) {
                         ctx.fillStyle = '#c24747';
                         ctx.fillRect(state.x - cameraX - 28, state.y - cameraY - 28, 56, 56);
@@ -9964,7 +10511,7 @@
                         }
                     }
 
-                    if (state.alive) {
+                    if (state.alive && (!(state.type === 'gargoyle') || !Number.isFinite(state.render_opacity) || state.render_opacity > 0.003)) {
                         const maxHealth = typeof state.max_health === 'number' ? state.max_health : 4;
                         const health = typeof state.health === 'number' ? state.health : maxHealth;
                         drawEntityHealthBar(ctx, state.x, state.y, health, maxHealth, cameraX, cameraY, 62);
@@ -10202,6 +10749,7 @@
 
                 // Update dust particles
                 updateDustParticles(dt);
+                updateSlimeParticles(dt);
                 updateSpatialAudio(currentTime);
 
                 for (const sid in dyingPlayers) {
@@ -10316,6 +10864,7 @@
 
                 // Draw dust particles
                 drawDustParticles();
+                drawSlimeParticles();
 
                 // Draw fireballs with particle trails
                 drawFireballs(nowMs, effectVisibleBounds);

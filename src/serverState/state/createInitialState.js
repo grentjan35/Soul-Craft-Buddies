@@ -7,7 +7,7 @@ const {
   DEAD_BODY_DURATION,
 } = require('./constants');
 
-const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
+const { loadEnemyCatalog } = require('../../enemies/catalog');
 const { initializeFairies } = require('./fairies/fairySystem');
 const { resetEnemiesForState } = require('../enemies/runtime');
 const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
@@ -68,8 +68,6 @@ function createInitialState(input) {
   const spawnPoints = Array.isArray(mapData.spawnPoints)
     ? mapData.spawnPoints
     : [{ x: 100, y: 500, id: 0 }];
-  const enemySpawns = normalizeEnemySpawns(mapData.enemies, enemyDefinitions);
-
   const state = {
     config: input.config,
     players: new Map(),
@@ -86,7 +84,7 @@ function createInitialState(input) {
     currentMapName: String(mapData.name ?? 'default'),
     spawnPoints,
     enemyDefinitions,
-    enemySpawns,
+    enemySpawns: [],
     enemies: new Map(),
     spawnPointIndex: 0,
     fairies: initializeFairies({ platforms }),

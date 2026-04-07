@@ -827,6 +827,7 @@ function applyExplosionDamage(input) {
 
     damageEnemy({
       state: input.state,
+      io: input.io,
       enemyId,
       damage,
       sourceSid: input.ownerSid,

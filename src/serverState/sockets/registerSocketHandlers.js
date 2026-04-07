@@ -282,7 +282,7 @@ function handleLoadMap(input) {
   const { buildPlatformNavigation } = require('../state/platformNavigation/buildPlatformNavigation');
   const { buildPlatformsFromMap } = require('../state/platforms/buildPlatformsFromMap');
   const { initializeFairies } = require('../state/fairies/fairySystem');
-  const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
+  const { loadEnemyCatalog } = require('../../enemies/catalog');
 
   const mapName = String(input.data?.name ?? 'default');
   const isSameMap = input.state.currentMapName === mapName;
@@ -314,7 +314,7 @@ function handleLoadMap(input) {
     ? mapData.spawnPoints
     : [{ x: 100, y: 500, id: 0 }];
   input.state.enemyDefinitions = loadEnemyCatalog({ staticDir: input.state.config.staticDir });
-  input.state.enemySpawns = normalizeEnemySpawns(mapData.enemies, input.state.enemyDefinitions);
+  input.state.enemySpawns = [];
   resetEnemiesForState({ state: input.state });
 
   const player = input.state.players.get(input.socket.id);

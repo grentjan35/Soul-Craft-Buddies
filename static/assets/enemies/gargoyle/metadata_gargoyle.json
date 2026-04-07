@@ -1,0 +1,83 @@
+{
+  "id": "gargoyle",
+  "type": "gargoyle",
+  "displayName": "Gargoyle",
+  "scale": 0.19,
+  "frameSize": {
+    "w": 554,
+    "h": 471
+  },
+  "hitbox": {
+    "x": 190,
+    "y": 150,
+    "w": 236,
+    "h": 284
+  },
+  "normalized": {
+    "x": 0.34296,
+    "y": 0.318471,
+    "w": 0.425993,
+    "h": 0.602972
+  },
+  "stats": {
+    "maxHealth": 200,
+    "contactDamage": 50,
+    "respawnDelayMs": 7000
+  },
+  "behavior": {
+    "movementMode": "flying",
+    "attackMode": "projectile",
+    "detectionRadius": 760,
+    "leashRadius": 1120,
+    "wanderRadius": 220,
+    "moveSpeed": 210,
+    "verticalMoveSpeed": 172,
+    "telegraphDurationMs": 420,
+    "lungeDurationMs": 820,
+    "attackCooldownMs": 1200,
+    "attackRange": 460,
+    "lungeSpeed": 840,
+    "lungeLift": 260,
+    "jumpForce": 720,
+    "stuckJumpDelayMs": 360,
+    "doubleJumpDelayMs": 760,
+    "despawnAfterDeathMs": 1600,
+    "hoverHeight": 160,
+    "hoverVariance": 132,
+    "hoverBobAmplitude": 14,
+    "hoverBobSpeed": 1.6,
+    "projectileSpeed": 980,
+    "projectileDamage": 50,
+    "projectileScale": 0.82,
+    "projectileRadiusScale": 0.72,
+    "projectileYOffset": -10,
+    "projectileOffsetX": 12
+  },
+  "animations": {
+    "idle": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "idle"
+    },
+    "run": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "attack": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "attack"
+    },
+    "death": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "death"
+    },
+    "prepare": {
+      "frames": 4,
+      "grid": "3x3",
+      "asset": "attack"
+    }
+  }
+}

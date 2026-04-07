@@ -135,25 +135,11 @@
                 </div>
                 <div id="spawnPalettePanel" style="display: none;">
                     <h3>Spawn Tool</h3>
-                    <div class="control-group" style="margin-bottom: 12px;">
-                        <label>Placement Type</label>
-                        <select id="spawnPlacementMode" onchange="setSpawnPlacementMode(this.value)">
-                            <option value="player">Player Spawn</option>
-                            <option value="enemy">Enemy Spawn</option>
-                        </select>
-                    </div>
-                    <div class="control-group" style="margin-bottom: 12px;">
-                        <label>Enemies</label>
-                        <select id="enemyTypeSelect" onchange="setSelectedEnemyType(this.value)"></select>
-                    </div>
-                    <div class="inline-row" style="margin-bottom: 12px;">
-                        <button type="button" onclick="openEnemyScaleModal()">Set Enemy Size</button>
-                        <span class="enemy-badge" id="enemyScaleBadge">Scale: --</span>
-                    </div>
                     <div class="info">
-                        <p>Player Spawn mode: left click places a player spawn point.</p>
-                        <p>Enemy Spawn mode: left click places the selected enemy.</p>
-                        <p>Right click removes the nearest spawn of the active placement type.</p>
+                        <p>Left click places a player spawn point.</p>
+                        <p>Right click removes the nearest player spawn point.</p>
+                        <p>Enemy placement is disabled here now.</p>
+                        <p>Enemies spawn procedurally in-game based on the map layout.</p>
                         <p>Shift+drag or Middle click: Pan</p>
                         <p>Ctrl+scroll: Zoom</p>
                     </div>
@@ -599,30 +585,38 @@
                 ? '<option value="">No enemies found</option>'
                 : enemyCatalog.map((entry) => `<option value="${entry.type}">${entry.displayName}</option>`).join('');
 
-            mainSelect.innerHTML = optionsMarkup;
-            modalSelect.innerHTML = optionsMarkup;
+            if (mainSelect) {
+                mainSelect.innerHTML = optionsMarkup;
+            }
+            if (modalSelect) {
+                modalSelect.innerHTML = optionsMarkup;
+            }
 
             if (selectedEnemyType) {
-                mainSelect.value = selectedEnemyType;
-                modalSelect.value = selectedEnemyType;
+                if (mainSelect) {
+                    mainSelect.value = selectedEnemyType;
+                }
+                if (modalSelect) {
+                    modalSelect.value = selectedEnemyType;
+                }
             }
         }
 
         function setSpawnPlacementMode(mode) {
-            spawnPlacementMode = mode === 'enemy' ? 'enemy' : 'player';
-            const enemySelect = document.getElementById('enemyTypeSelect');
-            const enemyButton = document.querySelector('#spawnPalettePanel button');
-            enemySelect.disabled = spawnPlacementMode !== 'enemy';
-            if (enemyButton) {
-                enemyButton.disabled = enemyCatalog.length === 0;
-            }
+            spawnPlacementMode = 'player';
             draw();
         }
 
         async function setSelectedEnemyType(enemyType) {
             selectedEnemyType = enemyType;
-            document.getElementById('enemyTypeSelect').value = enemyType || '';
-            document.getElementById('enemyScaleEnemySelect').value = enemyType || '';
+            const mainSelect = document.getElementById('enemyTypeSelect');
+            const modalSelect = document.getElementById('enemyScaleEnemySelect');
+            if (mainSelect) {
+                mainSelect.value = enemyType || '';
+            }
+            if (modalSelect) {
+                modalSelect.value = enemyType || '';
+            }
             updateEnemyScaleBadge();
 
             if (enemyType) {
@@ -643,6 +637,9 @@
 
         function updateEnemyScaleBadge() {
             const badge = document.getElementById('enemyScaleBadge');
+            if (!badge) {
+                return;
+            }
             const metadata = getEnemyMetadata(selectedEnemyType);
             badge.textContent = metadata
                 ? `Scale: ${Number(metadata.scale).toFixed(2)}`
@@ -797,8 +794,14 @@
                 enemyCatalog = enemyCatalog.map((entry) => entry.type === enemyType ? result.metadata : entry);
                 updateEnemyScaleBadge();
                 renderEnemySelectors();
-                document.getElementById('enemyTypeSelect').value = enemyType;
-                document.getElementById('enemyScaleEnemySelect').value = enemyType;
+                const mainSelect = document.getElementById('enemyTypeSelect');
+                const modalSelect = document.getElementById('enemyScaleEnemySelect');
+                if (mainSelect) {
+                    mainSelect.value = enemyType;
+                }
+                if (modalSelect) {
+                    modalSelect.value = enemyType;
+                }
                 closeEnemyScaleModal();
                 draw();
                 showStatus(`${result.metadata.displayName} scale saved`, 'success');
@@ -1221,41 +1224,7 @@
         }
 
         function drawEnemySpawns() {
-            enemySpawns.forEach((enemy, index) => {
-                const metadata = getEnemyMetadata(enemy.type);
-                const bitmap = enemyIdleBitmapCache.get(enemy.type);
-                const drawX = enemy.x;
-                const drawY = enemy.y;
-
-                if (bitmap && metadata?.animations?.idle) {
-                    const [cols, rows] = metadata.animations.idle.grid.split('x').map(Number);
-                    const frameWidth = bitmap.width / cols;
-                    const frameHeight = bitmap.height / rows;
-                    const scaledWidth = frameWidth * metadata.scale;
-                    const scaledHeight = frameHeight * metadata.scale;
-
-                    ctx.drawImage(
-                        bitmap,
-                        0, 0, frameWidth, frameHeight,
-                        drawX - scaledWidth / 2,
-                        drawY - scaledHeight / 2,
-                        scaledWidth,
-                        scaledHeight
-                    );
-                }
-
-                ctx.save();
-                ctx.strokeStyle = '#ff5c5c';
-                ctx.lineWidth = 2 / zoomLevel;
-                ctx.strokeRect(drawX - 12 / zoomLevel, drawY - 12 / zoomLevel, 24 / zoomLevel, 24 / zoomLevel);
-                ctx.fillStyle = 'rgba(255, 92, 92, 0.18)';
-                ctx.fillRect(drawX - 12 / zoomLevel, drawY - 12 / zoomLevel, 24 / zoomLevel, 24 / zoomLevel);
-                ctx.fillStyle = '#ffd7d7';
-                ctx.font = `${12 / zoomLevel}px sans-serif`;
-                ctx.fillText(`E${index + 1}`, drawX + 8 / zoomLevel, drawY - 10 / zoomLevel);
-                ctx.fillText(enemy.type, drawX + 8 / zoomLevel, drawY + 18 / zoomLevel);
-                ctx.restore();
-            });
+            return;
         }
 
         function drawDecorPlacements() {
@@ -1311,45 +1280,15 @@
         }
 
         function serializeEnemies() {
-            return enemySpawns.map((enemy) => ({
-                id: enemy.id,
-                type: enemy.type,
-                x: enemy.x,
-                y: enemy.y
-            }));
+            return [];
         }
 
         function addEnemySpawn(x, y) {
-            if (!selectedEnemyType) {
-                showStatus('Select an enemy type first', 'error');
-                return;
-            }
-
-            const enemyId = `${selectedEnemyType}_${enemySpawns.length}`;
-            enemySpawns.push({
-                id: enemyId,
-                type: selectedEnemyType,
-                x: x * TILE_SIZE,
-                y: y * TILE_SIZE
-            });
-            draw();
+            return;
         }
 
         function removeEnemySpawn(x, y) {
-            const worldX = x * TILE_SIZE;
-            const worldY = y * TILE_SIZE;
-            const threshold = 36;
-
-            const index = enemySpawns.findIndex((enemy) => {
-                const dx = enemy.x - worldX;
-                const dy = enemy.y - worldY;
-                return Math.sqrt(dx * dx + dy * dy) < threshold;
-            });
-
-            if (index !== -1) {
-                enemySpawns.splice(index, 1);
-                draw();
-            }
+            return;
         }
 
         function getBackgroundAtWorldPoint(worldX, worldY) {
@@ -1624,17 +1563,9 @@
             // Handle spawn point mode
             if (toolMode === 'spawn') {
                 if (e.button === 0) { // Left click - add spawn point
-                    if (spawnPlacementMode === 'enemy') {
-                        addEnemySpawn(pos.x, pos.y);
-                    } else {
-                        addSpawnPoint(pos.x, pos.y);
-                    }
+                    addSpawnPoint(pos.x, pos.y);
                 } else if (e.button === 2) { // Right click - remove spawn point
-                    if (spawnPlacementMode === 'enemy') {
-                        removeEnemySpawn(pos.x, pos.y);
-                    } else {
-                        removeSpawnPoint(pos.x, pos.y);
-                    }
+                    removeSpawnPoint(pos.x, pos.y);
                 }
                 return;
             }
@@ -1773,7 +1704,7 @@
                 : mode === 'decor'
                     ? 'Decor'
                 : mode === 'spawn'
-                    ? 'Spawn / Enemies'
+                    ? 'Player Spawns'
                     : 'Tile Paint';
             setSpawnPlacementMode(spawnPlacementMode);
             draw();
@@ -1804,8 +1735,8 @@
             
             // Validate map has at least one tile, spawn point, or background
             const hasTiles = mapData.some(row => row.some(tile => tile >= 0));
-            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0 && enemySpawns.length === 0 && decorPlacements.length === 0) {
-                showStatus('Map must have at least one tile, spawn point, enemy, background, or decor', 'error');
+            if (!hasTiles && spawnPoints.length === 0 && placedBackgrounds.length === 0 && decorPlacements.length === 0) {
+                showStatus('Map must have at least one tile, spawn point, background, or decor', 'error');
                 return false;
             }
             
@@ -1821,7 +1752,7 @@
                         spawnPoints: spawnPoints,
                         tileCollisions: tileCollisions,
                         backgrounds: serializeBackgrounds(),
-                        enemies: serializeEnemies(),
+                        enemies: [],
                         decor: serializeDecor()
                     })
                 });
@@ -1867,20 +1798,13 @@
                     mapData = result.tiles;
                     spawnPoints = result.spawnPoints || [];
                     tileCollisions = result.tileCollisions || {};
-                    enemySpawns = Array.isArray(result.enemies) ? result.enemies : [];
+                    enemySpawns = [];
                     placedBackgrounds = Array.isArray(result.backgrounds)
                         ? result.backgrounds.map((background) => normalizeBackgroundPlacement(background)).filter(Boolean)
                         : [];
                     decorPlacements = Array.isArray(result.decor)
                         ? result.decor.map((decor) => normalizeDecorPlacement(decor)).filter(Boolean)
                         : [];
-                    enemySpawns.forEach((enemy) => {
-                        if (enemy?.type) {
-                            loadEnemyPreviewResources(enemy.type).catch((error) => {
-                                console.error('Error loading enemy preview:', error);
-                            });
-                        }
-                    });
                     ensureDefaultBackgroundPlacement();
                     syncBackgroundIdentityCounter();
                     syncDecorIdentityCounter();
@@ -2219,7 +2143,7 @@
                         spawnPoints: spawnPoints,
                         tileCollisions: tileCollisions,
                         backgrounds: serializeBackgrounds(),
-                        enemies: serializeEnemies(),
+                        enemies: [],
                         decor: serializeDecor()
                     })
                 });
