@@ -1380,67 +1380,6 @@
             touch-action: manipulation;
         }
 
-        #souls-leaderboard {
-            position: fixed;
-            top: 18px;
-            right: 20px;
-            z-index: 102;
-            min-width: 220px;
-            max-width: min(280px, calc(100vw - 24px));
-            padding: 10px 12px 12px;
-            border: 1px solid rgba(171, 191, 255, 0.34);
-            background:
-                radial-gradient(circle at top, rgba(119, 157, 255, 0.2), transparent 58%),
-                linear-gradient(180deg, rgba(8, 14, 28, 0.9), rgba(4, 8, 18, 0.84));
-            box-shadow:
-                0 0 22px rgba(82, 118, 255, 0.12),
-                inset 0 0 18px rgba(166, 196, 255, 0.06);
-            color: #eef3ff;
-            display: none;
-            backdrop-filter: blur(8px);
-            font-family: 'EB Garamond', serif;
-        }
-
-        #souls-leaderboard.is-visible {
-            display: block;
-        }
-
-        .souls-board-title {
-            font-size: 17px;
-            letter-spacing: 0.22em;
-            text-transform: uppercase;
-            color: #dfe8ff;
-            margin-bottom: 8px;
-            text-shadow: 0 0 10px rgba(121, 156, 255, 0.2);
-        }
-
-        .souls-board-row {
-            display: grid;
-            grid-template-columns: 24px 1fr auto;
-            gap: 8px;
-            align-items: center;
-            padding: 4px 0;
-            font-size: 16px;
-            line-height: 1.2;
-        }
-
-        .souls-board-rank {
-            color: #9ec0ff;
-            font-weight: bold;
-        }
-
-        .souls-board-name {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .souls-board-score {
-            color: #b9a4ff;
-            font-weight: bold;
-            text-shadow: 0 0 10px rgba(133, 93, 255, 0.24);
-        }
-
         #chat-box {
             background: rgba(0, 0, 0, 0.8);
             border: 2px solid rgba(255, 255, 255, 0.3);
@@ -1886,10 +1825,6 @@
     </div>
     <canvas id="gameCanvas"></canvas>
     <canvas id="glCanvas" style="display: none;"></canvas>
-    <div id="souls-leaderboard" aria-live="polite">
-        <div class="souls-board-title">Souls</div>
-        <div id="souls-leaderboard-rows"></div>
-    </div>
     
     <!-- Chat Input -->
     <div id="chat-container">
@@ -2909,32 +2844,85 @@
             menuGL.enableVertexAttribArray(texCoordLocation);
             menuGL.vertexAttribPointer(texCoordLocation, 2, menuGL.FLOAT, false, 0, 0);
             
-            // Use a tiny static texture so character cards can load first instead of waiting on a large menu video.
+            // Load background video using tokenized endpoint for security
+            const video = document.createElement('video');
+            let homescreenVideoUrl = null;
+
+            function revokeHomescreenVideoUrl() {
+                if (homescreenVideoUrl) {
+                    URL.revokeObjectURL(homescreenVideoUrl);
+                    homescreenVideoUrl = null;
+                }
+            }
+
+            video.addEventListener('loadeddata', () => {
+                // Keep playback alive inside the existing media element,
+                // but invalidate the blob URL so it cannot be opened directly.
+                revokeHomescreenVideoUrl();
+            });
+            
+            // Get environment token and load video
+            async function loadVideo() {
+                try {
+                    const environmentToken = await getEnvironmentToken();
+                    const videoBlob = await fetchProtectedBlob(`/api/homescreen_video/${environmentToken}`, 'video/mp4');
+                    revokeHomescreenVideoUrl();
+                    homescreenVideoUrl = URL.createObjectURL(videoBlob);
+                    video.src = homescreenVideoUrl;
+                    video.preload = 'auto';
+                    video.loop = true;
+                    video.muted = true;
+                    video.playsInline = true;
+                    video.autoplay = true;
+                    video.play().catch(e => console.log('Video autoplay failed:', e));
+                } catch (error) {
+                    console.error('Failed to load homescreen video:', error);
+                }
+            }
+
+            // Clean up any still-live blob URL if the page is leaving before media has loaded.
+            window.addEventListener('pagehide', revokeHomescreenVideoUrl);
+            window.addEventListener('beforeunload', revokeHomescreenVideoUrl);
+            
+            loadVideo();
+            
+            // Create texture from video
             const texture = menuGL.createTexture();
             menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_S, menuGL.CLAMP_TO_EDGE);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_T, menuGL.CLAMP_TO_EDGE);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MIN_FILTER, menuGL.LINEAR);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MAG_FILTER, menuGL.LINEAR);
-            menuGL.texImage2D(
-                menuGL.TEXTURE_2D,
-                0,
-                menuGL.RGBA,
-                1,
-                1,
-                0,
-                menuGL.RGBA,
-                menuGL.UNSIGNED_BYTE,
-                new Uint8Array([18, 24, 36, 255])
-            );
+            
+            // Update texture with video frames
+            function updateVideoTexture() {
+                if (!menuLoopsActive) {
+                    return;
+                }
+                if (video.readyState >= video.HAVE_ENOUGH_DATA) {
+                    menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
+                    menuGL.texImage2D(menuGL.TEXTURE_2D, 0, menuGL.RGBA, menuGL.RGBA, menuGL.UNSIGNED_BYTE, video);
+                }
+                menuTextureFrameId = requestAnimationFrame(updateVideoTexture);
+            }
+            
+            // Start video texture updates
+            updateVideoTexture();
             
             // Get uniform locations
             const resolutionLocation = menuGL.getUniformLocation(program, 'u_resolution');
             const mouseLocation = menuGL.getUniformLocation(program, 'u_mouse');
             const videoResolutionLocation = menuGL.getUniformLocation(program, 'u_videoResolution');
             
-            // Static background resolution fallback.
-            let videoResolution = { width: 1920, height: 1080 };
+            // Video resolution tracking
+            let videoResolution = { width: 1920, height: 1080 }; // Default fallback
+            
+            // Get actual video dimensions when metadata is loaded
+            video.addEventListener('loadedmetadata', () => {
+                videoResolution.width = video.videoWidth;
+                videoResolution.height = video.videoHeight;
+                console.log('Video resolution:', videoResolution);
+            });
             
             // Mouse tracking
             let mouseX = 0, mouseY = 0;
@@ -3055,7 +3043,6 @@
             fireballAudio = createFireballAudioSystem();
             combatAudio = createCombatAudioSystem();
             combatMusic = createCombatMusicSystem();
-            combatMusic.setMode('menu');
             bindGlobalAudioRecovery();
 
             function updateSettingsValueLabels() {
@@ -3171,153 +3158,56 @@
             }
 
             function createCombatMusicSystem() {
-                const MENU_VIDEO_ID = 'qUUDyS2C6Wo';
-                const GAME_VIDEO_ID = 'IifPuoG8FEY';
-                const MAX_VOLUME = 42;
-                const hiddenPlayerId = 'combat-music-youtube-player';
+                const TRACK_URL = '/audio/combat.mp3';
+                const MAX_VOLUME = 0.42;
+                const FADE_IN_PER_SECOND = 1.6;
+                const FADE_OUT_PER_SECOND = 1.05;
+                const PAN_LERP_PER_SECOND = 3.6;
+                const HOLD_AFTER_COMBAT_MS = 1400;
+                const audio = new Audio(TRACK_URL);
+                audio.preload = 'auto';
+                audio.loop = true;
+                audio.volume = 1;
+                const audioContext = getSharedGameAudioContext();
+                const spatialNodes = audioContext ? createSpatialPanNodes(audioContext) : null;
+                const mediaSource = audioContext && spatialNodes ? audioContext.createMediaElementSource(audio) : null;
                 let audioUnlocked = false;
-                let player = null;
-                let apiPromise = null;
                 let currentVolume = 0;
                 let targetVolume = 0;
-                let shouldBePlaying = false;
-                let currentMode = 'menu';
-                let loadedVideoId = null;
+                let activeUntilMs = 0;
+                let currentPan = 0;
+                let targetPan = 0;
 
-                function ensureHiddenPlayerHost() {
-                    let host = document.getElementById(hiddenPlayerId);
-                    if (host) {
-                        return host;
-                    }
-
-                    host = document.createElement('div');
-                    host.id = hiddenPlayerId;
-                    host.setAttribute('aria-hidden', 'true');
-                    host.style.position = 'fixed';
-                    host.style.left = '-9999px';
-                    host.style.top = '-9999px';
-                    host.style.width = '1px';
-                    host.style.height = '1px';
-                    host.style.opacity = '0';
-                    host.style.pointerEvents = 'none';
-                    host.style.overflow = 'hidden';
-                    host.style.zIndex = '-1';
-                    document.body.appendChild(host);
-                    return host;
+                if (mediaSource && spatialNodes) {
+                    mediaSource.connect(spatialNodes.gainNode);
+                    spatialNodes.gainNode.gain.value = 0;
+                    spatialNodes.setPan(0);
                 }
 
-                function loadYouTubeApi() {
-                    if (window.YT && typeof window.YT.Player === 'function') {
-                        return Promise.resolve(window.YT);
-                    }
-                    if (apiPromise) {
-                        return apiPromise;
-                    }
-
-                    apiPromise = new Promise((resolve, reject) => {
-                        const previousReady = window.onYouTubeIframeAPIReady;
-                        window.onYouTubeIframeAPIReady = () => {
-                            if (typeof previousReady === 'function') {
-                                try {
-                                    previousReady();
-                                } catch (_error) {
-                                    // Ignore chained callback failures.
-                                }
-                            }
-                            resolve(window.YT);
-                        };
-
-                        const existing = document.querySelector('script[data-youtube-iframe-api="true"]');
-                        if (existing) {
-                            return;
-                        }
-
-                        const script = document.createElement('script');
-                        script.src = 'https://www.youtube.com/iframe_api';
-                        script.async = true;
-                        script.defer = true;
-                        script.dataset.youtubeIframeApi = 'true';
-                        script.onerror = () => reject(new Error('Failed to load YouTube iframe API.'));
-                        document.head.appendChild(script);
-                    });
-
-                    return apiPromise;
-                }
-
-                async function ensurePlayer() {
-                    if (player) {
-                        return player;
-                    }
-
-                    const YT = await loadYouTubeApi();
-                    const host = ensureHiddenPlayerHost();
-
-                    player = await new Promise((resolve) => {
-                        const nextPlayer = new YT.Player(host, {
-                            width: '1',
-                            height: '1',
-                            videoId: MENU_VIDEO_ID,
-                            host: 'https://www.youtube-nocookie.com',
-                            playerVars: {
-                                autoplay: 0,
-                                controls: 0,
-                                disablekb: 1,
-                                fs: 0,
-                                iv_load_policy: 3,
-                                modestbranding: 1,
-                                playsinline: 1,
-                                rel: 0,
-                                loop: 1,
-                                playlist: MENU_VIDEO_ID
-                            },
-                            events: {
-                                onReady: () => resolve(nextPlayer),
-                                onStateChange: (event) => {
-                                    if (event?.data === YT.PlayerState.ENDED) {
-                                        try {
-                                            nextPlayer.seekTo(0, true);
-                                            nextPlayer.playVideo();
-                                        } catch (_error) {
-                                            // Ignore replay failures.
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                    try {
-                        player.setVolume(0);
-                        loadedVideoId = MENU_VIDEO_ID;
-                    } catch (_error) {
-                        // Ignore initial volume sync failures.
-                    }
-
-                    return player;
-                }
-
-                function getVideoIdForMode(mode) {
-                    return mode === 'game' ? GAME_VIDEO_ID : MENU_VIDEO_ID;
-                }
-
-                async function syncVideoToMode() {
-                    if (!player) {
+                function unlockAudio() {
+                    if (audioUnlocked) {
                         return;
                     }
 
-                    const targetVideoId = getVideoIdForMode(currentMode);
-                    if (loadedVideoId === targetVideoId) {
-                        return;
+                    audioUnlocked = true;
+                    audio.load();
+                    audio.muted = true;
+                    const playAttempt = audio.play();
+                    if (playAttempt && typeof playAttempt.then === 'function') {
+                        playAttempt
+                            .then(() => {
+                                audio.pause();
+                                audio.currentTime = 0;
+                                audio.muted = false;
+                            })
+                            .catch(() => {
+                                audio.muted = false;
+                            });
+                    } else {
+                        audio.muted = false;
                     }
-
-                    try {
-                        player.loadVideoById({
-                            videoId: targetVideoId,
-                            startSeconds: 0
-                        });
-                        loadedVideoId = targetVideoId;
-                    } catch (_error) {
-                        // Ignore mode-switch failures.
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(() => {});
                     }
                 }
 
@@ -3330,11 +3220,7 @@
                     try {
                         const nextPlayer = await ensurePlayer();
                         await syncVideoToMode();
-                        targetVolume = MAX_VOLUME * getMusicSetting();
-                        if (currentMode === 'menu') {
-                            currentVolume = targetVolume;
-                        }
-                        nextPlayer.setVolume(Math.round(currentVolume));
+                        nextPlayer.setVolume(Math.round(MAX_VOLUME * getMusicSetting()));
                         nextPlayer.playVideo();
                         shouldBePlaying = true;
                     } catch (_error) {
@@ -3347,28 +3233,16 @@
                     shouldBePlaying = true;
                     targetVolume = MAX_VOLUME * getMusicSetting();
                     if (player) {
-                        if (currentMode === 'menu') {
-                            currentVolume = targetVolume;
-                            try {
-                                player.setVolume(Math.round(currentVolume));
-                                player.playVideo();
-                            } catch (_error) {
-                                // Ignore immediate menu-mode sync failures.
-                            }
-                        }
                         syncVideoToMode().catch(() => {});
                     }
                 }
 
-                function setCombatActive(_active, _nowMs, _nextPan = 0) {
-                    targetVolume = MAX_VOLUME * getMusicSetting();
-                    shouldBePlaying = true;
-                }
-
-                function tick(_nowMs, dtSeconds) {
-                    targetVolume = MAX_VOLUME * getMusicSetting();
-                    const fadeRate = targetVolume > currentVolume ? 72 : 54;
-                    const step = Math.max(0.5, fadeRate * Math.max(0, dtSeconds));
+                function tick(nowMs, dtSeconds) {
+                    const maxVolume = MAX_VOLUME * getMusicSetting();
+                    const shouldBeAudible = nowMs <= activeUntilMs;
+                    targetVolume = shouldBeAudible ? maxVolume : 0;
+                    const fadeRate = targetVolume > currentVolume ? FADE_IN_PER_SECOND : FADE_OUT_PER_SECOND;
+                    const step = Math.max(0.001, fadeRate * Math.max(0, dtSeconds));
 
                     if (Math.abs(targetVolume - currentVolume) <= step) {
                         currentVolume = targetVolume;
@@ -3378,41 +3252,52 @@
                         currentVolume -= step;
                     }
 
-                    currentVolume = Math.max(0, Math.min(MAX_VOLUME, currentVolume));
+                    currentVolume = Math.max(0, Math.min(maxVolume, currentVolume));
+                    const panStep = Math.max(0.001, PAN_LERP_PER_SECOND * Math.max(0, dtSeconds));
+                    if (Math.abs(targetPan - currentPan) <= panStep) {
+                        currentPan = targetPan;
+                    } else if (targetPan > currentPan) {
+                        currentPan += panStep;
+                    } else {
+                        currentPan -= panStep;
+                    }
+                    currentPan = Math.max(-1, Math.min(1, currentPan));
 
-                    if (!player) {
-                        return;
+                    if (spatialNodes) {
+                        spatialNodes.gainNode.gain.value = currentVolume;
+                        spatialNodes.setPan(currentPan);
+                    } else {
+                        audio.volume = currentVolume;
                     }
 
-                    try {
-                        player.setVolume(Math.round(currentVolume));
-                        if (shouldBePlaying) {
-                            const state = typeof player.getPlayerState === 'function' ? player.getPlayerState() : null;
-                            if (state !== 1 && state !== 3) {
-                                player.playVideo();
-                            }
+                    if (currentVolume > 0.002) {
+                        const playAttempt = audio.play();
+                        if (playAttempt && typeof playAttempt.catch === 'function') {
+                            playAttempt.catch(() => {});
                         }
-                    } catch (_error) {
-                        // Ignore player update failures.
+                    } else if (!audio.paused) {
+                        audio.pause();
                     }
                 }
 
                 function stop() {
-                    currentVolume = 0;
+                    activeUntilMs = 0;
                     targetVolume = 0;
-                    shouldBePlaying = false;
-                    if (!player) {
-                        return;
+                    currentVolume = 0;
+                    targetPan = 0;
+                    currentPan = 0;
+                    if (spatialNodes) {
+                        spatialNodes.gainNode.gain.value = 0;
+                        spatialNodes.setPan(0);
+                    } else {
+                        audio.volume = 0;
                     }
-                    try {
-                        player.setVolume(0);
-                        player.pauseVideo();
-                    } catch (_error) {
-                        // Ignore player stop failures.
+                    if (!audio.paused) {
+                        audio.pause();
                     }
                 }
 
-                return { unlockAudio, setMode, setCombatActive, tick, stop };
+                return { unlockAudio, setCombatActive, tick, stop };
             }
 
             function computeSpatialMix(worldX, worldY, listenerX, listenerY, viewport = null) {
@@ -4967,7 +4852,6 @@
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
                 combatMusic.setMode('game');
-                loadingContainer?.classList.remove('is-boot-hidden');
                 
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
@@ -5012,8 +4896,6 @@
         const ctx = canvas.getContext('2d');
         const GAME_VIEWPORT_WIDTH = 1600;
         const GAME_VIEWPORT_HEIGHT = 900;
-        const soulsLeaderboardEl = document.getElementById('souls-leaderboard');
-        const soulsLeaderboardRowsEl = document.getElementById('souls-leaderboard-rows');
 
         // WebGL Setup
         const glCanvas = document.getElementById('glCanvas');
@@ -6771,7 +6653,6 @@
         const enemyState = {};
         const authoritativeEnemyState = {};
         const soulOrbState = {};
-        const collectedSoulAnimations = [];
         const enemySnapshots = {};
         const previousEnemyAudioState = {};
         const enemyAmbientAudioState = {};
@@ -6797,7 +6678,6 @@
         const dyingPlayers = {};
         // Store fairy data from server
         let fairies = [];
-        let soulsLeaderboard = [];
         
         // Chat system
         const chatMessages = {}; // Store chat messages per player
@@ -7063,9 +6943,7 @@
                 enemies: serverEnemies,
                 fairies: serverFairies,
                 fireballs: serverFireballs,
-                explosions: serverExplosions,
-                soul_orbs: serverSoulOrbs = {},
-                leaderboard: serverLeaderboard = []
+                explosions: serverExplosions
             } = serverState;
             const receivedAt = performance.now();
 
@@ -7095,7 +6973,6 @@
                     character: pos.character,
                     name: pos.name,
                     health: pos.health || PLAYER_MAX_HEALTH,
-                    soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0,
                     is_attacking: Boolean(pos.is_attacking),
                     attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0
                 };
@@ -7111,7 +6988,6 @@
                     character: pos.character,
                     name: pos.name,
                     health: pos.health || PLAYER_MAX_HEALTH,
-                    soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0,
                     is_attacking: Boolean(pos.is_attacking),
                     attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0
                 });
@@ -7201,34 +7077,6 @@
 
             for (const orbId in soulOrbState) {
                 if (!serverSoulOrbs[orbId]) {
-                    const removedOrb = soulOrbState[orbId];
-                    if (removedOrb) {
-                        let targetSid = null;
-                        let targetDistance = Number.POSITIVE_INFINITY;
-                        for (const sid in playerState) {
-                            const player = playerState[sid];
-                            if (!player || !Number.isFinite(player.x) || !Number.isFinite(player.y)) {
-                                continue;
-                            }
-                            const distance = Math.hypot(player.x - removedOrb.x, player.y - removedOrb.y);
-                            if (distance < targetDistance) {
-                                targetDistance = distance;
-                                targetSid = sid;
-                            }
-                        }
-                        if (targetSid && targetDistance <= 180) {
-                            collectedSoulAnimations.push({
-                                x: Number.isFinite(removedOrb.renderX) ? removedOrb.renderX : removedOrb.x,
-                                y: Number.isFinite(removedOrb.renderY) ? removedOrb.renderY : removedOrb.y,
-                                startX: Number.isFinite(removedOrb.renderX) ? removedOrb.renderX : removedOrb.x,
-                                startY: Number.isFinite(removedOrb.renderY) ? removedOrb.renderY : removedOrb.y,
-                                targetSid,
-                                startTime: performance.now(),
-                                size: typeof removedOrb.size === 'number' ? removedOrb.size : 1,
-                                phase: typeof removedOrb.phase === 'number' ? removedOrb.phase : 0,
-                            });
-                        }
-                    }
                     delete soulOrbState[orbId];
                 }
             }
@@ -8143,7 +7991,7 @@
 
         function drawSoulOrbs(nowMs = Date.now(), visibleBounds = null) {
             const orbIds = Object.keys(soulOrbState);
-            if (!orbIds.length && !collectedSoulAnimations.length) {
+            if (!orbIds.length) {
                 return;
             }
 
@@ -8199,59 +8047,6 @@
                     Math.round(drawY - 1.5),
                     3,
                     3
-                );
-            }
-
-            for (let index = collectedSoulAnimations.length - 1; index >= 0; index -= 1) {
-                const animation = collectedSoulAnimations[index];
-                const targetPlayer = playerState[animation.targetSid];
-                if (!targetPlayer) {
-                    collectedSoulAnimations.splice(index, 1);
-                    continue;
-                }
-
-                const progress = Math.max(0, Math.min(1, (performance.now() - animation.startTime) / 240));
-                if (progress >= 1) {
-                    collectedSoulAnimations.splice(index, 1);
-                    continue;
-                }
-
-                const eased = 1 - Math.pow(1 - progress, 3);
-                const targetX = targetPlayer.x;
-                const targetY = targetPlayer.y - 18;
-                const drawX = animation.startX + (targetX - animation.startX) * eased;
-                const drawY = animation.startY + (targetY - animation.startY) * eased;
-                const baseSize = 9 * (animation.size || 1) * (1 - eased * 0.82);
-                const phase = (animation.phase ?? 0) + nowMs * 0.004;
-                const alpha = 1 - eased * 0.92;
-
-                drawFireballGlow(drawX, drawY, baseSize * 4.8, 'rgba(244, 248, 255, __A__)', 'rgba(102, 76, 255, __A__)', alpha * 0.95);
-                drawFireballGlow(drawX, drawY, baseSize * 2.7, 'rgba(240, 250, 255, __A__)', 'rgba(86, 182, 255, __A__)', alpha);
-
-                for (let i = 0; i < 3; i += 1) {
-                    const angle = phase * 1.35 + i * (Math.PI * 2 / 3);
-                    const radius = baseSize * (0.42 + (1 - eased) * 0.2);
-                    const px = drawX + Math.cos(angle) * radius;
-                    const py = drawY + Math.sin(angle) * radius * 0.8;
-                    const size = Math.max(1, Math.round((2 + (i % 2)) * (1 - eased * 0.7)));
-                    ctx.globalAlpha = alpha * 0.82;
-                    ctx.fillStyle = i === 1 ? '#a8d5ff' : '#b59bff';
-                    ctx.fillRect(
-                        Math.round(px - size / 2),
-                        Math.round(py - size / 2),
-                        size,
-                        size
-                    );
-                }
-
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = '#edf7ff';
-                const coreSize = Math.max(1, Math.round(3 * (1 - eased * 0.75)));
-                ctx.fillRect(
-                    Math.round(drawX - coreSize / 2),
-                    Math.round(drawY - coreSize / 2),
-                    coreSize,
-                    coreSize
                 );
             }
 
@@ -10802,7 +10597,6 @@
                     drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH);
                     drawMapDecor(nowMs, visibleBounds);
                     drawBurnMarks(nowMs, visibleBounds);
-                    drawSoulOrbs(nowMs, effectVisibleBounds);
                     drawChargingFireballs(renderServerTimeMs, visibleBounds);
 
                     // Debug mode: Show collision boxes and platforms
@@ -10854,7 +10648,6 @@
                     PLATFORMS.forEach(p => {
                         ctx.fillRect(p.x - cameraX, p.y - cameraY, p.w, p.h);
                     });
-                    drawSoulOrbs(nowMs, effectVisibleBounds);
                 }
 
                 // Draw Enemies with server authoritative positions and camera offset
