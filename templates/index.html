@@ -83,6 +83,8 @@
             -webkit-overflow-scrolling: touch;
             scrollbar-width: none;
             -ms-overflow-style: none;
+            opacity: 0;
+            visibility: hidden;
         }
 
         #start-screen::-webkit-scrollbar {
@@ -1265,18 +1267,12 @@
             }
         }
         
-        /* Hide loading screen by default now! */
-        #loading-screen {
-            display: none; 
-        }
-
-        /* Sleek Dark Loading Screen */
         #loading-screen {
             position: fixed;
             top: 0; left: 0;
             width: 100%; height: 100%;
             background: #000; /* Solid black matches the SOULCRAFT theme */
-            display: none; /* Hidden by default until PLAY is clicked */
+            display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
