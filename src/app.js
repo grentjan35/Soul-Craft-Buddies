@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 
+const { createCompressionMiddleware } = require('./http/middleware/createCompressionMiddleware');
 const { createPagesRouter } = require('./http/pages/createPagesRouter');
 const { createHealthRouter } = require('./http/health/createHealthRouter');
 const { createMapsRouter } = require('./http/maps/createMapsRouter');
@@ -16,6 +17,7 @@ async function createApp(config) {
 
   app.disable('x-powered-by');
   app.use(cors());
+  app.use(createCompressionMiddleware());
   app.use(express.json({ limit: '2mb' }));
 
   app.use(createHealthRouter());
