@@ -24,6 +24,8 @@ const SLIME_SPLAT_RADIUS = 30;
 const GARGOYLE_PERCH_OPACITY = 0;
 const GARGOYLE_ACTIVE_OPACITY = 1;
 const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
+const SOUL_ORB_MIN_DROPS = 1;
+const SOUL_ORB_MAX_DROPS = 3;
 
 function isFlyingEnemy(definition) {
   return definition?.behavior?.movementMode === 'flying';
@@ -2439,6 +2441,25 @@ function markEnemyDead(input) {
   enemy.vy = -Math.max(240, Math.abs(sourceVy || 0) * 0.35 + 220);
   enemy.on_ground = false;
   enemy.jumps_remaining = 0;
+
+  if (input.state?.soulOrbs instanceof Map) {
+    const dropCount = SOUL_ORB_MIN_DROPS + Math.floor(Math.random() * (SOUL_ORB_MAX_DROPS - SOUL_ORB_MIN_DROPS + 1));
+    for (let index = 0; index < dropCount; index += 1) {
+      const orbId = input.state.nextSoulOrbId ?? 0;
+      input.state.nextSoulOrbId = orbId + 1;
+      input.state.soulOrbs.set(orbId, {
+        id: orbId,
+        x: enemy.x + (Math.random() - 0.5) * 22,
+        y: enemy.y - 8 - Math.random() * 12,
+        vx: (Math.random() - 0.5) * 85,
+        vy: -110 - Math.random() * 85,
+        spawn_time_ms: Date.now(),
+        phase: Math.random() * Math.PI * 2,
+        size: 0.9 + Math.random() * 0.45,
+        grounded: false,
+      });
+    }
+  }
 }
 
 function stageEnemyRespawn(enemy, definition, nowSec) {
@@ -2518,6 +2539,7 @@ function damageEnemy(input) {
 
   if (enemy.health <= 0) {
     markEnemyDead({
+      state: input.state,
       enemy,
       definition,
       sourceVx: input.sourceVx,

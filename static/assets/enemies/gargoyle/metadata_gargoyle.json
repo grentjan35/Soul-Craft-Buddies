@@ -20,7 +20,7 @@
     "h": 0.602972
   },
   "stats": {
-    "maxHealth": 200,
+    "maxHealth": 170,
     "contactDamage": 50,
     "respawnDelayMs": 7000
   },

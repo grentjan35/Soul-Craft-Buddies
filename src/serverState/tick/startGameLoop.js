@@ -113,6 +113,7 @@ function startGameLoop(input) {
     updateFairies({ fairies: input.state.fairies, dt });
     updateFireballs({ state: input.state, dt, io: input.io });
     updateExplosions({ state: input.state, io: input.io });
+    updateSoulOrbs({ state: input.state, dt });
     updateDeathsAndRespawns({ state: input.state, io: input.io });
     cleanupDeadBodies({ state: input.state });
 
@@ -149,6 +150,7 @@ function broadcastState(input) {
       on_ground: p.on_ground,
       character: p.character,
       health: p.health,
+      soul_count: Math.max(0, Math.round(p.soul_count ?? 0)),
       is_attacking: p.is_attacking,
       attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
     };
@@ -189,6 +191,26 @@ function broadcastState(input) {
     };
   }
 
+  /** @type {Record<string, any>} */
+  const soulOrbsPayload = {};
+  for (const [id, orb] of input.state.soulOrbs.entries()) {
+    soulOrbsPayload[id] = {
+      id,
+      x: round1(orb.x),
+      y: round1(orb.y),
+      size: round3(orb.size ?? 1),
+      phase: round3(orb.phase ?? 0),
+    };
+  }
+
+  const leaderboard = Array.from(input.state.players.entries())
+    .map(([sid, p]) => ({
+      sid,
+      name: String(p.name ?? `P${sid.slice(0, 4)}`),
+      souls: Math.max(0, Math.round(p.soul_count ?? 0)),
+    }))
+    .sort((a, b) => b.souls - a.souls || a.name.localeCompare(b.name));
+
   input.io.volatile.emit('state', {
     ts,
     seq: input.state.stateSeq,
@@ -206,7 +228,99 @@ function broadcastState(input) {
       : undefined,
     fireballs: fireballsPayload,
     explosions: explosionsPayload,
+    soul_orbs: soulOrbsPayload,
+    leaderboard,
   });
+}
+
+function updateSoulOrbs(input) {
+  if (!(input.state.soulOrbs instanceof Map) || input.state.soulOrbs.size === 0) {
+    return;
+  }
+
+  const magnetRadius = 150;
+  const pickupRadius = 24;
+  const maxSpeed = 240;
+  const gravityPerSecond = GRAVITY * 60 * 0.36;
+
+  for (const [id, orb] of input.state.soulOrbs.entries()) {
+    if (!orb) {
+      input.state.soulOrbs.delete(id);
+      continue;
+    }
+
+    let nearest = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const [sid, player] of input.state.players.entries()) {
+      if (!player || player.is_dying) {
+        continue;
+      }
+      const dx = player.x - orb.x;
+      const dy = player.y - orb.y;
+      const distance = Math.hypot(dx, dy);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = { sid, player, dx, dy, distance };
+      }
+    }
+
+    if (nearest && nearest.distance <= pickupRadius) {
+      nearest.player.soul_count = Math.max(0, Math.round(nearest.player.soul_count ?? 0)) + 1;
+      input.state.soulOrbs.delete(id);
+      continue;
+    }
+
+    if (nearest && nearest.distance <= magnetRadius) {
+      const strength = 420 * (1 - nearest.distance / magnetRadius);
+      const nx = nearest.distance > 0.001 ? nearest.dx / nearest.distance : 0;
+      const ny = nearest.distance > 0.001 ? nearest.dy / nearest.distance : 0;
+      orb.vx += nx * strength * input.dt;
+      orb.vy += ny * strength * input.dt;
+      orb.grounded = false;
+    } else {
+      orb.vy += gravityPerSecond * input.dt;
+    }
+
+    orb.vx *= orb.grounded ? 0.88 : 0.985;
+    orb.vy *= 0.992;
+    orb.vx = Math.max(-maxSpeed, Math.min(maxSpeed, orb.vx));
+    orb.vy = Math.max(-maxSpeed, Math.min(maxSpeed, orb.vy));
+
+    const prevY = orb.y;
+    orb.x += orb.vx * input.dt;
+    orb.y += orb.vy * input.dt;
+    orb.grounded = false;
+
+    const nearby = getNearbyPlatforms({
+      platformGrid: input.state.platformGrid,
+      x: orb.x,
+      y: orb.y,
+    });
+
+    for (const platform of nearby) {
+      const horizontallyInside = orb.x >= platform.x - 6 && orb.x <= platform.x + platform.w + 6;
+      const crossedTop = prevY <= platform.y && orb.y >= platform.y;
+      if (!horizontallyInside || !crossedTop) {
+        continue;
+      }
+
+      orb.y = platform.y;
+      orb.vy = 0;
+      orb.grounded = true;
+      break;
+    }
+
+    orb.phase = (orb.phase ?? 0) + input.dt * 3.2;
+
+    if (
+      orb.x < input.state.mapBounds.min_x - 80 ||
+      orb.x > input.state.mapBounds.max_x + 80 ||
+      orb.y > input.state.mapBounds.max_y + 120 ||
+      Date.now() - (orb.spawn_time_ms ?? 0) > 30000
+    ) {
+      input.state.soulOrbs.delete(id);
+    }
+  }
 }
 
 /**

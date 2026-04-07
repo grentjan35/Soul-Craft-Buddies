@@ -204,6 +204,7 @@ function handleConnect(input) {
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
+    soul_count: 0,
   });
 
   const now = Date.now() / 1000;
@@ -316,6 +317,7 @@ function handleLoadMap(input) {
   input.state.enemyDefinitions = loadEnemyCatalog({ staticDir: input.state.config.staticDir });
   input.state.enemySpawns = [];
   resetEnemiesForState({ state: input.state });
+  input.state.soulOrbs = new Map();
 
   const player = input.state.players.get(input.socket.id);
   if (player) {
