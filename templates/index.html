@@ -3211,30 +3211,13 @@
                     }
                 }
 
-                async function unlockAudio() {
-                    if (audioUnlocked) {
-                        return;
+                function setCombatActive(active, nowMs, nextPan = 0) {
+                    const maxVolume = MAX_VOLUME * getMusicSetting();
+                    if (active) {
+                        activeUntilMs = Math.max(activeUntilMs, nowMs + HOLD_AFTER_COMBAT_MS);
+                        targetPan = Math.max(-1, Math.min(1, nextPan));
                     }
-
-                    audioUnlocked = true;
-                    try {
-                        const nextPlayer = await ensurePlayer();
-                        await syncVideoToMode();
-                        nextPlayer.setVolume(Math.round(MAX_VOLUME * getMusicSetting()));
-                        nextPlayer.playVideo();
-                        shouldBePlaying = true;
-                    } catch (_error) {
-                        // Ignore YouTube player bootstrap failures so the game still runs.
-                    }
-                }
-
-                function setMode(nextMode) {
-                    currentMode = nextMode === 'game' ? 'game' : 'menu';
-                    shouldBePlaying = true;
-                    targetVolume = MAX_VOLUME * getMusicSetting();
-                    if (player) {
-                        syncVideoToMode().catch(() => {});
-                    }
+                    targetVolume = nowMs <= activeUntilMs ? maxVolume : 0;
                 }
 
                 function tick(nowMs, dtSeconds) {
@@ -4851,7 +4834,6 @@
                 myPlayerName = name;
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
-                combatMusic.setMode('game');
                 
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
@@ -6652,7 +6634,6 @@
         const playerSnapshots = {};
         const enemyState = {};
         const authoritativeEnemyState = {};
-        const soulOrbState = {};
         const enemySnapshots = {};
         const previousEnemyAudioState = {};
         const enemyAmbientAudioState = {};
@@ -7074,25 +7055,6 @@
                     action: currentState.action
                 };
             }
-
-            for (const orbId in soulOrbState) {
-                if (!serverSoulOrbs[orbId]) {
-                    delete soulOrbState[orbId];
-                }
-            }
-            for (const [orbId, orb] of Object.entries(serverSoulOrbs)) {
-                const existingOrb = soulOrbState[orbId];
-                soulOrbState[orbId] = {
-                    x: orb.x,
-                    y: orb.y,
-                    renderX: Number.isFinite(existingOrb?.renderX) ? existingOrb.renderX : orb.x,
-                    renderY: Number.isFinite(existingOrb?.renderY) ? existingOrb.renderY : orb.y,
-                    size: typeof orb.size === 'number' ? orb.size : 1,
-                    phase: typeof orb.phase === 'number' ? orb.phase : 0,
-                };
-            }
-            soulsLeaderboard = Array.isArray(serverLeaderboard) ? serverLeaderboard.slice(0, 16) : [];
-            updateSoulsLeaderboard();
 
             if (serverEnemies) {
                 for (const [enemyId, enemyPos] of Object.entries(serverEnemies)) {
@@ -7962,95 +7924,6 @@
             ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
             ctx.lineWidth = 1;
             ctx.strokeRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
-        }
-
-        function updateSoulsLeaderboard() {
-            if (!soulsLeaderboardEl || !soulsLeaderboardRowsEl) {
-                return;
-            }
-
-            if (!soulsLeaderboard.length) {
-                soulsLeaderboardEl.classList.remove('is-visible');
-                soulsLeaderboardRowsEl.innerHTML = '';
-                return;
-            }
-
-            soulsLeaderboardEl.classList.add('is-visible');
-            soulsLeaderboardRowsEl.innerHTML = soulsLeaderboard
-                .map((entry, index) => {
-                    const rank = index + 1;
-                    const safeName = String(entry?.name ?? 'Unknown')
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;');
-                    const soulCount = Number.isFinite(entry?.souls) ? entry.souls : 0;
-                    return `<div class="souls-board-row"><span class="souls-board-rank">#${rank}</span><span class="souls-board-name">${safeName}</span><span class="souls-board-score">${soulCount}</span></div>`;
-                })
-                .join('');
-        }
-
-        function drawSoulOrbs(nowMs = Date.now(), visibleBounds = null) {
-            const orbIds = Object.keys(soulOrbState);
-            if (!orbIds.length) {
-                return;
-            }
-
-            ctx.save();
-            ctx.globalCompositeOperation = 'lighter';
-
-            for (const orbId of orbIds) {
-                const orb = soulOrbState[orbId];
-                if (!orb) {
-                    continue;
-                }
-
-                orb.renderX = Number.isFinite(orb.renderX) ? orb.renderX + (orb.x - orb.renderX) * 0.24 : orb.x;
-                orb.renderY = Number.isFinite(orb.renderY) ? orb.renderY + (orb.y - orb.renderY) * 0.24 : orb.y;
-
-                const baseSize = 9 * (typeof orb.size === 'number' ? orb.size : 1);
-                if (!isWorldRectVisible(orb.renderX - baseSize * 3.5, orb.renderY - baseSize * 3.5, baseSize * 7, baseSize * 7, 90, visibleBounds)) {
-                    continue;
-                }
-
-                const phase = (orb.phase ?? 0) + nowMs * 0.004;
-                const swirlRadius = baseSize * (0.55 + Math.sin(phase * 1.4) * 0.08);
-                const wobbleX = Math.sin(phase * 1.7) * 2.2;
-                const wobbleY = Math.cos(phase * 1.3) * 2.6;
-                const drawX = orb.renderX + wobbleX;
-                const drawY = orb.renderY - 8 + wobbleY;
-                const outerAlpha = 0.72 + Math.sin(phase * 1.8) * 0.09;
-                const innerAlpha = 0.96 + Math.cos(phase * 2.2) * 0.1;
-
-                drawFireballGlow(drawX, drawY, baseSize * 5.1, 'rgba(244, 248, 255, __A__)', 'rgba(92, 66, 255, __A__)', outerAlpha);
-                drawFireballGlow(drawX, drawY, baseSize * 3.15, 'rgba(240, 250, 255, __A__)', 'rgba(70, 182, 255, __A__)', innerAlpha);
-                drawFireballGlow(drawX, drawY, baseSize * 1.55, 'rgba(250, 253, 255, __A__)', 'rgba(192, 138, 255, __A__)', 1);
-
-                for (let i = 0; i < 3; i += 1) {
-                    const angle = phase * 1.3 + i * (Math.PI * 2 / 3);
-                    const px = drawX + Math.cos(angle) * swirlRadius;
-                    const py = drawY + Math.sin(angle * 1.1) * swirlRadius * 0.85;
-                    const size = 2 + (i % 2);
-                    ctx.globalAlpha = 0.8;
-                    ctx.fillStyle = i === 1 ? '#a8d5ff' : '#b59bff';
-                    ctx.fillRect(
-                        Math.round(px - size / 2),
-                        Math.round(py - size / 2),
-                        Math.max(1, Math.round(size)),
-                        Math.max(1, Math.round(size))
-                    );
-                }
-
-                ctx.globalAlpha = 0.88;
-                ctx.fillStyle = '#edf7ff';
-                ctx.fillRect(
-                    Math.round(drawX - 1.5),
-                    Math.round(drawY - 1.5),
-                    3,
-                    3
-                );
-            }
-
-            ctx.restore();
         }
 
         function drawHealthBar(ctx, playerX, playerY, health, cameraX, cameraY) {
