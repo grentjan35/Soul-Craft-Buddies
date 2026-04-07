@@ -5884,6 +5884,43 @@
             return null;
         }
 
+        function warmMapForegrounds(mapData) {
+            const placements = Array.isArray(mapData?.backgrounds) ? mapData.backgrounds : [];
+            Promise.all(
+                placements.map(async (placement) => {
+                    if (!placement || typeof placement.asset !== 'string' || placement.foregroundBitmap) {
+                        return;
+                    }
+
+                    try {
+                        const foregroundResult = await resolveForegroundBitmap(placement.asset);
+                        placement.foregroundAsset = foregroundResult?.assetName || null;
+                        placement.foregroundBitmap = foregroundResult?.bitmap || null;
+                    } catch (error) {
+                        console.warn(`Unable to warm foreground for "${placement.asset}".`, error);
+                    }
+                })
+            ).catch((error) => {
+                console.warn('Background foreground warmup failed.', error);
+            });
+        }
+
+        function warmMapEnemyAssets(mapData) {
+            const uniqueEnemyTypes = Array.isArray(mapData?.enemies)
+                ? mapData.enemies
+                    .map((enemy) => enemy?.type)
+                    .filter((enemyType, index, array) => typeof enemyType === 'string' && array.indexOf(enemyType) === index)
+                : [];
+
+            if (!uniqueEnemyTypes.length) {
+                return;
+            }
+
+            Promise.all(uniqueEnemyTypes.map((enemyType) => loadEnemyAssetsFor(enemyType))).catch((error) => {
+                console.warn('Enemy asset warmup failed.', error);
+            });
+        }
+
         function drawForegroundBackdrop(targetCtx, placement, bitmap, cameraOffsetX = 0, cameraOffsetY = 0) {
             if (!placement || !bitmap) {
                 return;
@@ -6178,8 +6215,6 @@
                 return;
             }
 
-            await loadBackgroundCatalog();
-
             await Promise.all(
                 placements
                     .map((placement) => placement?.asset)
@@ -6187,17 +6222,13 @@
                     .map((assetName) => loadBackgroundBitmap(assetName))
             );
 
-            await Promise.all(
-                placements.map(async (placement) => {
-                    if (!placement || typeof placement.asset !== 'string') {
-                        return;
-                    }
-
-                    const foregroundResult = await resolveForegroundBitmap(placement.asset);
-                    placement.foregroundAsset = foregroundResult?.assetName || null;
-                    placement.foregroundBitmap = foregroundResult?.bitmap || null;
+            loadBackgroundCatalog()
+                .then(() => {
+                    warmMapForegrounds(mapData);
                 })
-            );
+                .catch(() => {
+                    warmMapForegrounds(mapData);
+                });
         }
 
         async function loadBackgroundCatalog() {
@@ -6274,14 +6305,7 @@
                 }
 
                 await loadMapBackgrounds(mapData);
-                if (Array.isArray(mapData.enemies) && mapData.enemies.length > 0) {
-                    await Promise.all(
-                        mapData.enemies
-                            .map((enemy) => enemy?.type)
-                            .filter((enemyType, index, array) => typeof enemyType === 'string' && array.indexOf(enemyType) === index)
-                            .map((enemyType) => loadEnemyAssetsFor(enemyType))
-                    );
-                }
+                warmMapEnemyAssets(mapData);
 
                 // Load spawn points from map
                 spawnPoints = mapData.spawnPoints || [];
@@ -7442,14 +7466,7 @@
                 delete fairySnapshots[fairyId];
             }
             await loadMapBackgrounds(currentMap);
-            if (Array.isArray(currentMap.enemies) && currentMap.enemies.length > 0) {
-                await Promise.all(
-                    currentMap.enemies
-                        .map((enemy) => enemy?.type)
-                        .filter((enemyType, index, array) => typeof enemyType === 'string' && array.indexOf(enemyType) === index)
-                        .map((enemyType) => loadEnemyAssetsFor(enemyType))
-                );
-            }
+            warmMapEnemyAssets(currentMap);
             convertMapToPlatforms();
         });
 
