@@ -9,6 +9,7 @@ const {
 
 const { loadEnemyCatalog } = require('../../enemies/catalog');
 const { initializeFairies } = require('./fairies/fairySystem');
+const { ensureSoulState } = require('./souls/soulSystem');
 const { resetEnemiesForState } = require('../enemies/runtime');
 const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
 const { buildPlatformsFromMap } = require('./platforms/buildPlatformsFromMap');
@@ -88,10 +89,13 @@ function createInitialState(input) {
     enemies: new Map(),
     spawnPointIndex: 0,
     fairies: initializeFairies({ platforms }),
+    souls: new Map(),
+    nextSoulId: 1,
     maxHealth: PLAYER_MAX_HEALTH,
     dataDir,
   };
 
+  ensureSoulState(state);
   resetEnemiesForState({ state });
   return state;
 }

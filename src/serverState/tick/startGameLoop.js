@@ -22,6 +22,11 @@ const {
   updateEnemies,
 } = require('../enemies/runtime');
 const { updateFairies } = require('../state/fairies/fairySystem');
+const {
+  dropSoulsForPlayerDeath,
+  serializeSoulsForState,
+  updateSouls,
+} = require('../state/souls/soulSystem');
 const { pickSpawnPoint } = require('../sockets/spawn/pickSpawnPoint');
 
 /**
@@ -90,6 +95,7 @@ function updateDeathsAndRespawns(input) {
     p.pending_projectile_angle = null;
     p.pending_projectile_vx = 0;
     p.pending_projectile_vy = 0;
+    p.soul_count = 0;
 
     input.io.emit('player_respawned', { sid });
   }
@@ -111,6 +117,7 @@ function startGameLoop(input) {
     updateGameState({ state: input.state, dt, io: input.io });
     updateEnemies({ state: input.state, dt, io: input.io, spawnFireball });
     updateFairies({ fairies: input.state.fairies, dt });
+    updateSouls({ state: input.state, dt, io: input.io });
     updateFireballs({ state: input.state, dt, io: input.io });
     updateExplosions({ state: input.state, io: input.io });
     updateDeathsAndRespawns({ state: input.state, io: input.io });
@@ -151,6 +158,7 @@ function broadcastState(input) {
       health: p.health,
       is_attacking: p.is_attacking,
       attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
+      soul_count: Math.max(0, Math.round(p.soul_count || 0)),
     };
   }
 
@@ -206,6 +214,7 @@ function broadcastState(input) {
       : undefined,
     fireballs: fireballsPayload,
     explosions: explosionsPayload,
+    souls: serializeSoulsForState(input.state),
   });
 }
 
@@ -776,6 +785,7 @@ function applyExplosionDamage(input) {
       player.health = 0;
       player.is_dying = true;
       player.death_time = nowSec;
+      dropSoulsForPlayerDeath(input.state, input.io, player);
       input.io.emit('player_dying', {
         sid,
         x: player.x,

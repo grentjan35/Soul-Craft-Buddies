@@ -71,6 +71,71 @@
             z-index: 2;
         }
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
+        #souls-leaderboard {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            min-width: 220px;
+            max-width: min(340px, 42vw);
+            z-index: 150;
+            pointer-events: none;
+            color: #e6f2ff;
+            font-family: 'EB Garamond', serif;
+            display: none;
+            border: 1px solid rgba(123, 166, 255, 0.42);
+            background:
+                linear-gradient(180deg, rgba(8, 15, 35, 0.9), rgba(3, 7, 20, 0.9));
+            border-radius: 12px;
+            box-shadow:
+                0 0 20px rgba(66, 136, 255, 0.2),
+                inset 0 0 20px rgba(109, 63, 255, 0.12);
+            backdrop-filter: blur(4px);
+            overflow: hidden;
+        }
+        .souls-leaderboard-header {
+            padding: 8px 12px;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            font-size: 0.78rem;
+            color: #b9d8ff;
+            border-bottom: 1px solid rgba(136, 173, 255, 0.25);
+            background: linear-gradient(180deg, rgba(60, 103, 211, 0.22), rgba(17, 31, 67, 0.1));
+        }
+        .souls-leaderboard-body {
+            max-height: 220px;
+            overflow: hidden;
+            padding: 6px;
+        }
+        .souls-row {
+            display: grid;
+            grid-template-columns: 22px 1fr auto;
+            gap: 8px;
+            align-items: center;
+            padding: 5px 7px;
+            border-radius: 8px;
+            font-size: 0.92rem;
+            line-height: 1.2;
+        }
+        .souls-row--me {
+            background: linear-gradient(90deg, rgba(86, 134, 255, 0.26), rgba(128, 92, 255, 0.16));
+            box-shadow: inset 0 0 14px rgba(123, 186, 255, 0.2);
+        }
+        .souls-rank {
+            color: #8db9ff;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        .souls-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #eef5ff;
+        }
+        .souls-count {
+            font-variant-numeric: tabular-nums;
+            color: #8ec4ff;
+            text-shadow: 0 0 12px rgba(86, 176, 255, 0.35);
+        }
         
         /* Start Screen Styling */
         #start-screen {
@@ -1825,6 +1890,10 @@
     </div>
     <canvas id="gameCanvas"></canvas>
     <canvas id="glCanvas" style="display: none;"></canvas>
+    <div id="souls-leaderboard" aria-live="polite">
+        <div class="souls-leaderboard-header">Soul Leaderboard</div>
+        <div id="souls-leaderboard-body" class="souls-leaderboard-body"></div>
+    </div>
     
     <!-- Chat Input -->
     <div id="chat-container">
@@ -1984,6 +2053,7 @@
         let fireballAudio = null;
         let combatAudio = null;
         let combatMusic = null;
+        let youtubeIframeApiPromise = null;
         const MENU_SETTINGS_STORAGE_KEY = 'soulcraft_menu_settings_v1';
         const defaultMenuSettings = {
             sfxVolume: 1,
@@ -2844,85 +2914,32 @@
             menuGL.enableVertexAttribArray(texCoordLocation);
             menuGL.vertexAttribPointer(texCoordLocation, 2, menuGL.FLOAT, false, 0, 0);
             
-            // Load background video using tokenized endpoint for security
-            const video = document.createElement('video');
-            let homescreenVideoUrl = null;
-
-            function revokeHomescreenVideoUrl() {
-                if (homescreenVideoUrl) {
-                    URL.revokeObjectURL(homescreenVideoUrl);
-                    homescreenVideoUrl = null;
-                }
-            }
-
-            video.addEventListener('loadeddata', () => {
-                // Keep playback alive inside the existing media element,
-                // but invalidate the blob URL so it cannot be opened directly.
-                revokeHomescreenVideoUrl();
-            });
-            
-            // Get environment token and load video
-            async function loadVideo() {
-                try {
-                    const environmentToken = await getEnvironmentToken();
-                    const videoBlob = await fetchProtectedBlob(`/api/homescreen_video/${environmentToken}`, 'video/mp4');
-                    revokeHomescreenVideoUrl();
-                    homescreenVideoUrl = URL.createObjectURL(videoBlob);
-                    video.src = homescreenVideoUrl;
-                    video.preload = 'auto';
-                    video.loop = true;
-                    video.muted = true;
-                    video.playsInline = true;
-                    video.autoplay = true;
-                    video.play().catch(e => console.log('Video autoplay failed:', e));
-                } catch (error) {
-                    console.error('Failed to load homescreen video:', error);
-                }
-            }
-
-            // Clean up any still-live blob URL if the page is leaving before media has loaded.
-            window.addEventListener('pagehide', revokeHomescreenVideoUrl);
-            window.addEventListener('beforeunload', revokeHomescreenVideoUrl);
-            
-            loadVideo();
-            
-            // Create texture from video
+            // Create static texture (homescreen video intentionally disabled for faster startup)
             const texture = menuGL.createTexture();
             menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_S, menuGL.CLAMP_TO_EDGE);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_T, menuGL.CLAMP_TO_EDGE);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MIN_FILTER, menuGL.LINEAR);
             menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MAG_FILTER, menuGL.LINEAR);
-            
-            // Update texture with video frames
-            function updateVideoTexture() {
-                if (!menuLoopsActive) {
-                    return;
-                }
-                if (video.readyState >= video.HAVE_ENOUGH_DATA) {
-                    menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
-                    menuGL.texImage2D(menuGL.TEXTURE_2D, 0, menuGL.RGBA, menuGL.RGBA, menuGL.UNSIGNED_BYTE, video);
-                }
-                menuTextureFrameId = requestAnimationFrame(updateVideoTexture);
-            }
-            
-            // Start video texture updates
-            updateVideoTexture();
+            menuGL.texImage2D(
+                menuGL.TEXTURE_2D,
+                0,
+                menuGL.RGBA,
+                1,
+                1,
+                0,
+                menuGL.RGBA,
+                menuGL.UNSIGNED_BYTE,
+                new Uint8Array([8, 12, 24, 255])
+            );
             
             // Get uniform locations
             const resolutionLocation = menuGL.getUniformLocation(program, 'u_resolution');
             const mouseLocation = menuGL.getUniformLocation(program, 'u_mouse');
             const videoResolutionLocation = menuGL.getUniformLocation(program, 'u_videoResolution');
             
-            // Video resolution tracking
-            let videoResolution = { width: 1920, height: 1080 }; // Default fallback
-            
-            // Get actual video dimensions when metadata is loaded
-            video.addEventListener('loadedmetadata', () => {
-                videoResolution.width = video.videoWidth;
-                videoResolution.height = video.videoHeight;
-                console.log('Video resolution:', videoResolution);
-            });
+            // Static menu texture resolution
+            let videoResolution = { width: 1920, height: 1080 };
             
             // Mouse tracking
             let mouseX = 0, mouseY = 0;
@@ -3158,19 +3175,16 @@
             }
 
             function createCombatMusicSystem() {
-                const TRACK_URL = '/audio/combat.mp3';
+                const YOUTUBE_VIDEO_ID = 'IifPuoG8FEY';
                 const MAX_VOLUME = 0.42;
                 const FADE_IN_PER_SECOND = 1.6;
                 const FADE_OUT_PER_SECOND = 1.05;
                 const PAN_LERP_PER_SECOND = 3.6;
                 const HOLD_AFTER_COMBAT_MS = 1400;
-                const audio = new Audio(TRACK_URL);
-                audio.preload = 'auto';
-                audio.loop = true;
-                audio.volume = 1;
-                const audioContext = getSharedGameAudioContext();
-                const spatialNodes = audioContext ? createSpatialPanNodes(audioContext) : null;
-                const mediaSource = audioContext && spatialNodes ? audioContext.createMediaElementSource(audio) : null;
+                const hiddenPlayerHostId = 'combat-youtube-audio-host';
+                let player = null;
+                let playerReady = false;
+                let playerPromise = null;
                 let audioUnlocked = false;
                 let currentVolume = 0;
                 let targetVolume = 0;
@@ -3178,37 +3192,157 @@
                 let currentPan = 0;
                 let targetPan = 0;
 
-                if (mediaSource && spatialNodes) {
-                    mediaSource.connect(spatialNodes.gainNode);
-                    spatialNodes.gainNode.gain.value = 0;
-                    spatialNodes.setPan(0);
+                function ensureYouTubeIframeApi() {
+                    if (window.YT && typeof window.YT.Player === 'function') {
+                        return Promise.resolve(window.YT);
+                    }
+
+                    if (youtubeIframeApiPromise) {
+                        return youtubeIframeApiPromise;
+                    }
+
+                    youtubeIframeApiPromise = new Promise((resolve, reject) => {
+                        const previousReady = window.onYouTubeIframeAPIReady;
+                        let settled = false;
+                        const timeoutId = window.setTimeout(() => {
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            reject(new Error('YouTube IFrame API load timed out.'));
+                        }, 15000);
+
+                        window.onYouTubeIframeAPIReady = () => {
+                            if (typeof previousReady === 'function') {
+                                previousReady();
+                            }
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            window.clearTimeout(timeoutId);
+                            resolve(window.YT);
+                        };
+
+                        const script = document.createElement('script');
+                        script.src = 'https://www.youtube.com/iframe_api';
+                        script.async = true;
+                        script.onerror = () => {
+                            if (settled) {
+                                return;
+                            }
+                            settled = true;
+                            window.clearTimeout(timeoutId);
+                            reject(new Error('Failed to load YouTube IFrame API.'));
+                        };
+                        document.head.appendChild(script);
+                    });
+
+                    return youtubeIframeApiPromise;
                 }
 
-                function unlockAudio() {
+                function ensureHiddenPlayerHost() {
+                    let host = document.getElementById(hiddenPlayerHostId);
+                    if (host) {
+                        return host;
+                    }
+
+                    host = document.createElement('div');
+                    host.id = hiddenPlayerHostId;
+                    host.setAttribute('aria-hidden', 'true');
+                    host.style.position = 'fixed';
+                    host.style.width = '1px';
+                    host.style.height = '1px';
+                    host.style.left = '-9999px';
+                    host.style.top = '0';
+                    host.style.opacity = '0';
+                    host.style.pointerEvents = 'none';
+                    host.style.overflow = 'hidden';
+                    document.body.appendChild(host);
+                    return host;
+                }
+
+                async function ensurePlayer() {
+                    if (player) {
+                        return player;
+                    }
+
+                    if (playerPromise) {
+                        return playerPromise;
+                    }
+
+                    playerPromise = (async () => {
+                        const YT = await ensureYouTubeIframeApi();
+                        const host = ensureHiddenPlayerHost();
+                        player = await new Promise((resolve, reject) => {
+                            const instance = new YT.Player(host, {
+                                width: '1',
+                                height: '1',
+                                videoId: YOUTUBE_VIDEO_ID,
+                                playerVars: {
+                                    autoplay: 0,
+                                    controls: 0,
+                                    disablekb: 1,
+                                    fs: 0,
+                                    iv_load_policy: 3,
+                                    loop: 1,
+                                    modestbranding: 1,
+                                    playsinline: 1,
+                                    rel: 0,
+                                    playlist: YOUTUBE_VIDEO_ID
+                                },
+                                events: {
+                                    onReady: () => {
+                                        playerReady = true;
+                                        try {
+                                            instance.setVolume(0);
+                                        } catch (_error) {}
+                                        resolve(instance);
+                                    },
+                                    onStateChange: (event) => {
+                                        if (event.data === YT.PlayerState.ENDED) {
+                                            try {
+                                                instance.seekTo(0, true);
+                                                instance.playVideo();
+                                            } catch (_error) {}
+                                        }
+                                    },
+                                    onError: (event) => {
+                                        reject(new Error(`YouTube player error: ${event.data}`));
+                                    }
+                                }
+                            });
+                        });
+                        return player;
+                    })().catch((_error) => {
+                        player = null;
+                        playerReady = false;
+                        playerPromise = null;
+                        return null;
+                    });
+
+                    return playerPromise;
+                }
+
+                async function unlockAudio() {
                     if (audioUnlocked) {
                         return;
                     }
 
                     audioUnlocked = true;
-                    audio.load();
-                    audio.muted = true;
-                    const playAttempt = audio.play();
-                    if (playAttempt && typeof playAttempt.then === 'function') {
-                        playAttempt
-                            .then(() => {
-                                audio.pause();
-                                audio.currentTime = 0;
-                                audio.muted = false;
-                            })
-                            .catch(() => {
-                                audio.muted = false;
-                            });
-                    } else {
-                        audio.muted = false;
+
+                    const readyPlayer = await ensurePlayer();
+                    if (!readyPlayer || !playerReady) {
+                        return;
                     }
-                    if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume().catch(() => {});
-                    }
+
+                    try {
+                        readyPlayer.mute();
+                        readyPlayer.seekTo(0, true);
+                        readyPlayer.playVideo();
+                        readyPlayer.pauseVideo();
+                        readyPlayer.unMute();
+                    } catch (_error) {}
                 }
 
                 function setCombatActive(active, nowMs, nextPan = 0) {
@@ -3246,20 +3380,27 @@
                     }
                     currentPan = Math.max(-1, Math.min(1, currentPan));
 
-                    if (spatialNodes) {
-                        spatialNodes.gainNode.gain.value = currentVolume;
-                        spatialNodes.setPan(currentPan);
-                    } else {
-                        audio.volume = currentVolume;
+                    if (playerReady && player) {
+                        try {
+                            player.setVolume(Math.round(currentVolume * 100));
+                        } catch (_error) {}
                     }
 
                     if (currentVolume > 0.002) {
-                        const playAttempt = audio.play();
-                        if (playAttempt && typeof playAttempt.catch === 'function') {
-                            playAttempt.catch(() => {});
+                        if (audioUnlocked) {
+                            ensurePlayer().then((readyPlayer) => {
+                                if (!readyPlayer || !playerReady) {
+                                    return;
+                                }
+                                try {
+                                    readyPlayer.playVideo();
+                                } catch (_error) {}
+                            });
                         }
-                    } else if (!audio.paused) {
-                        audio.pause();
+                    } else if (playerReady && player) {
+                        try {
+                            player.pauseVideo();
+                        } catch (_error) {}
                     }
                 }
 
@@ -3269,14 +3410,12 @@
                     currentVolume = 0;
                     targetPan = 0;
                     currentPan = 0;
-                    if (spatialNodes) {
-                        spatialNodes.gainNode.gain.value = 0;
-                        spatialNodes.setPan(0);
-                    } else {
-                        audio.volume = 0;
-                    }
-                    if (!audio.paused) {
-                        audio.pause();
+                    if (playerReady && player) {
+                        try {
+                            player.setVolume(0);
+                            player.pauseVideo();
+                            player.seekTo(0, true);
+                        } catch (_error) {}
                     }
                 }
 
@@ -4073,6 +4212,7 @@
                     slimeAttack: '/audio/slime/attack.mp3',
                     slimeHit: '/audio/slime/hurt.mp3',
                     slimeDeath: '/audio/slime/death.mp3',
+                    soulCollected: '/audio/soul_collected.mp3',
                     playerHurt: [
                         '/audio/hurt/hurt.mp3',
                         '/audio/hurt/hurt2.mp3',
@@ -4163,6 +4303,7 @@
                         soundUrls.slimeAttack,
                         soundUrls.slimeHit,
                         soundUrls.slimeDeath,
+                        soundUrls.soulCollected,
                         ...soundUrls.playerHurt
                     ];
                     warmUrls.forEach((url) => loadBuffer(url).catch(() => {}));
@@ -4320,6 +4461,14 @@
                     await playUrlAt(soundUrls.slimeDeath, worldX, worldY, listenerX, listenerY, viewport, volume, -30);
                 }
 
+                async function playSoulCollectedLocal(volume = 0.9, key = 'soul-collected-local') {
+                    await playUrlLocal(
+                        soundUrls.soulCollected,
+                        volume,
+                        detuneFromKey(`${key}|pickup`, -0.22, 0.28)
+                    );
+                }
+
                 function getBatLoopCrowdingGain(listenerX, listenerY) {
                     let nearbyLoopCount = 0;
                     for (const loop of activeLoops.values()) {
@@ -4464,7 +4613,8 @@
                     stopAllBatFlightLoops,
                     updateTransientSpatialSounds,
                     playPlayerHurtAt,
-                    playPlayerHurtLocal
+                    playPlayerHurtLocal,
+                    playSoulCollectedLocal
                 });
             }
 
@@ -4645,6 +4795,28 @@
 
                     const cardsWithBitmaps = await Promise.all(
                         availableCharacterSelections.map(async (entry) => {
+                            const previewUrl = typeof entry.card_url === 'string' ? entry.card_url : '';
+                            if (previewUrl) {
+                                try {
+                                    const previewBlob = await withTimeout(
+                                        fetchProtectedBlob(previewUrl, 'image/png'),
+                                        5000,
+                                        `${entry.character} preview card blob`
+                                    );
+                                    const previewBitmap = await withTimeout(
+                                        createImageBitmap(previewBlob),
+                                        2500,
+                                        `${entry.character} preview card bitmap`
+                                    );
+                                    return {
+                                        ...entry,
+                                        cardBitmap: previewBitmap
+                                    };
+                                } catch (error) {
+                                    console.warn(`Preview card load failed for ${entry.character}, falling back to token route`, error);
+                                }
+                            }
+
                             let lastError = null;
                             for (let attempt = 0; attempt < 2; attempt += 1) {
                                 try {
@@ -6642,6 +6814,10 @@
         const previousEnemyAudioState = {};
         const enemyAmbientAudioState = {};
         const enemyFootstepFrameCounters = {};
+        const soulState = {};
+        const soulPickupEffects = [];
+        const leaderboardElement = document.getElementById('souls-leaderboard');
+        const leaderboardBody = document.getElementById('souls-leaderboard-body');
         const fairySnapshots = {};
         const authoritativeFairyState = {};
         const MAX_SNAPSHOT_AGE_MS = 1000;
@@ -6680,6 +6856,9 @@
         const footstepFrameCounters = {};
         const previousFootstepPlayerStates = {};
         const HIT_FLASH_DURATION_MS = 180;
+        const SOUL_PICKUP_GLOW_DURATION_MS = 140;
+        const playerSoulGlowUntilMs = {};
+        const MAX_LEADERBOARD_ROWS = 8;
         
         // Fireball system
         let fireballs = {};
@@ -6914,6 +7093,38 @@
             mousePosition.x = worldX;
             mousePosition.y = worldY;
         });
+        function updateSoulsLeaderboard(players = {}) {
+            if (!leaderboardElement || !leaderboardBody) {
+                return;
+            }
+
+            const entries = Object.entries(players)
+                .map(([sid, state]) => ({
+                    sid,
+                    name: String(state?.name || `P${sid.slice(0, 4)}`),
+                    soulCount: Math.max(0, Math.round(Number(state?.soul_count) || 0))
+                }))
+                .sort((a, b) => {
+                    if (b.soulCount !== a.soulCount) return b.soulCount - a.soulCount;
+                    return a.name.localeCompare(b.name);
+                });
+
+            if (!entries.length) {
+                leaderboardElement.style.display = 'none';
+                leaderboardBody.innerHTML = '';
+                return;
+            }
+
+            leaderboardElement.style.display = 'block';
+            leaderboardBody.innerHTML = entries.slice(0, MAX_LEADERBOARD_ROWS).map((entry, index) => {
+                const safeName = entry.name
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                const meClass = entry.sid === socket.id ? ' souls-row--me' : '';
+                return `<div class="souls-row${meClass}"><span class="souls-rank">#${index + 1}</span><span class="souls-name">${safeName}</span><span class="souls-count">${entry.soulCount}</span></div>`;
+            }).join('');
+        }
 
 
         // State synchronization - server authoritative
@@ -6927,6 +7138,7 @@
                 players: serverPlayers,
                 enemies: serverEnemies,
                 fairies: serverFairies,
+                souls: serverSouls,
                 fireballs: serverFireballs,
                 explosions: serverExplosions
             } = serverState;
@@ -6959,7 +7171,8 @@
                     name: pos.name,
                     health: pos.health || PLAYER_MAX_HEALTH,
                     is_attacking: Boolean(pos.is_attacking),
-                    attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0
+                    attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0,
+                    soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0
                 };
                 authoritativePlayerState[sid] = nextState;
                 appendSnapshot(playerSnapshots, sid, {
@@ -6974,7 +7187,8 @@
                     name: pos.name,
                     health: pos.health || PLAYER_MAX_HEALTH,
                     is_attacking: Boolean(pos.is_attacking),
-                    attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0
+                    attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0,
+                    soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0
                 });
                 if (!playerState[sid]) {
                     playerState[sid] = { ...nextState };
@@ -7059,6 +7273,7 @@
                     action: currentState.action
                 };
             }
+            updateSoulsLeaderboard(serverPlayers || {});
 
             if (serverEnemies) {
                 for (const [enemyId, enemyPos] of Object.entries(serverEnemies)) {
@@ -7142,6 +7357,33 @@
                     delete enemyAnimFrames[enemyId];
                     delete enemyRenderDimensions[enemyId];
                     delete enemyHitFlashUntilMs[enemyId];
+                }
+            }
+
+            if (serverSouls) {
+                const activeSoulIds = new Set();
+                for (const [soulId, soul] of Object.entries(serverSouls)) {
+                    activeSoulIds.add(soulId);
+                    const previousSoul = soulState[soulId];
+                    soulState[soulId] = {
+                        id: soulId,
+                        x: soul.x,
+                        y: soul.y,
+                        render_x: Number.isFinite(previousSoul?.render_x) ? previousSoul.render_x : soul.x,
+                        render_y: Number.isFinite(previousSoul?.render_y) ? previousSoul.render_y : soul.y,
+                        vx: soul.vx,
+                        vy: soul.vy,
+                        size: typeof soul.size === 'number' ? soul.size : 1,
+                        tint: typeof soul.tint === 'number' ? soul.tint : 0,
+                        value: typeof soul.value === 'number' ? soul.value : 1,
+                        spawn_time_ms: typeof soul.spawn_time_ms === 'number' ? soul.spawn_time_ms : Date.now()
+                    };
+                }
+
+                for (const soulId in soulState) {
+                    if (!activeSoulIds.has(soulId)) {
+                        delete soulState[soulId];
+                    }
                 }
             }
             
@@ -7262,6 +7504,7 @@
                     delete authoritativePlayerState[sid];
                     delete playerSnapshots[sid];
                     delete playerHitFlashUntilMs[sid];
+                    delete playerSoulGlowUntilMs[sid];
                 }
             }
         });
@@ -7275,9 +7518,13 @@
             }
             refreshCurrentMapDecorStats();
             fairies = [];
+            soulPickupEffects.length = 0;
             for (const fairyId in authoritativeFairyState) {
                 delete authoritativeFairyState[fairyId];
                 delete fairySnapshots[fairyId];
+            }
+            for (const soulId in soulState) {
+                delete soulState[soulId];
             }
             await loadMapBackgrounds(currentMap);
             warmMapEnemyAssets(currentMap);
@@ -7474,6 +7721,92 @@
             if (explosions[id]) {
                 createBurnMark(explosions[id].x, explosions[id].y, EXPLOSION_RADIUS);
                 explosions[id].destroy_time_ms = typeof destroy_time_ms === 'number' ? destroy_time_ms : Date.now();
+            }
+        });
+
+        socket.on('initial_souls', (souls) => {
+            for (const [soulId, soul] of Object.entries(souls || {})) {
+                soulState[soulId] = {
+                    id: soulId,
+                    x: soul.x,
+                    y: soul.y,
+                    render_x: soul.x,
+                    render_y: soul.y,
+                    vx: soul.vx,
+                    vy: soul.vy,
+                    size: typeof soul.size === 'number' ? soul.size : 1,
+                    tint: typeof soul.tint === 'number' ? soul.tint : 0,
+                    value: typeof soul.value === 'number' ? soul.value : 1,
+                    spawn_time_ms: typeof soul.spawn_time_ms === 'number' ? soul.spawn_time_ms : Date.now()
+                };
+            }
+        });
+
+        socket.on('soul_spawned', (soul) => {
+            if (!soul?.id) {
+                return;
+            }
+            soulState[soul.id] = {
+                id: soul.id,
+                x: soul.x,
+                y: soul.y,
+                render_x: soul.x,
+                render_y: soul.y,
+                vx: soul.vx,
+                vy: soul.vy,
+                size: typeof soul.size === 'number' ? soul.size : 1,
+                tint: typeof soul.tint === 'number' ? soul.tint : 0,
+                value: typeof soul.value === 'number' ? soul.value : 1,
+                spawn_time_ms: typeof soul.spawn_time_ms === 'number' ? soul.spawn_time_ms : Date.now()
+            };
+        });
+
+        socket.on('soul_removed', (data) => {
+            if (data?.id && soulState[data.id]) {
+                delete soulState[data.id];
+            }
+        });
+
+        socket.on('soul_collected', (data) => {
+            const soul = data?.soul;
+            const targetSid = data?.target_sid;
+            if (!soul || !targetSid) {
+                return;
+            }
+
+            if (soul.id && soulState[soul.id]) {
+                delete soulState[soul.id];
+            }
+
+            playerSoulGlowUntilMs[targetSid] = Date.now() + SOUL_PICKUP_GLOW_DURATION_MS;
+            soulPickupEffects.push({
+                x: typeof soul.x === 'number' ? soul.x : 0,
+                y: typeof soul.y === 'number' ? soul.y : 0,
+                targetSid,
+                targetX: typeof data.target_x === 'number' ? data.target_x : null,
+                targetY: typeof data.target_y === 'number' ? data.target_y : null,
+                size: typeof soul.size === 'number' ? soul.size : 1,
+                tint: typeof soul.tint === 'number' ? soul.tint : 0,
+                startTime: typeof data.collected_at_ms === 'number' ? data.collected_at_ms : Date.now(),
+                duration: 180
+            });
+
+            if (targetSid === socket.id && combatAudio && typeof combatAudio.playSoulCollectedLocal === 'function') {
+                const pickupKey = `${soul.id || 'soul'}|${data.soul_count || 0}|${data.collected_at_ms || Date.now()}`;
+                combatAudio.playSoulCollectedLocal(0.92, pickupKey);
+            }
+
+            if (authoritativePlayerState[targetSid] && typeof data.soul_count === 'number') {
+                authoritativePlayerState[targetSid].soul_count = data.soul_count;
+                if (typeof data.health === 'number') {
+                    authoritativePlayerState[targetSid].health = data.health;
+                }
+            }
+            if (playerState[targetSid] && typeof data.soul_count === 'number') {
+                playerState[targetSid].soul_count = data.soul_count;
+                if (typeof data.health === 'number') {
+                    playerState[targetSid].health = data.health;
+                }
             }
         });
 
@@ -7679,7 +8012,8 @@
                     name: sampled.name ?? authoritativePlayerState[sid].name,
                     health: sampled.health ?? authoritativePlayerState[sid].health,
                     is_attacking: typeof sampled.is_attacking === 'boolean' ? sampled.is_attacking : authoritativePlayerState[sid].is_attacking,
-                    attack_start_time_ms: typeof sampled.attack_start_time_ms === 'number' ? sampled.attack_start_time_ms : authoritativePlayerState[sid].attack_start_time_ms
+                    attack_start_time_ms: typeof sampled.attack_start_time_ms === 'number' ? sampled.attack_start_time_ms : authoritativePlayerState[sid].attack_start_time_ms,
+                    soul_count: typeof sampled.soul_count === 'number' ? sampled.soul_count : authoritativePlayerState[sid].soul_count
                 };
             }
         }
@@ -9413,6 +9747,146 @@
             );
         }
 
+        function getSoulPalette(tint = 0) {
+            const blend = clamp01(tint);
+            return {
+                core: `rgba(${Math.round(190 + blend * 16)}, ${Math.round(214 + blend * 12)}, 255, 0.98)`,
+                mid: `rgba(${Math.round(126 + blend * 30)}, ${Math.round(102 + blend * 20)}, ${Math.round(255 - blend * 8)}, 0.86)`,
+                rim: `rgba(${Math.round(82 + blend * 26)}, ${Math.round(150 + blend * 16)}, 255, 0.68)`,
+                glow: `rgba(${Math.round(66 + blend * 28)}, ${Math.round(106 + blend * 16)}, 255, 0.42)`,
+                haze: `rgba(${Math.round(116 + blend * 22)}, ${Math.round(66 + blend * 16)}, 255, 0.18)`
+            };
+        }
+
+        function drawSouls(now = Date.now(), visibleBounds = null) {
+            const souls = Object.values(soulState);
+            if (!souls.length) {
+                return;
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (const soul of souls) {
+                const soulValue = Math.max(1, Number(soul.value) || 1);
+                const drawSize = 7.2 * (typeof soul.size === 'number' ? soul.size : 1) * (1 + Math.max(0, soulValue - 1) * 0.07);
+                if (visibleBounds && !isWorldRectVisible(soul.x - 48, soul.y - 48, 96, 96, 48, visibleBounds)) {
+                    continue;
+                }
+                soul.render_x = Number.isFinite(soul.render_x) ? lerp(soul.render_x, soul.x, 0.34) : soul.x;
+                soul.render_y = Number.isFinite(soul.render_y) ? lerp(soul.render_y, soul.y, 0.34) : soul.y;
+
+                const age = (now - (soul.spawn_time_ms || now)) / 1000;
+                const pulse = 0.92 + Math.sin(age * 5.8 + stableStringNoise(`soul:${soul.id}`) * 10) * 0.14;
+                const hover = Math.sin(age * 3.3 + stableStringNoise(`hover:${soul.id}`) * 12) * 2.6;
+                const drawX = soul.render_x - cameraX;
+                const drawY = soul.render_y - cameraY + hover;
+                const palette = getSoulPalette(soul.tint);
+                const glowRadius = drawSize * (2.9 + pulse * 0.68);
+                const innerGlowRadius = drawSize * (1.5 + pulse * 0.34);
+
+                const hazeGradient = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, glowRadius * 1.02);
+                hazeGradient.addColorStop(0, palette.haze);
+                hazeGradient.addColorStop(0.35, palette.glow);
+                hazeGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = hazeGradient;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, glowRadius * 1.02, 0, Math.PI * 2);
+                ctx.fill();
+
+                const glowGradient = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, glowRadius);
+                glowGradient.addColorStop(0, palette.rim);
+                glowGradient.addColorStop(0.28, palette.mid);
+                glowGradient.addColorStop(0.6, palette.glow);
+                glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = glowGradient;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                drawFireballGlow(soul.render_x, soul.render_y + hover, innerGlowRadius, 'rgba(204, 235, 255, __A__)', 'rgba(76, 112, 255, __A__)', 0.56 + pulse * 0.16);
+                drawFireballGlow(soul.render_x, soul.render_y + hover, drawSize * 1.18, 'rgba(198, 116, 255, __A__)', 'rgba(48, 20, 118, __A__)', 0.44 + pulse * 0.14);
+                drawPixelFlameBody(soul.render_x, soul.render_y + hover, age * 1.35, drawSize * 0.94, 1.1, now * 0.0014 + soul.tint * 4.0, {
+                    palette: ['#12031f', '#28106a', '#4854ff', '#5dafff', '#b1e8ff', '#ffffff'],
+                    tailLength: 0.48,
+                    noseLength: 0.22,
+                    width: 0.5,
+                    cellScale: 0.24,
+                    alpha: 0.92,
+                    emberChance: 0.14,
+                    extraCellSize: 1
+                });
+
+                ctx.fillStyle = palette.mid;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, drawSize * (0.84 + pulse * 0.08), 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = palette.rim;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, drawSize * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = palette.core;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, drawSize * 0.28, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.globalAlpha = 0.58;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+                ctx.beginPath();
+                ctx.arc(drawX - drawSize * 0.18, drawY - drawSize * 0.22, drawSize * 0.18, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+            ctx.restore();
+        }
+
+        function drawSoulPickupEffects(now = Date.now()) {
+            if (!soulPickupEffects.length) {
+                return;
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = soulPickupEffects.length - 1; i >= 0; i -= 1) {
+                const effect = soulPickupEffects[i];
+                const elapsed = now - effect.startTime;
+                const progress = clamp01(elapsed / effect.duration);
+                if (progress >= 1) {
+                    soulPickupEffects.splice(i, 1);
+                    continue;
+                }
+
+                const targetState = getPlayerState(effect.targetSid) || authoritativePlayerState[effect.targetSid];
+                const targetX = targetState?.x ?? effect.targetX ?? effect.x;
+                const targetY = (targetState?.y ?? effect.targetY ?? effect.y) - 18;
+                const worldX = effect.x + (targetX - effect.x) * progress;
+                const worldY = effect.y + (targetY - effect.y) * progress;
+                const drawX = worldX - cameraX;
+                const drawY = worldY - cameraY;
+                const radius = Math.max(1.8, 10 * effect.size * (1 - progress * 0.8));
+                const alpha = 1 - progress;
+                const palette = getSoulPalette(effect.tint);
+                const gradient = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, radius * 3);
+
+                ctx.globalAlpha = alpha;
+                gradient.addColorStop(0, palette.mid);
+                gradient.addColorStop(0.4, palette.glow);
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, radius * 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = palette.core;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
         function drawPixelFlameBody(centerX, centerY, angle, scale, intensity, timeSeed, options = {}) {
             if (!Number.isFinite(centerX) || !Number.isFinite(centerY) || !Number.isFinite(scale) || scale <= 0 || intensity <= 0) {
                 return;
@@ -9919,6 +10393,39 @@
                         radius: 120 * pulse,
                         strength: decorStyle.lightStrength * pulse
                     });
+                });
+            }
+
+            for (const soul of Object.values(soulState)) {
+                if (visibleBounds && !isWorldRectVisible(soul.x - 140, soul.y - 140, 280, 280, 60, visibleBounds)) {
+                    continue;
+                }
+                const age = (now - (soul.spawn_time_ms || now)) / 1000;
+                const pulse = 0.88 + Math.sin(age * 5.4 + stableStringNoise(`light:${soul.id}`) * 11) * 0.12;
+                lights.push({
+                    x: (soul.x - cameraX) * cameraZoom,
+                    y: (soul.y - cameraY) * cameraZoom,
+                    radius: (104 + pulse * 42) * cameraZoom,
+                    strength: 0.62 + pulse * 0.28
+                });
+            }
+
+            for (const effect of soulPickupEffects) {
+                const elapsed = now - effect.startTime;
+                if (elapsed >= effect.duration) {
+                    continue;
+                }
+                const progress = clamp01(elapsed / effect.duration);
+                const targetState = getPlayerState(effect.targetSid) || authoritativePlayerState[effect.targetSid];
+                const targetX = targetState?.x ?? effect.targetX ?? effect.x;
+                const targetY = (targetState?.y ?? effect.targetY ?? effect.y) - 18;
+                const worldX = effect.x + (targetX - effect.x) * progress;
+                const worldY = effect.y + (targetY - effect.y) * progress;
+                lights.push({
+                    x: (worldX - cameraX) * cameraZoom,
+                    y: (worldY - cameraY) * cameraZoom,
+                    radius: (120 - progress * 48) * cameraZoom,
+                    strength: 0.78 * (1 - progress * 0.4)
                 });
             }
 
@@ -10475,6 +10982,7 @@
                     drawMapDecor(nowMs, visibleBounds);
                     drawBurnMarks(nowMs, visibleBounds);
                     drawChargingFireballs(renderServerTimeMs, visibleBounds);
+                    drawSouls(nowMs, effectVisibleBounds);
 
                     // Debug mode: Show collision boxes and platforms
                     if (debugMode) {
@@ -10680,6 +11188,24 @@
                             // Send dimensions to server if they changed
                             playerRenderDimensions[sid] = renderDims;
                             const flashAlpha = getHitFlashAlpha(playerHitFlashUntilMs[sid], now);
+                            const soulGlowRemaining = Math.max(0, (playerSoulGlowUntilMs[sid] || 0) - nowMs);
+                            if (soulGlowRemaining > 0) {
+                                const soulGlowAlpha = clamp01(soulGlowRemaining / SOUL_PICKUP_GLOW_DURATION_MS);
+                                const glowX = pos.x - cameraX;
+                                const glowY = pos.y - cameraY - renderDims.height * 0.08;
+                                const glowRadius = Math.max(renderDims.width, renderDims.height) * (0.72 + soulGlowAlpha * 0.18);
+                                const glowGradient = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, glowRadius);
+                                glowGradient.addColorStop(0, `rgba(170, 220, 255, ${0.24 * soulGlowAlpha})`);
+                                glowGradient.addColorStop(0.45, `rgba(132, 104, 255, ${0.18 * soulGlowAlpha})`);
+                                glowGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                                ctx.save();
+                                ctx.globalCompositeOperation = 'lighter';
+                                ctx.fillStyle = glowGradient;
+                                ctx.beginPath();
+                                ctx.arc(glowX, glowY, glowRadius, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.restore();
+                            }
                             drawSpriteFrameWithHitFlash({
                                 image: playerAssets[action],
                                 frameX,
@@ -10961,6 +11487,7 @@
                 // Draw dust particles
                 drawDustParticles();
                 drawSlimeParticles();
+                drawSoulPickupEffects(nowMs);
 
                 // Draw fireballs with particle trails
                 drawFireballs(nowMs, effectVisibleBounds);

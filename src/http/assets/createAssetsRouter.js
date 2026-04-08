@@ -232,7 +232,7 @@ function createAssetsRouter(deps) {
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
   const publicSpiderFootstepPattern = /^footstep([2-4])?\.mp3$/;
   const publicSlimeFootstepPattern = /^footstep(\s\((2|3)\))?\.mp3$/;
-  const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3']);
+  const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3', 'soul_collected.mp3']);
   const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
   const publicPlayerHurtPattern = /^hurt[1-5]?\.mp3$/;
   const publicSpiderSounds = new Set([
@@ -606,6 +606,7 @@ function createAssetsRouter(deps) {
     res.json({
       characters: selectableCharacters.map((entry) => ({
         character: entry.character,
+        card_url: `/api/character_card_preview/${entry.character}`,
       })),
     });
   });
@@ -1186,6 +1187,25 @@ function createAssetsRouter(deps) {
       fullPath: assetPath,
       downloadName: 'character-card.png',
     });
+  });
+
+  router.get('/api/character_card_preview/:character', (req, res) => {
+    const character = String(req.params.character ?? '').trim().toLowerCase();
+    const selection = selectableCharacters.find((entry) => entry.character === character);
+    if (!selection) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    const assetPath = path.join(deps.staticDir, 'assets', 'cards', `${selection.cardAsset}.png`);
+    if (!fs.existsSync(assetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type('.png');
+    res.sendFile(assetPath);
   });
 
   return router;

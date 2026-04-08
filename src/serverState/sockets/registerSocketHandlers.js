@@ -7,6 +7,7 @@ const {
   GRAVITY,
 } = require('../state/constants');
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
+const { dropSoulsForPlayerDeath, serializeSoulsForState } = require('../state/souls/soulSystem');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
 const { resetEnemiesForState } = require('../enemies/runtime');
 
@@ -204,6 +205,7 @@ function handleConnect(input) {
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
+    soul_count: 0,
   });
 
   const now = Date.now() / 1000;
@@ -217,6 +219,11 @@ function handleConnect(input) {
 
   if (Object.keys(activeDeadBodies).length > 0) {
     input.socket.emit('initial_dead_bodies', activeDeadBodies);
+  }
+
+  const activeSouls = serializeSoulsForState(input.state);
+  if (Object.keys(activeSouls).length > 0) {
+    input.socket.emit('initial_souls', activeSouls);
   }
 
   input.socket.emit('character_assigned', { character });
@@ -243,6 +250,7 @@ function handleDisconnect(input) {
     timestamp: now,
   };
 
+  dropSoulsForPlayerDeath(input.state, input.io, player);
   input.state.deadBodies.set(input.socket.id, deathData);
   input.io.emit('player_dying', deathData);
   input.state.players.delete(input.socket.id);
@@ -268,6 +276,7 @@ function respawnPlayer(input) {
   player.health = PLAYER_MAX_HEALTH;
   player.is_dying = false;
   player.death_time = 0;
+  player.soul_count = 0;
 }
 
 /**

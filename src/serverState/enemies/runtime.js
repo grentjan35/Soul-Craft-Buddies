@@ -6,6 +6,7 @@ const {
   PLAYER_HITBOX_HEIGHT,
 } = require('../state/constants');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
+const { dropSoulsForEnemyDeath, dropSoulsForPlayerDeath } = require('../state/souls/soulSystem');
 
 function secondsFromMs(ms) {
   return ms / 1000;
@@ -2194,6 +2195,7 @@ function damagePlayerFromEnemyHit(input) {
     player.health = 0;
     player.is_dying = true;
     player.death_time = nowSec;
+    dropSoulsForPlayerDeath(input.state, input.io, player);
     input.io.emit('player_dying', {
       sid: input.sid,
       x: player.x,
@@ -2524,6 +2526,7 @@ function damageEnemy(input) {
       sourceVy: input.sourceVy,
       nowSec,
     });
+    dropSoulsForEnemyDeath(input.state, input.io, enemy);
     return true;
   }
 
