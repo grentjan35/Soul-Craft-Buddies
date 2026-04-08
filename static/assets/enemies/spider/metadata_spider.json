@@ -2,6 +2,7 @@
   "id": "spider",
   "type": "spider",
   "displayName": "Spider",
+  "size": 0.18,
   "scale": 0.18,
   "frameSize": {
     "w": 446,

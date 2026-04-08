@@ -79,7 +79,7 @@ function normalizeEnemyMetadata(rawMetadata, enemyType) {
     h: toPositiveNumber(Number(safeRaw.frameSize?.h), DEFAULT_FRAME_SIZE.h),
   };
 
-  const scale = toPositiveNumber(Number(safeRaw.scale), 0.24);
+  const scale = toPositiveNumber(Number(safeRaw.size ?? safeRaw.scale), 0.24);
 
   const hitboxFromPixels = safeRaw.hitbox && typeof safeRaw.hitbox === 'object'
     ? {
@@ -138,6 +138,7 @@ function normalizeEnemyMetadata(rawMetadata, enemyType) {
     displayName: typeof safeRaw.displayName === 'string' && safeRaw.displayName.trim()
       ? safeRaw.displayName.trim()
       : enemyType.charAt(0).toUpperCase() + enemyType.slice(1),
+    size: scale,
     scale,
     frameSize,
     hitbox,

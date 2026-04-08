@@ -2,6 +2,7 @@
   "id": "bat",
   "type": "bat",
   "displayName": "Bat",
+  "size": 0.15,
   "scale": 0.15,
   "frameSize": {
     "w": 566,

@@ -269,6 +269,14 @@ function createAssetsRouter(deps) {
     'not in combat.mp3',
     'swoop.mp3',
   ]);
+  const publicStrikerSounds = new Set([
+    'attack.mp3',
+    'death.mp3',
+    'flying.mp3',
+    'hurt.mp3',
+    'idle.mp3',
+    'slam.mp3',
+  ]);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -472,6 +480,24 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'gargoyle', soundName);
+    if (!fs.existsSync(soundPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type(path.extname(soundName));
+    res.sendFile(soundPath);
+  });
+
+  router.get('/audio/striker/:name', (req, res) => {
+    const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicStrikerSounds.has(soundName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'striker', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;

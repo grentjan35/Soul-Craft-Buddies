@@ -25,6 +25,8 @@ const SLIME_SPLAT_RADIUS = 30;
 const GARGOYLE_PERCH_OPACITY = 0;
 const GARGOYLE_ACTIVE_OPACITY = 1;
 const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
+const STRIKER_ASCEND_DURATION_SECONDS = 0.7;
+const STRIKER_SLAM_IMPACT_WINDOW_SECONDS = 0.18;
 
 function isFlyingEnemy(definition) {
   return definition?.behavior?.movementMode === 'flying';
@@ -52,6 +54,16 @@ function isGargoyleEnemy(input) {
     return input === 'gargoyle';
   }
   return input.type === 'gargoyle' || input.id === 'gargoyle';
+}
+
+function isStrikerEnemy(input) {
+  if (!input) {
+    return false;
+  }
+  if (typeof input === 'string') {
+    return input === 'striker';
+  }
+  return input.type === 'striker' || input.id === 'striker';
 }
 
 function usesProjectileAttackForEnemy(enemy, definition) {
@@ -697,6 +709,19 @@ function maybeRefreshFlyingAttackBias(enemy, definition, nowSec) {
 function getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec) {
   maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
 
+  if (isStrikerEnemy(definition)) {
+    const bobAmplitude = definition.behavior.hoverBobAmplitude * 0.45;
+    const bobSpeed = definition.behavior.hoverBobSpeed * 0.85;
+    const bobOffset = Math.sin(nowSec * bobSpeed + stableEnemyPhase(enemy)) * bobAmplitude;
+    const rawY = targetPlayer.y - Math.max(definition.behavior.hoverHeight, definition.behavior.attackRange * 0.28) + bobOffset;
+    const minY = targetPlayer.y - definition.behavior.hoverHeight - definition.behavior.hoverVariance * 0.42;
+    const maxY = targetPlayer.y - Math.max(48, definition.behavior.hoverHeight * 0.38);
+    return {
+      x: targetPlayer.x,
+      y: clampFlyingCenterYToSafeBand(state, definition, clamp(rawY, minY, maxY)),
+    };
+  }
+
   const bobAmplitude = definition.behavior.hoverBobAmplitude;
   const bobSpeed = definition.behavior.hoverBobSpeed;
   const bobOffset = Math.sin(nowSec * bobSpeed + stableEnemyPhase(enemy)) * bobAmplitude;
@@ -1338,6 +1363,20 @@ function emitSlimeSplatter(io, x, y, targetSid = null, radius = SLIME_SPLAT_RADI
   });
 }
 
+function emitStrikerGroundImpact(io, enemy, impactSpeed = 0) {
+  if (!io || !enemy) {
+    return;
+  }
+
+  io.emit('striker_ground_impact', {
+    enemy_id: enemy.id,
+    x: enemy.x,
+    y: enemy.y,
+    impact_speed: Math.round(Math.abs(Number(impactSpeed) || 0)),
+    at_ms: Date.now(),
+  });
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1516,6 +1555,10 @@ function getEnemyTargetCount(state, enemyType) {
 
   if (enemyType === 'gargoyle') {
     return clamp(Math.round(tileArea / 420) + Math.floor(platformCount / 28), 1, 3);
+  }
+
+  if (enemyType === 'striker') {
+    return clamp(Math.round(tileArea / 620) + Math.floor(widePlatforms / 18), 1, 2);
   }
 
   return clamp(Math.round(tileArea / 150), 1, 8);
@@ -1702,6 +1745,31 @@ function beginPrepare(enemy, targetPlayer, nowSec, definition) {
 }
 
 function beginLunge(enemy, targetPlayer, nowSec, definition) {
+  if (isStrikerEnemy(definition)) {
+    const targetX = targetPlayer ? targetPlayer.x : enemy.x + (enemy.direction === 'left' ? -140 : 140);
+    const targetY = targetPlayer ? targetPlayer.y : enemy.y + 180;
+    const dx = targetX - enemy.x;
+    const dy = targetY - enemy.y;
+    const horizontalTravelSeconds = Math.max(0.26, secondsFromMs(definition.behavior.lungeDurationMs) * 0.72);
+    const downwardBias = Math.max(420, definition.behavior.verticalMoveSpeed * 3.2);
+
+    setBrainState(enemy, 'lunge', nowSec);
+    enemy.action = 'attack';
+    enemy.direction = dx < 0 ? 'left' : 'right';
+    enemy.vx = clamp(dx / horizontalTravelSeconds, -definition.behavior.lungeSpeed, definition.behavior.lungeSpeed);
+    enemy.vy = Math.max(downwardBias, dy / Math.max(0.18, horizontalTravelSeconds));
+    enemy.jump_launch_vx = 0;
+    enemy.knockback_vx = 0;
+    enemy.on_ground = false;
+    enemy.lunge_until = nowSec + secondsFromMs(definition.behavior.lungeDurationMs);
+    enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
+    enemy.attack_hit_victims = [];
+    enemy.striker_slam_started_at = nowSec;
+    enemy.striker_slam_impacted_at = 0;
+    enemy.striker_recover_until = 0;
+    return;
+  }
+
   if (usesProjectileAttackForEnemy(enemy, definition)) {
     setBrainState(enemy, 'lunge', nowSec);
     enemy.action = 'attack';
@@ -1811,7 +1879,7 @@ function updateGargoyleMode(state, enemy, definition, targetPlayer, nowSec) {
 function beginRecover(enemy, nowSec) {
   setBrainState(enemy, 'recover', nowSec);
   enemy.action = 'idle';
-  enemy.recover_until = nowSec + 0.22;
+  enemy.recover_until = nowSec + (isStrikerEnemy(enemy) ? STRIKER_ASCEND_DURATION_SECONDS : 0.22);
   enemy.attack_release_at = 0;
   enemy.attack_shot_fired = false;
 }
@@ -2494,6 +2562,9 @@ function stageEnemyRespawn(enemy, definition, nowSec) {
   enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.attack_repeat_next_at = 0;
+  enemy.striker_slam_started_at = 0;
+  enemy.striker_slam_impacted_at = 0;
+  enemy.striker_recover_until = 0;
 }
 
 function damageEnemy(input) {
@@ -2609,6 +2680,9 @@ function respawnEnemy(state, enemy, definition) {
   enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.attack_repeat_next_at = 0;
+  enemy.striker_slam_started_at = 0;
+  enemy.striker_slam_impacted_at = 0;
+  enemy.striker_recover_until = 0;
 }
 
 function updateDeadEnemy(state, enemy, definition, dt, nowSec) {
@@ -2655,13 +2729,42 @@ function updateAliveEnemy(input) {
       targetPlayer,
       nowSec,
     });
+    if (isStrikerEnemy(definition) && targetPlayer) {
+      const alignDx = targetPlayer.x - enemy.x;
+      const desiredPrepY = targetPlayer.y - Math.max(definition.behavior.hoverHeight, definition.behavior.attackRange * 0.28);
+      const alignDy = desiredPrepY - enemy.y;
+      desiredVelocityX = Math.abs(alignDx) > 12
+        ? Math.sign(alignDx) * definition.behavior.moveSpeed * (Math.abs(alignDx) > 120 ? 1.6 : 1.25)
+        : 0;
+      desiredVelocityY = Math.abs(alignDy) > 10
+        ? Math.sign(alignDy) * definition.behavior.verticalMoveSpeed * (alignDy < 0 ? 1.8 : 1.15)
+        : 0;
+    }
     if (nowSec >= enemy.prepare_until) {
-      beginLunge(enemy, targetPlayer, nowSec, definition);
-      desiredVelocityX = enemy.vx;
+      if (isStrikerEnemy(definition) && targetPlayer) {
+        const slamDx = Math.abs(targetPlayer.x - enemy.x);
+        const slamDy = Math.abs((targetPlayer.y - Math.max(definition.behavior.hoverHeight * 0.92, 110)) - enemy.y);
+        const horizontallyAligned = slamDx <= Math.max(34, definition.behavior.attackRange * 0.08);
+        const verticallyAligned = slamDy <= Math.max(72, definition.behavior.hoverVariance * 0.72);
+        if (!horizontallyAligned || !verticallyAligned) {
+          enemy.prepare_until = nowSec + 0.08;
+          enemy.attack_release_at = enemy.prepare_until;
+        } else {
+          beginLunge(enemy, targetPlayer, nowSec, definition);
+          desiredVelocityX = enemy.vx;
+        }
+      } else {
+        beginLunge(enemy, targetPlayer, nowSec, definition);
+        desiredVelocityX = enemy.vx;
+      }
     }
   } else if (enemy.brain_state === 'lunge') {
     enemy.action = 'attack';
     desiredVelocityX = enemy.vx;
+    if (isStrikerEnemy(definition)) {
+      desiredVelocityX = enemy.vx;
+      desiredVelocityY = Math.max(definition.behavior.verticalMoveSpeed * 2.6, enemy.vy);
+    }
     maybeFireEnemyProjectile({
       ...input,
       enemy,
@@ -2669,12 +2772,28 @@ function updateAliveEnemy(input) {
       targetPlayer,
       nowSec,
     });
-    if (nowSec >= enemy.lunge_until) {
+    if (isStrikerEnemy(definition) && nowSec >= enemy.lunge_until && !enemy.on_ground) {
+      enemy.lunge_until = nowSec + 0.08;
+    } else if (nowSec >= enemy.lunge_until) {
       beginRecover(enemy, nowSec);
       desiredVelocityX = 0;
     }
   } else if (enemy.brain_state === 'recover') {
     enemy.action = isSlimeEnemy(definition) && nowSec < enemy.surface_stick_until ? 'attack' : 'idle';
+    if (isStrikerEnemy(definition)) {
+      const recoverTargetY = getFlyingEnemyTargetY(enemy, definition, targetPlayer, nowSec) - Math.max(48, definition.behavior.hoverHeight * 0.18);
+      const recoverDy = recoverTargetY - enemy.y;
+      desiredVelocityY = Math.abs(recoverDy) > 12
+        ? Math.sign(recoverDy) * definition.behavior.verticalMoveSpeed * 1.25
+        : 0;
+      if (targetPlayer) {
+        const recoverDx = targetPlayer.x - enemy.x;
+        desiredVelocityX = Math.abs(recoverDx) > 28
+          ? Math.sign(recoverDx) * definition.behavior.moveSpeed * 0.42
+          : 0;
+      }
+      enemy.striker_recover_until = enemy.recover_until;
+    }
     if (nowSec >= enemy.recover_until) {
       enemy.surface_stick_until = 0;
       setBrainState(enemy, targetPlayer ? 'chase' : 'idle', nowSec);
@@ -2700,7 +2819,6 @@ function updateAliveEnemy(input) {
         desiredVelocityY = 0;
       }
     } else if (flying) {
-      maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
       const attackDx = targetPlayer.x - enemy.x;
       const orbitTarget = getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec);
       let detourPlan = buildFlyingDetourPlan(state, enemy, definition, orbitTarget);
@@ -2716,10 +2834,14 @@ function updateAliveEnemy(input) {
 
       const dx = desiredPoint.x - enemy.x;
       const dy = desiredPoint.y - enemy.y;
-      const horizontalDeadzone = 26;
-      const verticalDeadzone = 18;
-      const horizontalSpeedScale = Math.abs(dy) > 64 ? 0.74 : 1;
-      const verticalSpeedScale = Math.abs(dx) > 120 ? 0.78 : 1;
+      const horizontalDeadzone = isStrikerEnemy(definition) ? 10 : 26;
+      const verticalDeadzone = isStrikerEnemy(definition) ? 12 : 18;
+      const horizontalSpeedScale = isStrikerEnemy(definition)
+        ? (Math.abs(dx) > 160 ? 1.55 : (Math.abs(dx) > 80 ? 1.22 : 0.92))
+        : (Math.abs(dy) > 64 ? 0.74 : 1);
+      const verticalSpeedScale = isStrikerEnemy(definition)
+        ? (Math.abs(dy) > 90 ? 1.28 : 0.96)
+        : (Math.abs(dx) > 120 ? 0.78 : 1);
       desiredVelocityX = Math.abs(dx) > horizontalDeadzone
         ? Math.sign(dx) * definition.behavior.moveSpeed * horizontalSpeedScale
         : 0;
@@ -2732,35 +2854,46 @@ function updateAliveEnemy(input) {
       const stuckDuration = getEnemyStuckDuration(enemy, flyingMoveIntent, nowSec);
 
       if (stuckDuration >= 0.58) {
-        enemy.preferred_hover_offset_x *= -1;
-        enemy.attack_altitude_bias = enemy.attack_altitude_bias <= 0
-          ? Math.max(28, definition.behavior.hoverVariance * 0.24)
-          : -definition.behavior.hoverHeight;
-        detourPlan = buildFlyingDetourPlan(state, enemy, definition, getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec));
-
-        if (detourPlan) {
-          const prioritizeVerticalEscape = Math.abs(enemy.y - detourPlan.nearPoint.y) > 16;
-          desiredPoint = prioritizeVerticalEscape
-            ? { x: enemy.x, y: detourPlan.nearPoint.y }
-            : detourPlan.farPoint;
-        } else {
+        if (isStrikerEnemy(definition)) {
           desiredPoint = {
-            x: enemy.x + (enemy.preferred_hover_offset_x > 0 ? 42 : -42),
+            x: targetPlayer.x,
             y: clamp(
-              targetPlayer.y - definition.behavior.hoverHeight * 0.92,
+              targetPlayer.y - Math.max(definition.behavior.hoverHeight, 120),
               state.mapBounds.min_y + 64,
-              targetPlayer.y + 36
+              targetPlayer.y - 48
             ),
           };
+        } else {
+          enemy.preferred_hover_offset_x *= -1;
+          enemy.attack_altitude_bias = enemy.attack_altitude_bias <= 0
+            ? Math.max(28, definition.behavior.hoverVariance * 0.24)
+            : -definition.behavior.hoverHeight;
+          detourPlan = buildFlyingDetourPlan(state, enemy, definition, getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec));
+
+          if (detourPlan) {
+            const prioritizeVerticalEscape = Math.abs(enemy.y - detourPlan.nearPoint.y) > 16;
+            desiredPoint = prioritizeVerticalEscape
+              ? { x: enemy.x, y: detourPlan.nearPoint.y }
+              : detourPlan.farPoint;
+          } else {
+            desiredPoint = {
+              x: enemy.x + (enemy.preferred_hover_offset_x > 0 ? 42 : -42),
+              y: clamp(
+                targetPlayer.y - definition.behavior.hoverHeight * 0.92,
+                state.mapBounds.min_y + 64,
+                targetPlayer.y + 36
+              ),
+            };
+          }
         }
 
         const rescueDx = desiredPoint.x - enemy.x;
         const rescueDy = desiredPoint.y - enemy.y;
         desiredVelocityX = Math.abs(rescueDx) > 12
-          ? Math.sign(rescueDx) * definition.behavior.moveSpeed * 0.78
+          ? Math.sign(rescueDx) * definition.behavior.moveSpeed * (isStrikerEnemy(definition) ? 1.4 : 0.78)
           : 0;
         desiredVelocityY = Math.abs(rescueDy) > 10
-          ? Math.sign(rescueDy) * definition.behavior.verticalMoveSpeed * 1.08
+          ? Math.sign(rescueDy) * definition.behavior.verticalMoveSpeed * (isStrikerEnemy(definition) ? 1.32 : 1.08)
           : 0;
       }
 
@@ -2775,7 +2908,7 @@ function updateAliveEnemy(input) {
 
       if (
         nowSec >= enemy.attack_cooldown_until &&
-        Math.abs(targetPlayer.x - enemy.x) <= definition.behavior.attackRange &&
+        Math.abs(targetPlayer.x - enemy.x) <= (isStrikerEnemy(definition) ? Math.max(34, definition.behavior.attackRange * 0.12) : definition.behavior.attackRange) &&
         Math.abs(targetPlayer.y - enemy.y) <= definition.behavior.hoverHeight + definition.behavior.hoverVariance + 90 &&
         !detourPlan &&
         hasLineOfSightToPlayer(state, enemy, targetPlayer)
@@ -2854,8 +2987,11 @@ function updateAliveEnemy(input) {
 
   const useGroundedGargoylePhysics = isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch';
   const useGargoyleDivePhysics = isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'swoop' && enemy.brain_state === 'lunge';
+  const useStrikerDivePhysics = isStrikerEnemy(definition) && enemy.brain_state === 'lunge';
+  const wasOnGroundBeforePhysics = Boolean(enemy.on_ground);
+  const prePhysicsVy = Number(enemy.vy) || 0;
 
-  if (flying && !useGroundedGargoylePhysics && !useGargoyleDivePhysics) {
+  if (flying && !useGroundedGargoylePhysics && !useGargoyleDivePhysics && !useStrikerDivePhysics) {
     if (enemy.brain_state === 'prepare' || enemy.brain_state === 'lunge') {
       maybeRefreshFlyingAttackBias(enemy, definition, nowSec);
       const attackTargetY = getFlyingEnemyTargetY(enemy, definition, targetPlayer, nowSec);
@@ -2868,6 +3004,16 @@ function updateAliveEnemy(input) {
   } else {
     applyEnemyPhysics(state, enemy, definition, dt, desiredVelocityX);
     maybeStickSlimeToSurface(state, enemy, definition, nowSec, input.io);
+    if (isStrikerEnemy(definition) && !wasOnGroundBeforePhysics && enemy.on_ground) {
+      emitStrikerGroundImpact(input.io, enemy, prePhysicsVy);
+    }
+    if (isStrikerEnemy(definition) && enemy.brain_state === 'lunge' && enemy.on_ground) {
+      enemy.striker_slam_impacted_at = nowSec;
+      enemy.vx = 0;
+      enemy.vy = 0;
+      enemy.knockback_vx = 0;
+      beginRecover(enemy, nowSec);
+    }
   }
   processEnemyAttackHits({
     state,
@@ -2935,6 +3081,9 @@ function serializeEnemiesForState(state) {
       attached_sid: enemy.attached_sid || null,
       gargoyle_mode: enemy.gargoyle_mode || null,
       render_opacity: Number.isFinite(enemy.render_opacity) ? enemy.render_opacity : 1,
+      striker_slam_impacted_at_ms: enemy.striker_slam_impacted_at
+        ? Math.round(enemy.striker_slam_impacted_at * 1000)
+        : 0,
     };
   }
 

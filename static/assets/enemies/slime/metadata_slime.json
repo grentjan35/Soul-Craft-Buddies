@@ -2,6 +2,7 @@
   "id": "slime",
   "type": "slime",
   "displayName": "Slime",
+  "size": 0.18,
   "scale": 0.18,
   "frameSize": {
     "w": 594,

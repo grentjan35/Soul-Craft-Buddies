@@ -1,0 +1,84 @@
+{
+  "id": "striker",
+  "type": "striker",
+  "displayName": "Striker",
+  "size": 0.45,
+  "scale": 0.18,
+  "frameSize": {
+    "w": 577,
+    "h": 470
+  },
+  "hitbox": {
+    "x": 228,
+    "y": 103,
+    "w": 208,
+    "h": 288
+  },
+  "normalized": {
+    "x": 0.395147,
+    "y": 0.219149,
+    "w": 0.360485,
+    "h": 0.612766
+  },
+  "stats": {
+    "maxHealth": 260,
+    "contactDamage": 65,
+    "respawnDelayMs": 8000
+  },
+  "behavior": {
+    "movementMode": "flying",
+    "attackMode": "melee",
+    "detectionRadius": 880,
+    "leashRadius": 1240,
+    "wanderRadius": 300,
+    "moveSpeed": 188,
+    "verticalMoveSpeed": 168,
+    "telegraphDurationMs": 520,
+    "lungeDurationMs": 1180,
+    "attackCooldownMs": 2200,
+    "attackRange": 540,
+    "lungeSpeed": 760,
+    "lungeLift": 0,
+    "jumpForce": 720,
+    "stuckJumpDelayMs": 360,
+    "doubleJumpDelayMs": 760,
+    "despawnAfterDeathMs": 1700,
+    "hoverHeight": 210,
+    "hoverVariance": 120,
+    "hoverBobAmplitude": 18,
+    "hoverBobSpeed": 1.45,
+    "projectileSpeed": 0,
+    "projectileDamage": 0,
+    "projectileScale": 1,
+    "projectileRadiusScale": 1,
+    "projectileYOffset": 0,
+    "projectileOffsetX": 0
+  },
+  "animations": {
+    "idle": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "run": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "attack": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "attack"
+    },
+    "death": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "death"
+    },
+    "prepare": {
+      "frames": 4,
+      "grid": "3x3",
+      "asset": "attack"
+    }
+  }
+}

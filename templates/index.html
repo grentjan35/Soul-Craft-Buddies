@@ -4205,6 +4205,12 @@
                     gargoyleAttack: '/audio/gargoyle/attack.mp3',
                     gargoyleSwoop: '/audio/gargoyle/swoop.mp3',
                     gargoyleFlight: '/audio/gargoyle/flying.mp3',
+                    strikerIdle: '/audio/striker/idle.mp3',
+                    strikerAttack: '/audio/striker/attack.mp3',
+                    strikerHit: '/audio/striker/hurt.mp3',
+                    strikerDeath: '/audio/striker/death.mp3',
+                    strikerFlight: '/audio/striker/flying.mp3',
+                    strikerSlam: '/audio/striker/slam.mp3',
                     slimeAmbient: [
                         '/audio/slime/growl.mp3',
                         '/audio/slime/wander.mp3'
@@ -4299,6 +4305,12 @@
                         soundUrls.gargoyleAttack,
                         soundUrls.gargoyleSwoop,
                         soundUrls.gargoyleFlight,
+                        soundUrls.strikerIdle,
+                        soundUrls.strikerAttack,
+                        soundUrls.strikerHit,
+                        soundUrls.strikerDeath,
+                        soundUrls.strikerFlight,
+                        soundUrls.strikerSlam,
                         ...soundUrls.slimeAmbient,
                         soundUrls.slimeAttack,
                         soundUrls.slimeHit,
@@ -4461,6 +4473,26 @@
                     await playUrlAt(soundUrls.slimeDeath, worldX, worldY, listenerX, listenerY, viewport, volume, -30);
                 }
 
+                async function playStrikerIdleAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.46) {
+                    await playUrlAt(soundUrls.strikerIdle, worldX, worldY, listenerX, listenerY, viewport, volume, -6);
+                }
+
+                async function playStrikerAttackAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.9) {
+                    await playUrlAt(soundUrls.strikerAttack, worldX, worldY, listenerX, listenerY, viewport, volume, -4);
+                }
+
+                async function playStrikerHitAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.78) {
+                    await playUrlAt(soundUrls.strikerHit, worldX, worldY, listenerX, listenerY, viewport, volume, -8);
+                }
+
+                async function playStrikerDeathAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.96) {
+                    await playUrlAt(soundUrls.strikerDeath, worldX, worldY, listenerX, listenerY, viewport, volume, -12);
+                }
+
+                async function playStrikerSlamAt(worldX, worldY, listenerX, listenerY, viewport = null, volume = 1) {
+                    await playUrlAt(soundUrls.strikerSlam, worldX, worldY, listenerX, listenerY, viewport, volume, -10);
+                }
+
                 async function playSoulCollectedLocal(volume = 0.9, key = 'soul-collected-local') {
                     await playUrlLocal(
                         soundUrls.soulCollected,
@@ -4567,6 +4599,43 @@
                     stopBatFlightLoop(`gargoyle:${id}`);
                 }
 
+                async function startStrikerFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport = null, volume = 0.24) {
+                    const strikerLoopId = `striker:${id}`;
+                    if (!audioContext || activeLoops.has(strikerLoopId)) {
+                        return;
+                    }
+
+                    try {
+                        if (audioContext.state === 'suspended') {
+                            await audioContext.resume();
+                        }
+
+                        const buffer = await loadBuffer(soundUrls.strikerFlight);
+                        if (!buffer) {
+                            return;
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        const { gainNode, setPan } = createSpatialPanNodes(audioContext);
+                        source.buffer = buffer;
+                        source.loop = true;
+                        source.connect(gainNode);
+                        activeLoops.set(strikerLoopId, { source, gainNode, setPan, baseVolume: volume, worldX, worldY });
+                        updateStrikerFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport);
+                        source.start();
+                    } catch (_error) {
+                        activeLoops.delete(strikerLoopId);
+                    }
+                }
+
+                function updateStrikerFlightLoop(id, worldX, worldY, listenerX, listenerY, viewport = null) {
+                    updateBatFlightLoop(`striker:${id}`, worldX, worldY, listenerX, listenerY, viewport);
+                }
+
+                function stopStrikerFlightLoop(id) {
+                    stopBatFlightLoop(`striker:${id}`);
+                }
+
                 function updateTransientSpatialSounds(listenerX, listenerY, viewport = null) {
                     for (const [id, sound] of activeTransientSounds.entries()) {
                         if (!sound) {
@@ -4600,6 +4669,11 @@
                     playGargoyleIdleAt,
                     playGargoyleAttackAt,
                     playGargoyleSwoopAt,
+                    playStrikerIdleAt,
+                    playStrikerAttackAt,
+                    playStrikerHitAt,
+                    playStrikerDeathAt,
+                    playStrikerSlamAt,
                     playSlimeAmbientAt,
                     playSlimeAttackAt,
                     playSlimeHitAt,
@@ -4610,6 +4684,9 @@
                     startGargoyleFlightLoop,
                     updateGargoyleFlightLoop,
                     stopGargoyleFlightLoop,
+                    startStrikerFlightLoop,
+                    updateStrikerFlightLoop,
+                    stopStrikerFlightLoop,
                     stopAllBatFlightLoops,
                     updateTransientSpatialSounds,
                     playPlayerHurtAt,
@@ -4671,6 +4748,7 @@
                 loadingScreen.style.opacity = '0';
                 await new Promise((resolve) => setTimeout(resolve, 360));
                 loadingScreen.style.display = 'none';
+                loadingContainer?.classList.add('is-boot-hidden');
             }
 
             function syncSoulChooserVisibility() {
@@ -5010,6 +5088,9 @@
                 myPlayerName = name;
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
+                loadingStage = 'Forging soul link...';
+                loadingProgress = 0;
+                updateLoadingScreen();
                 
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
@@ -5019,6 +5100,7 @@
                     loadingScreen.style.transition = '';
                     loadingScreen.style.opacity = '1';
                     loadingScreen.style.display = 'flex'; // Show loading screen
+                    loadingContainer?.classList.remove('is-boot-hidden');
                     
                     // Start the smooth loading animation loop
                     startSmoothLoading();
@@ -5365,6 +5447,8 @@
             loadingCompleteTriggered = false;
             loadingCompleteSoundPlayed = false;
             playerReadySent = false;
+            const loadingContainer = document.querySelector('.loading-container');
+            loadingContainer?.classList.remove('loading-complete');
             if (loadingAnimationId) {
                 cancelAnimationFrame(loadingAnimationId);
             }
@@ -5924,9 +6008,9 @@
             return null;
         }
 
-        function warmMapForegrounds(mapData) {
+        async function warmMapForegrounds(mapData) {
             const placements = Array.isArray(mapData?.backgrounds) ? mapData.backgrounds : [];
-            Promise.all(
+            await Promise.all(
                 placements.map(async (placement) => {
                     if (!placement || typeof placement.asset !== 'string' || placement.foregroundBitmap) {
                         return;
@@ -5940,9 +6024,7 @@
                         console.warn(`Unable to warm foreground for "${placement.asset}".`, error);
                     }
                 })
-            ).catch((error) => {
-                console.warn('Background foreground warmup failed.', error);
-            });
+            );
         }
 
         function warmMapEnemyAssets(mapData) {
@@ -6255,6 +6337,9 @@
                 return;
             }
 
+            loadingStage = 'Drawing distant realms...';
+            loadingProgress = Math.max(loadingProgress, 82);
+            updateLoadingScreen();
             await Promise.all(
                 placements
                     .map((placement) => placement?.asset)
@@ -6262,13 +6347,17 @@
                     .map((assetName) => loadBackgroundBitmap(assetName))
             );
 
-            loadBackgroundCatalog()
-                .then(() => {
-                    warmMapForegrounds(mapData);
-                })
-                .catch(() => {
-                    warmMapForegrounds(mapData);
-                });
+            loadingStage = 'Weaving foreground veil...';
+            loadingProgress = Math.max(loadingProgress, 88);
+            updateLoadingScreen();
+
+            try {
+                await loadBackgroundCatalog();
+            } catch (_error) {
+                // Fall back to filename-based foreground lookup if catalog loading fails.
+            }
+
+            await warmMapForegrounds(mapData);
         }
 
         async function loadBackgroundCatalog() {
@@ -7864,6 +7953,37 @@
             }
         });
 
+        socket.on('striker_ground_impact', (data) => {
+            const x = Number(data?.x);
+            const y = Number(data?.y);
+            const impactSpeed = Number(data?.impact_speed);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                return;
+            }
+
+            createDustParticles(x, y + 22, 'enemy_land');
+            const listenerState = getPlayerState(socket.id);
+            if (combatAudio && listenerState && typeof combatAudio.playStrikerSlamAt === 'function') {
+                combatAudio.playStrikerSlamAt(
+                    x,
+                    y,
+                    listenerState.x,
+                    listenerState.y,
+                    getAudibleViewport(),
+                    Number.isFinite(impactSpeed) ? Math.max(0.95, Math.min(1.16, 0.95 + impactSpeed / 1300)) : 1
+                );
+            }
+            addDistanceShake(
+                x,
+                y,
+                110,
+                1180,
+                Number.isFinite(impactSpeed)
+                    ? Math.max(0.9, Math.min(1.4, 0.9 + impactSpeed / 900))
+                    : 1.1
+            );
+        });
+
         function lerp(start, end, t) {
             return start + (end - start) * t;
         }
@@ -8318,7 +8438,7 @@
 
             for (const enemyId in enemyState) {
                 const currentState = enemyState[enemyId];
-                if (!currentState || (currentState.type !== 'spider' && currentState.type !== 'bat' && currentState.type !== 'slime' && currentState.type !== 'gargoyle')) {
+                if (!currentState || (currentState.type !== 'spider' && currentState.type !== 'bat' && currentState.type !== 'slime' && currentState.type !== 'gargoyle' && currentState.type !== 'striker')) {
                     continue;
                 }
 
@@ -8326,6 +8446,7 @@
                 const isBat = currentState.type === 'bat';
                 const isSlime = currentState.type === 'slime';
                 const isGargoyle = currentState.type === 'gargoyle';
+                const isStriker = currentState.type === 'striker';
                 const previousState = previousEnemyAudioState[enemyId];
                 const ambientState = enemyAmbientAudioState[enemyId] || {
                     nextAt: nowMs + 1800 + Math.random() * 2200
@@ -8422,6 +8543,28 @@
                     combatAudio.stopGargoyleFlightLoop(enemyId);
                 }
 
+                if (isStriker && combatAudio && listenerState && currentState.alive && !currentState.on_ground) {
+                    combatAudio.startStrikerFlightLoop(
+                        enemyId,
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport,
+                        currentState.brain_state === 'lunge' ? 0.52 : (currentState.brain_state === 'prepare' ? 0.34 : 0.24)
+                    );
+                    combatAudio.updateStrikerFlightLoop(
+                        enemyId,
+                        currentState.x,
+                        currentState.y,
+                        listenerState.x,
+                        listenerState.y,
+                        audibleViewport
+                    );
+                } else if (isStriker && combatAudio) {
+                    combatAudio.stopStrikerFlightLoop(enemyId);
+                }
+
                 if (previousState) {
                     const tookDamage =
                         currentState.alive &&
@@ -8472,6 +8615,15 @@
                                 audibleViewport,
                                 0.74
                             );
+                        } else if (combatAudio && listenerState && isStriker) {
+                            combatAudio.playStrikerHitAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.82
+                            );
                         }
                     }
 
@@ -8509,6 +8661,16 @@
                                 listenerState.y,
                                 audibleViewport,
                                 0.86
+                            );
+                        } else if (isStriker) {
+                            combatAudio.stopStrikerFlightLoop(enemyId);
+                            combatAudio.playStrikerDeathAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                1
                             );
                         }
                         ambientState.nextAt = nowMs + ambientCooldownBaseMs;
@@ -8560,6 +8722,15 @@
                                 audibleViewport,
                                 0.78
                             );
+                        } else if (isStriker) {
+                            combatAudio.playStrikerAttackAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.92
+                            );
                         }
                         ambientState.nextAt = nowMs + 2200 + Math.random() * 1000;
                     }
@@ -8576,6 +8747,23 @@
                                 0.34
                             );
                         }
+                        enemyFootstepFrameCounters[enemyId] = 0;
+                    } else if (landedThisFrame && isStriker) {
+                        createDustParticles(currentState.x, currentState.y + 22, 'enemy_land');
+                        if (listenerState) {
+                            fallAudio?.playAt(
+                                currentState.x,
+                                currentState.y,
+                                listenerState.x,
+                                listenerState.y,
+                                audibleViewport,
+                                0.52
+                            );
+                        }
+                        const slamStrength = previousState.brain_state === 'lunge' || currentState.striker_slam_impacted_at_ms
+                            ? 0.86
+                            : 0.48;
+                        addDistanceShake(currentState.x, currentState.y, 90, 980, slamStrength);
                         enemyFootstepFrameCounters[enemyId] = 0;
                     }
                 }
@@ -8640,6 +8828,15 @@
                             0.48,
                             `${enemyId}|${currentState.brain_state}|ambient|${Math.floor((nowMs - (currentState.state_started_at_ms ?? nowMs)) / ambientCooldownBaseMs)}`
                         );
+                    } else if (isStriker) {
+                        combatAudio.playStrikerIdleAt(
+                            currentState.x,
+                            currentState.y,
+                            listenerState.x,
+                            listenerState.y,
+                            audibleViewport,
+                            0.46
+                        );
                     }
                     ambientState.nextAt = nowMs + ambientCooldownBaseMs + Math.random() * 3800;
                 }
@@ -8695,6 +8892,7 @@
                     if (combatAudio) {
                         combatAudio.stopBatFlightLoop(enemyId);
                         combatAudio.stopGargoyleFlightLoop(enemyId);
+                        combatAudio.stopStrikerFlightLoop(enemyId);
                     }
                     delete previousEnemyAudioState[enemyId];
                     delete enemyAmbientAudioState[enemyId];
@@ -8860,9 +9058,11 @@
             }
 
             const rawAction = state.action || 'idle';
-            const action = state.type === 'gargoyle' && state.gargoyle_mode === 'swoop' && (rawAction === 'attack' || rawAction === 'prepare')
-                ? 'run'
-                : rawAction;
+            const isAirborneStriker = state.type === 'striker' && !state.on_ground;
+            const action =
+                state.type === 'gargoyle' && state.gargoyle_mode === 'swoop' && (rawAction === 'attack' || rawAction === 'prepare')
+                    ? 'run'
+                    : (isAirborneStriker && state.brain_state !== 'lunge' ? 'run' : rawAction);
             const animationMeta = metadata.animations?.[action] || metadata.animations?.idle;
             if (!animationMeta) {
                 return null;

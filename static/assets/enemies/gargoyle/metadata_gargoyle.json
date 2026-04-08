@@ -2,6 +2,7 @@
   "id": "gargoyle",
   "type": "gargoyle",
   "displayName": "Gargoyle",
+  "size": 0.19,
   "scale": 0.19,
   "frameSize": {
     "w": 554,
