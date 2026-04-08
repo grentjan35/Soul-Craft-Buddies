@@ -2,7 +2,7 @@
   "id": "striker",
   "type": "striker",
   "displayName": "Striker",
-  "size": 0.45,
+  "size": 0.40,
   "scale": 0.18,
   "frameSize": {
     "w": 577,
@@ -22,7 +22,7 @@
   },
   "stats": {
     "maxHealth": 260,
-    "contactDamage": 65,
+    "contactDamage": 30,
     "respawnDelayMs": 8000
   },
   "behavior": {
@@ -31,13 +31,13 @@
     "detectionRadius": 880,
     "leashRadius": 1240,
     "wanderRadius": 300,
-    "moveSpeed": 188,
-    "verticalMoveSpeed": 168,
+    "moveSpeed": 300,
+    "verticalMoveSpeed": 200,
     "telegraphDurationMs": 520,
     "lungeDurationMs": 1180,
     "attackCooldownMs": 2200,
     "attackRange": 540,
-    "lungeSpeed": 760,
+    "lungeSpeed": 900,
     "lungeLift": 0,
     "jumpForce": 720,
     "stuckJumpDelayMs": 360,

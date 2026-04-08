@@ -13,7 +13,7 @@ const SOUL_IDLE_LIFETIME_MS = 45000;
 const SOUL_PLAYER_DROP_SPREAD_X = 18;
 const SOUL_ENEMY_DROP_SPREAD_X = 14;
 const SOUL_MAX_BUNDLE_VALUE = 5;
-const SOUL_HEAL_PER_VALUE = 4;
+const SOUL_HEAL_PER_VALUE = 12;
 const SOUL_RADIUS_BASE = 7;
 
 function ensureSoulState(state) {

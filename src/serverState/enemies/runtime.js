@@ -27,6 +27,7 @@ const GARGOYLE_ACTIVE_OPACITY = 1;
 const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
 const STRIKER_ASCEND_DURATION_SECONDS = 0.7;
 const STRIKER_SLAM_IMPACT_WINDOW_SECONDS = 0.18;
+const STRIKER_TOUCH_DAMAGE_COOLDOWN_SECONDS = 0.65;
 
 function isFlyingEnemy(definition) {
   return definition?.behavior?.movementMode === 'flying';
@@ -2450,6 +2451,43 @@ function processEnemyAttackHits(input) {
   input.enemy.attack_hit_victims = Array.from(hitVictims);
 }
 
+function processStrikerTouchDamage(input) {
+  if (!isStrikerEnemy(input.definition) || !input.enemy.alive) {
+    return;
+  }
+
+  if (!input.enemy.contact_hit_cooldowns || typeof input.enemy.contact_hit_cooldowns !== 'object') {
+    input.enemy.contact_hit_cooldowns = {};
+  }
+
+  for (const [sid, player] of input.state.players.entries()) {
+    if (player.is_dying) {
+      continue;
+    }
+
+    if (!checkEnemyPlayerCollision(input.state, input.enemy, player)) {
+      continue;
+    }
+
+    const readyAt = Number(input.enemy.contact_hit_cooldowns[sid]) || 0;
+    if (input.nowSec < readyAt) {
+      continue;
+    }
+
+    input.enemy.direction = player.x < input.enemy.x ? 'left' : 'right';
+    damagePlayerFromEnemyHit({
+      ...input,
+      sid,
+      player,
+      nowSec: input.nowSec,
+      impactX: input.enemy.x,
+      impactY: input.enemy.y,
+      effect: 'blood',
+    });
+    input.enemy.contact_hit_cooldowns[sid] = input.nowSec + STRIKER_TOUCH_DAMAGE_COOLDOWN_SECONDS;
+  }
+}
+
 function maybeFireEnemyProjectile(input) {
   const { enemy, definition, targetPlayer, nowSec } = input;
   if (!usesProjectileAttackForEnemy(enemy, definition) || !targetPlayer || enemy.attack_shot_fired) {
@@ -2565,6 +2603,7 @@ function stageEnemyRespawn(enemy, definition, nowSec) {
   enemy.striker_slam_started_at = 0;
   enemy.striker_slam_impacted_at = 0;
   enemy.striker_recover_until = 0;
+  enemy.contact_hit_cooldowns = {};
 }
 
 function damageEnemy(input) {
@@ -2683,6 +2722,7 @@ function respawnEnemy(state, enemy, definition) {
   enemy.striker_slam_started_at = 0;
   enemy.striker_slam_impacted_at = 0;
   enemy.striker_recover_until = 0;
+  enemy.contact_hit_cooldowns = {};
 }
 
 function updateDeadEnemy(state, enemy, definition, dt, nowSec) {
@@ -3016,6 +3056,13 @@ function updateAliveEnemy(input) {
     }
   }
   processEnemyAttackHits({
+    state,
+    enemy,
+    definition,
+    io: input.io,
+    nowSec,
+  });
+  processStrikerTouchDamage({
     state,
     enemy,
     definition,

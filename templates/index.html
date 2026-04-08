@@ -5676,8 +5676,10 @@
                 loadingProgress = 80;
                 updateLoadingScreen();
                 
-                await loadMap();
-                syncCurrentMapToServer(true);
+                await Promise.all([
+                    loadMap(),
+                    Promise.resolve().then(() => syncCurrentMapToServer(true))
+                ]);
                 
                 loadingStage = 'Compiling client context...';
                 loadingProgress = 95;
@@ -5687,11 +5689,10 @@
                 loadingStage = 'Link established.';
                 updateLoadingScreen();
                 
-                // Only add a small delay if loading was extremely fast (under 0.5s)
-                // This prevents flickering on fast computers without forcing long waits
+                // Keep only a tiny minimum hold so fast loads do not flicker.
                 const elapsed = Date.now() - loadingStartTime;
-                if (elapsed < 500) {
-                    await new Promise(resolve => setTimeout(resolve, 200)); // Just 200ms minimum, not 2 seconds
+                if (elapsed < 320) {
+                    await new Promise(resolve => setTimeout(resolve, 90));
                 }
                 
                 // Mark assets as ready - this will trigger checkIfCanStart()
