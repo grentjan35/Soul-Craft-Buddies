@@ -77,6 +77,7 @@ function createInitialState(input) {
     fireballs: new Map(),
     explosions: new Map(),
     nextFireballId: 0,
+    nextExplosionId: 0,
     stateSeq: 0,
     platforms,
     platformGrid: buildPlatformGrid({ platforms }),

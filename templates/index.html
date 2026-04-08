@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <link rel="icon" href="data:,">
     <title>SoulCraft - Combat RPG</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.min.js"></script>
     <style>
         :root {
             --mobile-controls-height: 184px;
@@ -6910,6 +6910,8 @@
         const leaderboardBody = document.getElementById('souls-leaderboard-body');
         const fairySnapshots = {};
         const authoritativeFairyState = {};
+        const reusableActiveSoulIds = new Set();
+        const reusableActiveFairyIds = new Set();
         const MAX_SNAPSHOT_AGE_MS = 1000;
         const MIN_INTERPOLATION_DELAY_MS = 40;
         const MAX_INTERPOLATION_DELAY_MS = 200;
@@ -7451,9 +7453,10 @@
             }
 
             if (serverSouls) {
-                const activeSoulIds = new Set();
-                for (const [soulId, soul] of Object.entries(serverSouls)) {
-                    activeSoulIds.add(soulId);
+                reusableActiveSoulIds.clear();
+                for (const soulId in serverSouls) {
+                    const soul = serverSouls[soulId];
+                    reusableActiveSoulIds.add(soulId);
                     const previousSoul = soulState[soulId];
                     soulState[soulId] = {
                         id: soulId,
@@ -7471,7 +7474,7 @@
                 }
 
                 for (const soulId in soulState) {
-                    if (!activeSoulIds.has(soulId)) {
+                    if (!reusableActiveSoulIds.has(soulId)) {
                         delete soulState[soulId];
                     }
                 }
@@ -7479,14 +7482,14 @@
             
             // Update fairy data from server
             if (serverFairies) {
-                const activeFairyIds = new Set();
+                reusableActiveFairyIds.clear();
                 for (const fairy of serverFairies) {
                     if (!fairy || typeof fairy.id === 'undefined') {
                         continue;
                     }
 
                     const fairyId = String(fairy.id);
-                    activeFairyIds.add(fairyId);
+                    reusableActiveFairyIds.add(fairyId);
                     authoritativeFairyState[fairyId] = {
                         id: fairy.id,
                         x: fairy.x,
@@ -7506,7 +7509,7 @@
                 }
 
                 for (const fairyId in authoritativeFairyState) {
-                    if (!activeFairyIds.has(fairyId)) {
+                    if (!reusableActiveFairyIds.has(fairyId)) {
                         delete authoritativeFairyState[fairyId];
                         delete fairySnapshots[fairyId];
                     }
@@ -7989,6 +7992,26 @@
             return start + (end - start) * t;
         }
 
+        function pruneArrayInPlace(array, shouldKeep) {
+            if (!Array.isArray(array) || array.length === 0) {
+                return array;
+            }
+
+            let writeIndex = 0;
+            for (let readIndex = 0; readIndex < array.length; readIndex++) {
+                const item = array[readIndex];
+                if (!shouldKeep(item, readIndex)) {
+                    continue;
+                }
+
+                array[writeIndex] = item;
+                writeIndex += 1;
+            }
+
+            array.length = writeIndex;
+            return array;
+        }
+
         function cubicHermite(p0, m0, p1, m1, t) {
             const t2 = t * t;
             const t3 = t2 * t;
@@ -8024,14 +8047,26 @@
                 return;
             }
 
-            const intervals = [];
+            let intervalCount = 0;
+            let intervalSum = 0;
             for (let i = 1; i < packetReceiveTimes.length; i++) {
-                intervals.push(packetReceiveTimes[i] - packetReceiveTimes[i - 1]);
+                intervalSum += packetReceiveTimes[i] - packetReceiveTimes[i - 1];
+                intervalCount += 1;
             }
 
-            const meanInterval = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
-            const variance =
-                intervals.reduce((sum, value) => sum + Math.pow(value - meanInterval, 2), 0) / intervals.length;
+            if (intervalCount === 0) {
+                renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+                return;
+            }
+
+            const meanInterval = intervalSum / intervalCount;
+            let varianceSum = 0;
+            for (let i = 1; i < packetReceiveTimes.length; i++) {
+                const interval = packetReceiveTimes[i] - packetReceiveTimes[i - 1];
+                const diff = interval - meanInterval;
+                varianceSum += diff * diff;
+            }
+            const variance = varianceSum / intervalCount;
             const jitterMs = Math.sqrt(variance);
             const targetDelay = Math.max(MIN_INTERPOLATION_DELAY_MS, meanInterval) + jitterMs * 2.5;
 
@@ -9494,7 +9529,7 @@
         }
 
         function drawAttachedPlayerBurnsForPlayer(sid, now, visibleBounds = null) {
-            attachedPlayerBurns = attachedPlayerBurns.filter((burn) => now - burn.startTime < burn.duration && playerState[burn.sid]);
+            pruneArrayInPlace(attachedPlayerBurns, (burn) => now - burn.startTime < burn.duration && playerState[burn.sid]);
             const burn = attachedPlayerBurns.find((entry) => entry.sid === sid);
             if (!burn) return;
 
@@ -10340,7 +10375,7 @@
         }
 
         function drawBurnMarks(now = Date.now(), visibleBounds = null) {
-            burnMarks = burnMarks.filter((mark) => now - mark.startTime < mark.duration);
+            pruneArrayInPlace(burnMarks, (mark) => now - mark.startTime < mark.duration);
             const profile = currentEffectProfile;
 
             ctx.save();
@@ -11519,7 +11554,7 @@
 
                 // Draw floating damage numbers
                 if (window.floatingDamageNumbers) {
-                    window.floatingDamageNumbers = window.floatingDamageNumbers.filter(dn => {
+                    pruneArrayInPlace(window.floatingDamageNumbers, (dn) => {
                         const elapsed = now - dn.startTime;
                         if (elapsed > dn.duration) return false;
                         
@@ -11543,7 +11578,7 @@
 
                 // Draw death messages
                 if (window.deathMessages) {
-                    window.deathMessages = window.deathMessages.filter(dm => {
+                    pruneArrayInPlace(window.deathMessages, (dm) => {
                         const elapsed = now - dm.startTime;
                         if (elapsed > dm.duration) return false;
                         

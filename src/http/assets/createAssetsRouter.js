@@ -214,6 +214,41 @@ function setPublicAssetCacheHeaders(res) {
   res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
 }
 
+function buildFileLookup(baseDir, relativeDir, allowedNames) {
+  /** @type {Map<string, string>} */
+  const lookup = new Map();
+
+  for (const name of allowedNames) {
+    const normalizedName = String(name).trim().toLowerCase();
+    if (!normalizedName) {
+      continue;
+    }
+
+    const fullPath = path.join(baseDir, relativeDir, normalizedName);
+    try {
+      if (fs.statSync(fullPath).isFile()) {
+        lookup.set(normalizedName, fullPath);
+      }
+    } catch {
+      // Ignore missing optional assets and keep startup resilient.
+    }
+  }
+
+  return lookup;
+}
+
+function sendPublicCachedFile(res, lookup, assetName) {
+  const fullPath = lookup.get(String(assetName).trim().toLowerCase());
+  if (!fullPath) {
+    res.status(404).send('Not Found');
+    return;
+  }
+
+  setPublicAssetCacheHeaders(res);
+  res.type(path.extname(fullPath));
+  res.sendFile(fullPath);
+}
+
 /**
  * Creates the secure asset routes.
  * @param {{secretKey: string, projectRoot: string, staticDir: string, chunkDir: string, manifestPath: string}} deps
@@ -277,6 +312,14 @@ function createAssetsRouter(deps) {
     'idle.mp3',
     'slam.mp3',
   ]);
+  const publicMenuSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds'), publicMenuSounds);
+  const publicGameplaySoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds'), publicGameplaySounds);
+  const publicFireballSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'fireball'), publicFireballSounds);
+  const publicSpiderSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'spider'), publicSpiderSounds);
+  const publicBatSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'bat'), publicBatSounds);
+  const publicSlimeSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'slime'), publicSlimeSounds);
+  const publicGargoyleSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'gargoyle'), publicGargoyleSounds);
+  const publicStrikerSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'striker'), publicStrikerSounds);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -298,16 +341,7 @@ function createAssetsRouter(deps) {
       res.status(404).send('Not Found');
       return;
     }
-
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicMenuSoundFiles, soundName);
   });
 
   router.get('/audio/footsteps/:name', (req, res) => {
@@ -318,7 +352,12 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', soundName);
-    if (!fs.existsSync(soundPath)) {
+    try {
+      if (!fs.statSync(soundPath).isFile()) {
+        res.status(404).send('Not Found');
+        return;
+      }
+    } catch {
       res.status(404).send('Not Found');
       return;
     }
@@ -336,7 +375,12 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'spider footsteps', soundName);
-    if (!fs.existsSync(soundPath)) {
+    try {
+      if (!fs.statSync(soundPath).isFile()) {
+        res.status(404).send('Not Found');
+        return;
+      }
+    } catch {
       res.status(404).send('Not Found');
       return;
     }
@@ -354,7 +398,12 @@ function createAssetsRouter(deps) {
     }
 
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'slime footsteps', soundName);
-    if (!fs.existsSync(soundPath)) {
+    try {
+      if (!fs.statSync(soundPath).isFile()) {
+        res.status(404).send('Not Found');
+        return;
+      }
+    } catch {
       res.status(404).send('Not Found');
       return;
     }
@@ -371,15 +420,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicGameplaySoundFiles, soundName);
   });
 
   router.get('/audio/fireball/:name', (req, res) => {
@@ -389,15 +430,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'fireball', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicFireballSoundFiles, soundName);
   });
 
   router.get('/audio/hurt/:name', (req, res) => {
@@ -425,15 +458,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'spider', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicSpiderSoundFiles, soundName);
   });
 
   router.get('/audio/bat/:name', (req, res) => {
@@ -443,15 +468,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'bat', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicBatSoundFiles, soundName);
   });
 
   router.get('/audio/slime/:name', (req, res) => {
@@ -461,15 +478,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'slime', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicSlimeSoundFiles, soundName);
   });
 
   router.get('/audio/gargoyle/:name', (req, res) => {
@@ -479,15 +488,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'gargoyle', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicGargoyleSoundFiles, soundName);
   });
 
   router.get('/audio/striker/:name', (req, res) => {
@@ -497,15 +498,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'striker', soundName);
-    if (!fs.existsSync(soundPath)) {
-      res.status(404).send('Not Found');
-      return;
-    }
-
-    setPublicAssetCacheHeaders(res);
-    res.type(path.extname(soundName));
-    res.sendFile(soundPath);
+    sendPublicCachedFile(res, publicStrikerSoundFiles, soundName);
   });
 
   router.post('/api/request_asset', (req, res) => {

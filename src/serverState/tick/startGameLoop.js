@@ -584,8 +584,8 @@ function isPlayerPlacementValid(input) {
  */
 function updateFireballs(input) {
   const nowSec = Date.now() / 1000;
-  /** @type {number[]} */
-  const toRemove = [];
+  /** @type {Set<number>} */
+  const toRemove = new Set();
 
   for (const [id, f] of input.state.fireballs.entries()) {
     if (!f.active) continue;
@@ -601,7 +601,7 @@ function updateFireballs(input) {
     const age = nowSec - f.spawn_time;
     const fireballMaxDistance = Math.max(48, Number(f.max_distance) || FIREBALL_MAX_DISTANCE);
     if (age > FIREBALL_LIFETIME || f.distance_traveled > fireballMaxDistance) {
-      toRemove.push(id);
+      toRemove.add(id);
       createExplosion({
         state: input.state,
         io: input.io,
@@ -624,7 +624,7 @@ function updateFireballs(input) {
     });
 
     if (nearby.some((plat) => checkFireballPlatformCollision({ fireball: f, platform: plat }))) {
-      toRemove.push(id);
+      toRemove.add(id);
       createExplosion({
         state: input.state,
         io: input.io,
@@ -659,12 +659,12 @@ function updateFireballs(input) {
           sourceVy: f.vy,
         });
 
-        toRemove.push(id);
+        toRemove.add(id);
         break;
       }
     }
 
-    if (toRemove.includes(id)) {
+    if (toRemove.has(id)) {
       continue;
     }
 
@@ -689,7 +689,7 @@ function updateFireballs(input) {
           sourceVx: f.vx,
           sourceVy: f.vy,
         });
-        toRemove.push(id);
+        toRemove.add(id);
         break;
       }
     }
@@ -853,7 +853,8 @@ function applyExplosionDamage(input) {
  */
 function createExplosion(input) {
   const nowMs = Date.now();
-  const id = `${nowMs}_${Math.random().toString(16).slice(2)}`;
+  const id = `exp_${input.state.nextExplosionId}`;
+  input.state.nextExplosionId += 1;
   const nowSec = nowMs / 1000;
 
   input.state.explosions.set(id, { id, x: input.x, y: input.y, spawn_time: nowSec, spawn_time_ms: nowMs, active: true });
