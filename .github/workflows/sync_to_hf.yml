@@ -1,7 +1,5 @@
 name: Sync to Hugging Face
 
-name: Sync to Hugging Face
-
 on:
   push:
     branches:
