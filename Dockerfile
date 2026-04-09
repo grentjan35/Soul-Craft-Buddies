@@ -1,14 +1,12 @@
 FROM node:20-slim
 
-RUN if ! id -u user >/dev/null 2>&1; then useradd -m -u 1000 user; fi
-
-USER user
+USER node
 WORKDIR /home/user/app
 
-COPY --chown=user:user package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY --chown=user:user . .
+COPY --chown=node:node . .
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
