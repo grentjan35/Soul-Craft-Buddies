@@ -27,4 +27,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf upload Grentjan35/SoulClash . . --repo-type=space --token "$HF_TOKEN" --exclude ".git/*" --exclude "node_modules/*"
+          hf upload-large-folder Grentjan35/SoulClash . --repo-type=space --token "$HF_TOKEN"
