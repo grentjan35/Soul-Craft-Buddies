@@ -27,7 +27,7 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf repo create SoulClash --type space --space-sdk docker --token "$HF_TOKEN" --yes || true
+          hf repo create Grentjan35/SoulClash --type space --space-sdk docker --token "$HF_TOKEN" --exist-ok
 
       - name: Upload Space to Hugging Face
         env:
