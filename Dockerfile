@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-RUN useradd -m -u 1000 user
+RUN if ! id -u user >/dev/null 2>&1; then useradd -m -u 1000 user; fi
 
 USER user
 WORKDIR /home/user/app
