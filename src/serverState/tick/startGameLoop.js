@@ -29,6 +29,12 @@ const {
 } = require('../state/souls/soulSystem');
 const { pickSpawnPoint } = require('../sockets/spawn/pickSpawnPoint');
 
+const ACTIVE_WORLD_SLEEP_DELAY_MS = 30000;
+const ENEMY_WAKE_RADIUS_X = 1200;
+const ENEMY_WAKE_RADIUS_Y = 850;
+const ENEMY_SEND_RADIUS_X = 1500;
+const ENEMY_SEND_RADIUS_Y = 1000;
+
 /**
  * Starts the physics + broadcast loop.
  * Why: mirror Python (physics ~60Hz, broadcast ~20Hz).
@@ -107,6 +113,8 @@ function startGameLoop(input) {
   const broadcastIntervalMs = 1000 / 20;
   const fairyBroadcastIntervalMs = 250;
 
+  input.state.lastActivePlayerAtMs = Date.now();
+
   setInterval(() => {
     const nowMs = Date.now();
     let dt = (nowMs - lastTimeMs) / 1000;
@@ -114,14 +122,25 @@ function startGameLoop(input) {
 
     dt = Math.min(dt, 0.1);
 
-    updateGameState({ state: input.state, dt, io: input.io });
-    updateEnemies({ state: input.state, dt, io: input.io, spawnFireball });
-    updateFairies({ fairies: input.state.fairies, dt });
-    updateSouls({ state: input.state, dt, io: input.io });
-    updateFireballs({ state: input.state, dt, io: input.io });
-    updateExplosions({ state: input.state, io: input.io });
-    updateDeathsAndRespawns({ state: input.state, io: input.io });
-    cleanupDeadBodies({ state: input.state });
+    const activePlayers = getActivePlayers(input.state);
+    const worldSleeping = shouldSleepWorld(input.state, nowMs, activePlayers);
+
+    if (!worldSleeping) {
+      updateGameState({ state: input.state, dt, io: input.io });
+      updateEnemies({
+        state: input.state,
+        dt,
+        io: input.io,
+        spawnFireball,
+        shouldUpdateEnemy: (enemy) => isEnemyNearAnyPlayer(enemy, activePlayers),
+      });
+      updateFairies({ fairies: input.state.fairies, dt });
+      updateSouls({ state: input.state, dt, io: input.io });
+      updateFireballs({ state: input.state, dt, io: input.io });
+      updateExplosions({ state: input.state, io: input.io });
+      updateDeathsAndRespawns({ state: input.state, io: input.io });
+      cleanupDeadBodies({ state: input.state });
+    }
 
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
@@ -129,14 +148,20 @@ function startGameLoop(input) {
       if (includeFairies) {
         lastFairyBroadcastMs = nowMs;
       }
-      broadcastState({ io: input.io, state: input.state, includeFairies });
+      broadcastState({
+        io: input.io,
+        state: input.state,
+        includeFairies,
+        activePlayers,
+        worldSleeping,
+      });
     }
   }, FRAME_TIME * 1000);
 }
 
 /**
  * Broadcasts current state.
- * @param {{io: import('socket.io').Server, state: any, includeFairies?: boolean}} input
+ * @param {{io: import('socket.io').Server, state: any, includeFairies?: boolean, activePlayers?: any[], worldSleeping?: boolean}} input
  */
 function broadcastState(input) {
   input.state.stateSeq += 1;
@@ -197,25 +222,90 @@ function broadcastState(input) {
     };
   }
 
-  input.io.volatile.emit('state', {
+  const fairiesPayload = input.includeFairies
+    ? input.state.fairies.map((fairy) => ({
+        id: fairy.id,
+        x: round1(fairy.x),
+        y: round1(fairy.y),
+        vx: round1(fairy.vx),
+        vy: round1(fairy.vy),
+        color: fairy.color,
+      }))
+    : undefined;
+  const soulsPayload = serializeSoulsForState(input.state);
+  const basePayload = {
     ts,
     seq: input.state.stateSeq,
     players: playersPayload,
-    enemies: serializeEnemiesForState(input.state),
-    fairies: input.includeFairies
-      ? input.state.fairies.map((fairy) => ({
-          id: fairy.id,
-          x: round1(fairy.x),
-          y: round1(fairy.y),
-          vx: round1(fairy.vx),
-          vy: round1(fairy.vy),
-          color: fairy.color,
-        }))
-      : undefined,
+    fairies: fairiesPayload,
     fireballs: fireballsPayload,
     explosions: explosionsPayload,
-    souls: serializeSoulsForState(input.state),
-  });
+    souls: soulsPayload,
+    world_sleeping: Boolean(input.worldSleeping),
+  };
+
+  if (input.state.players.size === 0) {
+    input.io.volatile.emit('state', {
+      ...basePayload,
+      enemies: {},
+    });
+    return;
+  }
+
+  for (const [sid, player] of input.state.players.entries()) {
+    const socket = input.io.sockets.sockets.get(sid);
+    if (!socket) {
+      continue;
+    }
+
+    socket.volatile.emit('state', {
+      ...basePayload,
+      enemies: serializeEnemiesForState(input.state, {
+        centerX: player.x,
+        centerY: player.y,
+        radiusX: ENEMY_SEND_RADIUS_X,
+        radiusY: ENEMY_SEND_RADIUS_Y,
+      }),
+    });
+  }
+}
+
+function getActivePlayers(state) {
+  const players = [];
+
+  for (const player of state.players.values()) {
+    if (!player || player.is_dying || !player.is_ready) {
+      continue;
+    }
+    players.push(player);
+  }
+
+  return players;
+}
+
+function shouldSleepWorld(state, nowMs, activePlayers) {
+  if (activePlayers.length > 0) {
+    state.lastActivePlayerAtMs = nowMs;
+    return false;
+  }
+
+  if (!Number.isFinite(state.lastActivePlayerAtMs)) {
+    state.lastActivePlayerAtMs = nowMs;
+  }
+
+  return nowMs - state.lastActivePlayerAtMs >= ACTIVE_WORLD_SLEEP_DELAY_MS;
+}
+
+function isEnemyNearAnyPlayer(enemy, activePlayers) {
+  if (!Array.isArray(activePlayers) || activePlayers.length === 0) {
+    return false;
+  }
+
+  return activePlayers.some(
+    (player) =>
+      Math.abs(enemy.x - player.x) <= ENEMY_WAKE_RADIUS_X &&
+      Math.abs(enemy.y - player.y) <= ENEMY_WAKE_RADIUS_Y
+  );
 }
 
 /**

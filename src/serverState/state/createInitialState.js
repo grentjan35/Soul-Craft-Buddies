@@ -94,6 +94,7 @@ function createInitialState(input) {
     nextSoulId: 1,
     maxHealth: PLAYER_MAX_HEALTH,
     dataDir,
+    lastActivePlayerAtMs: Date.now(),
   };
 
   ensureSoulState(state);

@@ -3088,6 +3088,14 @@ function updateEnemies(input) {
       continue;
     }
 
+    if (typeof input.shouldUpdateEnemy === 'function' && !input.shouldUpdateEnemy(enemy)) {
+      enemy.vx = 0;
+      enemy.vy = 0;
+      enemy.knockback_vx = 0;
+      enemy.knockback_vy = 0;
+      continue;
+    }
+
     updateAliveEnemy({
       ...input,
       enemy,
@@ -3097,12 +3105,24 @@ function updateEnemies(input) {
   }
 }
 
-function serializeEnemiesForState(state) {
+function serializeEnemiesForState(state, options = {}) {
   const payload = {};
+  const centerX = Number(options.centerX);
+  const centerY = Number(options.centerY);
+  const radiusX = Math.max(0, Number(options.radiusX) || 0);
+  const radiusY = Math.max(0, Number(options.radiusY) || 0);
+  const useViewportFilter = Number.isFinite(centerX) && Number.isFinite(centerY) && radiusX > 0 && radiusY > 0;
 
   for (const enemy of state.enemies.values()) {
     const definition = getEnemyDefinition(state, enemy.type);
     if (!definition) {
+      continue;
+    }
+
+    if (
+      useViewportFilter &&
+      (Math.abs(enemy.x - centerX) > radiusX || Math.abs(enemy.y - centerY) > radiusY)
+    ) {
       continue;
     }
 
