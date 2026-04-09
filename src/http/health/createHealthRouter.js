@@ -9,6 +9,14 @@ const path = require('path');
 function createHealthRouter() {
   const router = express.Router();
 
+  // Root health check for compatibility with deployment platforms
+  router.get('/', (_req, res) => {
+    res.json({
+      status: 'ok',
+      timestamp: Math.floor(Date.now() / 1000),
+    });
+  });
+
   router.get('/health', (_req, res) => {
     const projectRoot = process.cwd();
     const dataDir = process.env.DATA_DIR ?? 'data';
