@@ -19,13 +19,13 @@ function createSocketServer(input) {
     pingInterval: 25000,
   });
 
-  // Simple WebSocket Response Logging (disabled)
-  // const originalEmit = io.emit;
-  // io.emit = function(event, data) {
-  //   const dataSize = Buffer.byteLength(JSON.stringify({ event, data }));
-  //   console.log(`[WebSocket Response] Event: ${event} - Size: ${dataSize} bytes`, data);
-  //   return originalEmit.call(this, event, data);
-  // };
+  // Simple WebSocket Response Logging
+  const originalEmit = io.emit;
+  io.emit = function(event, data) {
+    const dataSize = Buffer.byteLength(JSON.stringify({ event, data }));
+    console.log(`[WebSocket Response] Event: ${event} - Size: ${dataSize} bytes`, data);
+    return originalEmit.call(this, event, data);
+  };
 
   createGameServer({ io, config: input.config });
   return io;
