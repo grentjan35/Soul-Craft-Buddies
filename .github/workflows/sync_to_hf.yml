@@ -23,8 +23,14 @@ jobs:
       - name: Install Hugging Face CLI
         run: python -m pip install --upgrade "huggingface_hub[cli]"
 
+      - name: Ensure Docker Space exists
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          hf repo create SoulClash --type space --space-sdk docker --token "$HF_TOKEN" --yes || true
+
       - name: Upload Space to Hugging Face
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf upload-large-folder Grentjan35/SoulClash . --repo-type=space --space-sdk docker --token "$HF_TOKEN"
+          hf upload-large-folder Grentjan35/SoulClash . --repo-type=space --token "$HF_TOKEN"
