@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
     <link rel="icon" href="data:,">
-    <title>SoulCraft - Combat RPG</title>
+    <title>SOULCLASH</title>
     <script src="/socket.io/socket.io.min.js"></script>
     <style>
         :root {
@@ -1806,7 +1806,7 @@
         <div class="menu-main-layout">
             <div class="ui-container" id="ui-wrapper">
                 <div class="menu-hero-panel menu-panel-frame">
-                    <div class="start-title">SOULCRAFT</div>
+                    <div class="start-title">SOULCLASH</div>
                     <div class="entry-stack" id="entry-stack">
                         <input type="text" id="player-name-input" class="start-input" placeholder="Enter Name" maxlength="12">
                         <div class="character-select-shell is-visible" id="character-select-shell" aria-live="polite">
@@ -5136,7 +5136,6 @@
         const ctx = canvas.getContext('2d');
         const GAME_VIEWPORT_WIDTH = 1600;
         const GAME_VIEWPORT_HEIGHT = 900;
-
         // WebGL Setup
         const glCanvas = document.getElementById('glCanvas');
         const gl = glCanvas.getContext('webgl');
@@ -11730,7 +11729,6 @@
 
                 // Draw explosions
                 drawExplosions(nowMs, renderServerTimeMs, effectVisibleBounds);
-
 
                 // --- DRAW PLAYER NAMES BEFORE WEBGL ---
                 // Draw names here so they are affected by to shader

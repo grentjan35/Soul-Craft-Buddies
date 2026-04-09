@@ -959,41 +959,6 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/homescreen_video/:token', (req, res) => {
-    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
-    if (!assetSession.ok) {
-      res.status(assetSession.status).send('<h1>Access Denied</h1>');
-      return;
-    }
-
-    const token = String(req.params.token ?? '');
-    const verified = verifyToken({ secretKey: deps.secretKey, token });
-    if (!verified.ok) {
-      res.status(403).send('<h1>Access Denied</h1>');
-      return;
-    }
-
-    if (
-      verified.payload.type !== 'environment' ||
-      !tokenMatchesAssetSession({ payload: verified.payload, assetSessionId: assetSession.sessionId })
-    ) {
-      res.status(403).send('<h1>Access Denied</h1>');
-      return;
-    }
-
-    const videoPath = path.join(deps.staticDir, 'assets', 'tileset', 'homescreen.mp4');
-    if (!fs.existsSync(videoPath)) {
-      res.status(404).send('<h1>Not Found</h1>');
-      return;
-    }
-
-    sendProtectedBinaryFile({
-      res,
-      fullPath: videoPath,
-      downloadName: 'homescreen.mp4',
-    });
-  });
-
   router.get('/api/character_assets/:token/:character/:asset', (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
