@@ -20,17 +20,6 @@ async function createApp(config) {
   app.use(createCompressionMiddleware());
   app.use(express.json({ limit: '2mb' }));
 
-  // Simple HTTP Response Logging
-  app.use((req, res, next) => {
-    const originalSend = res.send;
-    res.send = function(data) {
-      const dataSize = Buffer.byteLength(JSON.stringify(data));
-      console.log(`[HTTP Response] ${req.method} ${req.path} - Status: ${res.statusCode} - Size: ${dataSize} bytes`);
-      return originalSend.call(this, data);
-    };
-    next();
-  });
-
   app.use(createHealthRouter());
   app.use(createPagesRouter({ templatesDir: config.templatesDir }));
   app.use(createMapsRouter({ dataDir: config.dataDir, staticDir: config.staticDir }));

@@ -35,6 +35,11 @@ const ENEMY_WAKE_RADIUS_Y = 850;
 const ENEMY_SEND_RADIUS_X = 1500;
 const ENEMY_SEND_RADIUS_Y = 1000;
 
+/** @type {NodeJS.Timeout | null} */
+let gameLoopInterval = null;
+/** @type {{io: import('socket.io').Server, state: any} | null} */
+let gameLoopContext = null;
+
 /**
  * Starts the physics + broadcast loop.
  * Why: mirror Python (physics ~60Hz, broadcast ~20Hz).
@@ -114,8 +119,9 @@ function startGameLoop(input) {
   const fairyBroadcastIntervalMs = 250;
 
   input.state.lastActivePlayerAtMs = Date.now();
+  gameLoopContext = input;
 
-  setInterval(() => {
+  gameLoopInterval = setInterval(() => {
     const nowMs = Date.now();
     let dt = (nowMs - lastTimeMs) / 1000;
     lastTimeMs = nowMs;
@@ -124,6 +130,12 @@ function startGameLoop(input) {
 
     const activePlayers = getActivePlayers(input.state);
     const worldSleeping = shouldSleepWorld(input.state, nowMs, activePlayers);
+
+    // Stop game loop if no players connected
+    if (input.state.players.size === 0) {
+      stopGameLoop();
+      return;
+    }
 
     if (!worldSleeping) {
       updateGameState({ state: input.state, dt, io: input.io });
@@ -164,6 +176,11 @@ function startGameLoop(input) {
  * @param {{io: import('socket.io').Server, state: any, includeFairies?: boolean, activePlayers?: any[], worldSleeping?: boolean}} input
  */
 function broadcastState(input) {
+  // Skip broadcast if no connected clients
+  if (input.io.sockets.sockets.size === 0) {
+    return;
+  }
+
   input.state.stateSeq += 1;
   const ts = Date.now();
 
@@ -1241,4 +1258,30 @@ function round3(n) {
   return Math.round(n * 1000) / 1000;
 }
 
-module.exports = { startGameLoop };
+/**
+ * Stops the game loop interval.
+ * Why: Conserve resources when no players are connected.
+ * @returns {void}
+ */
+function stopGameLoop() {
+  if (gameLoopInterval) {
+    clearInterval(gameLoopInterval);
+    gameLoopInterval = null;
+  }
+}
+
+/**
+ * Restarts the game loop if it was stopped.
+ * Why: Resume game physics when a player connects.
+ * @returns {void}
+ */
+function restartGameLoop() {
+  if (gameLoopInterval || !gameLoopContext) {
+    return;
+  }
+  // Cleanup expired dead bodies before restarting loop
+  cleanupDeadBodies({ state: gameLoopContext.state });
+  startGameLoop(gameLoopContext);
+}
+
+module.exports = { startGameLoop, stopGameLoop, restartGameLoop };
