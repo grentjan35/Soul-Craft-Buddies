@@ -27,4 +27,4 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          hf upload-large-folder Grentjan35/SoulClash . --repo-type=space --token "$HF_TOKEN"
+          hf upload-large-folder Grentjan35/SoulClash . --repo-type=space --space-sdk docker --token "$HF_TOKEN"
