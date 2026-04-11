@@ -15,6 +15,10 @@ function createMapsRouter(deps) {
   const router = express.Router();
   const enemyCatalog = loadEnemyCatalog({ staticDir: deps.staticDir });
 
+  function setRevalidationCacheHeaders(res) {
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+  }
+
   router.post('/api/save_map', (req, res) => {
     const name = String(req.body?.name ?? '').trim();
     const width = Number(req.body?.width ?? 25);
@@ -132,6 +136,7 @@ function createMapsRouter(deps) {
   });
 
   router.get('/api/load_map/:mapName', (req, res) => {
+    setRevalidationCacheHeaders(res);
     const mapName = path.basename(String(req.params.mapName ?? ''));
     const mapPath = path.join(deps.dataDir, `${mapName}.json`);
 
@@ -162,6 +167,7 @@ function createMapsRouter(deps) {
   });
 
   router.get('/api/list_maps', (_req, res) => {
+    setRevalidationCacheHeaders(res);
     const maps = fs
       .readdirSync(deps.dataDir)
       .filter((f) => f.endsWith('.json'))
@@ -183,6 +189,7 @@ function createMapsRouter(deps) {
   });
 
   router.get('/api/backups/:mapName', (req, res) => {
+    setRevalidationCacheHeaders(res);
     const mapName = path.basename(String(req.params.mapName ?? ''));
     res.json(listBackups({ dataDir: deps.dataDir, mapName }));
   });
@@ -226,6 +233,7 @@ function createMapsRouter(deps) {
   });
 
   router.get('/api/current_map', (req, res) => {
+    setRevalidationCacheHeaders(res);
     const mapName = path.basename(String(req.query?.map ?? 'default'));
 
     const mapPath = path.join(deps.dataDir, `${mapName}.json`);
