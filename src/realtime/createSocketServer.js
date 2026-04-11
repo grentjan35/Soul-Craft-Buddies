@@ -15,8 +15,8 @@ function createSocketServer(input) {
     transports: ['websocket', 'polling'],
     httpCompression: true,
     perMessageDeflate: true,
-    pingTimeout: 60000,
-    pingInterval: 25000,
+    pingTimeout: 120000,
+    pingInterval: 10000,
   });
 
   createGameServer({ io, config: input.config });
