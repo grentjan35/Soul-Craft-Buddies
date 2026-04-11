@@ -10,6 +10,14 @@ const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
 const { dropSoulsForPlayerDeath, serializeSoulsForState } = require('../state/souls/soulSystem');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
 const { resetEnemiesForState } = require('../enemies/runtime');
+const {
+  applyUpgradeSelection,
+  clampPlayerHealthToMax,
+  createPlayerProgression,
+  getPlayerRunStats,
+  isPlayerDrafting,
+  resetPlayerProgression,
+} = require('../state/progression/system');
 
 /**
  * Registers all Socket.IO event handlers for a connected client.
@@ -34,6 +42,10 @@ function registerSocketHandlers(input) {
   socket.on('input', (data) => {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
+    if (isPlayerDrafting(player)) {
+      player.inputs = { left: false, right: false, up: false };
+      return;
+    }
     const nextInputs = {
       left: Boolean(data?.left),
       right: Boolean(data?.right),
@@ -54,8 +66,10 @@ function registerSocketHandlers(input) {
   socket.on('jump', () => {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
+    if (isPlayerDrafting(player)) return;
+    const runStats = getPlayerRunStats(player);
     if (player.jumps_remaining > 0) {
-      player.vy = -12 * 60;
+      player.vy = Number.isFinite(runStats.jumpVelocity) ? runStats.jumpVelocity : -12 * 60;
       player.on_ground = false;
       player.jumps_remaining -= 1;
     }
@@ -110,10 +124,14 @@ function registerSocketHandlers(input) {
   socket.on('projectile_fire', (data) => {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
+    if (isPlayerDrafting(player)) return;
+
+    const runStats = getPlayerRunStats(player);
+    const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
 
     const nowMs = Date.now();
     const now = nowMs / 1000;
-    if (player.is_attacking && now - (player.attack_start_time ?? 0) < ATTACK_DURATION) {
+    if (player.is_attacking && now - (player.attack_start_time ?? 0) < attackDuration) {
       return;
     }
 
@@ -124,9 +142,10 @@ function registerSocketHandlers(input) {
     const requestedDx = Number(data?.dx);
     const requestedDy = Number(data?.dy);
     const requestedDistance = Number(data?.distance);
+    const maxRange = Math.max(96, Math.min(Number(runStats.fireballRange) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE));
     const targetDistance = Number.isFinite(requestedDistance)
-      ? Math.max(48, Math.min(requestedDistance, FIREBALL_MAX_DISTANCE))
-      : FIREBALL_MAX_DISTANCE;
+      ? Math.max(48, Math.min(requestedDistance, maxRange))
+      : maxRange;
     const fallbackAngle = typeof data?.angle === 'number' ? data.angle : 0;
     const targetDx = Number.isFinite(requestedDx) ? requestedDx : Math.cos(fallbackAngle) * targetDistance;
     const targetDy = Number.isFinite(requestedDy) ? requestedDy : Math.sin(fallbackAngle) * targetDistance;
@@ -134,15 +153,29 @@ function registerSocketHandlers(input) {
     player.direction = targetDx >= 0 ? 'right' : 'left';
 
     const distanceRatio = Math.max(0, Math.min(1, targetDistance / FIREBALL_MAX_DISTANCE));
-    const referenceSpeed = FIREBALL_POWER_MIN + (FIREBALL_POWER_MAX - FIREBALL_POWER_MIN) * distanceRatio;
+    const speedScale = Math.max(0.35, Number(runStats.fireballSpeedMultiplier) || 1);
+    const referenceSpeed = (FIREBALL_POWER_MIN + (FIREBALL_POWER_MAX - FIREBALL_POWER_MIN) * distanceRatio) * speedScale;
     const effectiveSpeed = referenceSpeed * 2.35;
     const flightTime = Math.max(0.16, Math.min(targetDistance / Math.max(220, effectiveSpeed), 0.62));
-    const gravityPerSecond = GRAVITY * 60;
+    const gravityPerSecond = GRAVITY * 60 * Math.max(0.25, Number(runStats.fireballGravityScale) || 1);
     const vx = targetDx / flightTime;
     const vy = (targetDy - 0.5 * gravityPerSecond * flightTime * flightTime) / flightTime;
     player.pending_projectile_angle = angle;
     player.pending_projectile_vx = vx;
     player.pending_projectile_vy = vy;
+  });
+
+  socket.on('select_upgrade', (data) => {
+    const player = state.players.get(socket.id);
+    if (!player || !player.is_ready) return;
+
+    const cardId = String(data?.cardId ?? '').trim();
+    if (!cardId) return;
+
+    const result = applyUpgradeSelection(player, cardId);
+    if (!result.ok) {
+      socket.emit('upgrade_selection_error', { message: result.reason });
+    }
   });
 
   socket.on('load_map', (data) => {
@@ -206,7 +239,9 @@ function handleConnect(input) {
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
     soul_count: 0,
+    progression: createPlayerProgression(),
   });
+  clampPlayerHealthToMax(input.state.players.get(input.socket.id));
 
   const now = Date.now() / 1000;
   /** @type {Record<string, any>} */
@@ -273,9 +308,15 @@ function respawnPlayer(input) {
   player.knockback_vx = 0;
   player.on_ground = false;
   player.jumps_remaining = 2;
-  player.health = PLAYER_MAX_HEALTH;
+  resetPlayerProgression(player);
+  player.health = Math.max(1, Math.round(getPlayerRunStats(player).maxHealth || PLAYER_MAX_HEALTH));
   player.is_dying = false;
   player.death_time = 0;
+  player.is_attacking = false;
+  player.attack_start_time = 0;
+  player.pending_projectile_angle = null;
+  player.pending_projectile_vx = 0;
+  player.pending_projectile_vy = 0;
   player.soul_count = 0;
 }
 

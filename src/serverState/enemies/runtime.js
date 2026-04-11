@@ -4,9 +4,12 @@ const {
   MOVE_SPEED,
   PLAYER_HITBOX_WIDTH,
   PLAYER_HITBOX_HEIGHT,
+  FIREBALL_RADIUS,
 } = require('../state/constants');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
 const { dropSoulsForEnemyDeath, dropSoulsForPlayerDeath } = require('../state/souls/soulSystem');
+const { gainPlayerXp, getPlayerRunStats } = require('../state/progression/system');
+const { emitProgressionNotification } = require('../state/progression/notifications');
 
 function secondsFromMs(ms) {
   return ms / 1000;
@@ -195,7 +198,7 @@ function checkFireballEnemyCollision(state, fireball, enemy) {
   const closestY = Math.max(hitbox.y, Math.min(fireball.y, hitbox.y + hitbox.height));
   const dx = fireball.x - closestX;
   const dy = fireball.y - closestY;
-  const radius = 17;
+  const radius = FIREBALL_RADIUS * Math.max(0.2, Number(fireball.radius_scale) || 1);
   return dx * dx + dy * dy <= radius * radius;
 }
 
@@ -2258,7 +2261,9 @@ function damagePlayerFromEnemyHit(input) {
     player.on_ground = false;
     player.jumps_remaining = 0;
   }
-  player.health -= definition.stats.contactDamage;
+  const reduction = Math.max(0, Math.min(0.72, Number(getPlayerRunStats(player).damageReduction) || 0));
+  const finalDamage = Math.max(1, Math.round(definition.stats.contactDamage * (1 - reduction)));
+  player.health -= finalDamage;
 
   if (player.health <= 0) {
     player.health = 0;
@@ -2279,7 +2284,7 @@ function damagePlayerFromEnemyHit(input) {
 
   input.io.emit('player_hit', {
     sid: input.sid,
-    damage: definition.stats.contactDamage,
+    damage: finalDamage,
     health: player.health,
     is_dying: player.is_dying,
     x: Number.isFinite(input.impactX) ? input.impactX : enemy.x,
@@ -2637,6 +2642,18 @@ function damageEnemy(input) {
       nowSec,
     });
     dropSoulsForEnemyDeath(input.state, input.io, enemy);
+    if (input.sourceSid) {
+      const player = input.state.players.get(input.sourceSid);
+      if (player) {
+        const xpGain = 20;
+        const xpResult = gainPlayerXp(player, xpGain);
+        emitProgressionNotification(input.io, input.sourceSid, {
+          type: 'enemy_kill',
+          xp: xpResult.gainedXp,
+          message: `${enemy.type || 'Enemy'} slain by fireball  +${xpResult.gainedXp} XP`,
+        });
+      }
+    }
     return true;
   }
 

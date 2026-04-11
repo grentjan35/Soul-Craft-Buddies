@@ -1,5 +1,6 @@
 const { getNearbyPlatforms } = require('../platformGrid/buildPlatformGrid');
 const { TILE_SIZE, PLAYER_MAX_HEALTH } = require('../constants');
+const { getPlayerRunStats } = require('../progression/system');
 
 const SOUL_GRAVITY = 920;
 const SOUL_FRICTION = 0.9;
@@ -245,11 +246,16 @@ function updateSouls(input) {
       }
     }
 
-    if (nearestPlayer && nearestDistance <= SOUL_ATTRACT_RADIUS) {
+    const nearestStats = nearestPlayer ? getPlayerRunStats(nearestPlayer) : null;
+    const magnetMultiplier = nearestStats ? Math.max(0.6, Number(nearestStats.soulMagnetMultiplier) || 1) : 1;
+    const healMultiplier = nearestStats ? Math.max(0.5, Number(nearestStats.soulHealMultiplier) || 1) : 1;
+    const attractRadius = SOUL_ATTRACT_RADIUS * magnetMultiplier;
+
+    if (nearestPlayer && nearestDistance <= attractRadius) {
       const dx = nearestPlayer.x - soul.x;
       const dy = (nearestPlayer.y - 20) - soul.y;
       const invDistance = 1 / Math.max(10, nearestDistance);
-      const closeness = 1 - nearestDistance / SOUL_ATTRACT_RADIUS;
+      const closeness = 1 - nearestDistance / attractRadius;
       soul.vx += dx * invDistance * SOUL_ATTRACT_FORCE * closeness * input.dt;
       soul.vy += dy * invDistance * SOUL_ATTRACT_FORCE * closeness * input.dt;
       soul.vy += Math.sin(soul.phase * 2.2) * SOUL_FLOAT_FORCE * input.dt;
@@ -260,12 +266,12 @@ function updateSouls(input) {
       }
 
       const soulValue = Math.max(1, Math.round(soul.value || 1));
-      const collectRadius = SOUL_COLLECT_RADIUS + Math.max(0, soulValue - 1) * 8 + Math.max(0, (soul.size || 1) - 1) * 8;
+      const collectRadius = (SOUL_COLLECT_RADIUS + Math.max(0, soulValue - 1) * 8 + Math.max(0, (soul.size || 1) - 1) * 8) * Math.min(1.65, magnetMultiplier);
       if (nearestDistance <= collectRadius) {
         nearestPlayer.soul_count = Math.max(0, Math.round(nearestPlayer.soul_count || 0)) + soulValue;
         if (Number.isFinite(nearestPlayer.health)) {
-          const maxHealth = Math.max(1, Number(input.state.maxHealth) || PLAYER_MAX_HEALTH);
-          nearestPlayer.health = Math.min(maxHealth, nearestPlayer.health + soulValue * SOUL_HEAL_PER_VALUE);
+          const maxHealth = Math.max(1, Number(nearestStats?.maxHealth) || Number(input.state.maxHealth) || PLAYER_MAX_HEALTH);
+          nearestPlayer.health = Math.min(maxHealth, nearestPlayer.health + soulValue * SOUL_HEAL_PER_VALUE * healMultiplier);
         }
         removals.push(soul.id);
         input.io.emit('soul_collected', {

@@ -28,6 +28,14 @@ const {
   updateSouls,
 } = require('../state/souls/soulSystem');
 const { pickSpawnPoint } = require('../sockets/spawn/pickSpawnPoint');
+const {
+  gainPlayerXp,
+  getPlayerProgressionPayload,
+  getPlayerRunStats,
+  isPlayerDrafting,
+  resetPlayerProgression,
+} = require('../state/progression/system');
+const { emitProgressionNotification } = require('../state/progression/notifications');
 
 const ACTIVE_WORLD_SLEEP_DELAY_MS = 30000;
 const ENEMY_WAKE_RADIUS_X = 1200;
@@ -98,7 +106,8 @@ function updateDeathsAndRespawns(input) {
     p.y = spawn.y;
     p.vx = 0;
     p.vy = 0;
-    p.health = PLAYER_MAX_HEALTH;
+    resetPlayerProgression(p);
+    p.health = Math.max(1, Math.round(getPlayerRunStats(p).maxHealth || PLAYER_MAX_HEALTH));
     p.is_dying = false;
     p.death_time = 0;
     p.is_attacking = false;
@@ -198,6 +207,7 @@ function broadcastState(input) {
       on_ground: p.on_ground,
       character: p.character,
       health: p.health,
+      max_health: Math.max(1, Math.round(getPlayerRunStats(p).maxHealth || PLAYER_MAX_HEALTH)),
       is_attacking: p.is_attacking,
       attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
       soul_count: Math.max(0, Math.round(p.soul_count || 0)),
@@ -223,6 +233,7 @@ function broadcastState(input) {
       spawn_time_ms: f.spawn_time_ms ?? Math.round((f.spawn_time ?? 0) * 1000),
       render_scale: f.render_scale ?? 1,
       radius_scale: f.radius_scale ?? 1,
+      gravity_scale: f.gravity_scale ?? 1,
     };
   }
 
@@ -234,6 +245,7 @@ function broadcastState(input) {
     explosionsPayload[id] = {
       x: e.x,
       y: e.y,
+      radius: e.radius,
       age: round3(nowSec - e.spawn_time),
       spawn_time_ms: e.spawn_time_ms ?? Math.round((e.spawn_time ?? 0) * 1000),
     };
@@ -277,6 +289,9 @@ function broadcastState(input) {
 
     socket.volatile.emit('state', {
       ...basePayload,
+      self: {
+        progression: getPlayerProgressionPayload(player),
+      },
       enemies: serializeEnemiesForState(input.state, {
         centerX: player.x,
         centerY: player.y,
@@ -337,19 +352,20 @@ function updateGameState(input) {
 
     const prevX = p.x;
     const prevY = p.y;
+    const runStats = getPlayerRunStats(p);
 
     const externalVx = Number.isFinite(p.knockback_vx) ? p.knockback_vx : 0;
     p.vx = externalVx;
 
-    const canMove = !(p.is_attacking && p.on_ground);
+    const canMove = !(p.is_attacking && p.on_ground) && !isPlayerDrafting(p);
 
     if (canMove) {
       if (p.inputs?.left) {
-        p.vx -= MOVE_SPEED;
+        p.vx -= Number.isFinite(runStats.moveSpeed) ? runStats.moveSpeed : MOVE_SPEED;
         if (!p.is_attacking) p.direction = 'left';
       }
       if (p.inputs?.right) {
-        p.vx += MOVE_SPEED;
+        p.vx += Number.isFinite(runStats.moveSpeed) ? runStats.moveSpeed : MOVE_SPEED;
         if (!p.is_attacking) p.direction = 'right';
       }
     }
@@ -380,7 +396,8 @@ function updateGameState(input) {
 
     if (p.is_attacking) {
       const attackStart = p.attack_start_time ?? 0;
-      if (nowSec - attackStart >= ATTACK_DURATION) {
+      const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
+      if (nowSec - attackStart >= attackDuration) {
         p.is_attacking = false;
         if (typeof p.pending_projectile_angle === 'number') {
           spawnPlayerFireball({
@@ -420,19 +437,44 @@ function updateGameState(input) {
 }
 
 function spawnPlayerFireball(input) {
-  spawnFireball({
-    state: input.state,
-    io: input.io,
-    ownerType: 'player',
-    ownerSid: input.ownerSid,
-    x: input.player.x,
-    y: input.player.y,
-    vx: input.vx,
-    vy: input.vy,
-    damage: FIREBALL_DAMAGE,
-    renderScale: 1,
-    radiusScale: 1,
-  });
+  const runStats = getPlayerRunStats(input.player);
+  const projectileCount = Math.max(1, Math.round(runStats.fireballProjectileCount || 1));
+  const spreadDeg = Number(runStats.fireballProjectileSpreadDeg) || 0;
+  const baseAngle = Math.atan2(input.vy, input.vx);
+  const baseSpeed = Math.max(180, Math.hypot(input.vx, input.vy));
+  const critChance = Math.max(0, Math.min(0.95, Number(runStats.fireballCritChance) || 0));
+  const critMultiplier = Math.max(1.1, Number(runStats.fireballCritMultiplier) || 1.6);
+
+  for (let index = 0; index < projectileCount; index += 1) {
+    const centeredIndex = index - (projectileCount - 1) / 2;
+    const angleOffset = projectileCount > 1
+      ? centeredIndex * (spreadDeg * Math.PI / 180)
+      : 0;
+    const angle = baseAngle + angleOffset;
+    const crit = Math.random() < critChance;
+    const damage = (Number(runStats.fireballDamage) || FIREBALL_DAMAGE) * (crit ? critMultiplier : 1);
+    const radiusScale = Math.max(0.35, Number(runStats.fireballRadiusScale) || 1);
+    const renderScale = Math.max(0.35, Number(runStats.fireballRenderScale) || 1);
+
+    spawnFireball({
+      state: input.state,
+      io: input.io,
+      ownerType: 'player',
+      ownerSid: input.ownerSid,
+      x: input.player.x,
+      y: input.player.y,
+      vx: Math.cos(angle) * baseSpeed,
+      vy: Math.sin(angle) * baseSpeed,
+      damage,
+      renderScale,
+      radiusScale,
+      gravityScale: Math.max(0.25, Number(runStats.fireballGravityScale) || 1),
+      maxDistance: Number(runStats.fireballRange) || FIREBALL_MAX_DISTANCE,
+      explosionRadius: Number(runStats.fireballExplosionRadius) || EXPLOSION_RADIUS,
+      explosionDamageMultiplier: Number(runStats.fireballExplosionDamageMultiplier) || 1,
+      crit,
+    });
+  }
 }
 
 function spawnFireball(input) {
@@ -460,7 +502,11 @@ function spawnFireball(input) {
     damage: Math.max(1, Math.round(input.damage ?? FIREBALL_DAMAGE)),
     render_scale: Math.max(0.2, Number(input.renderScale) || 1),
     radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
+    gravity_scale: Math.max(0.25, Number(input.gravityScale) || 1),
     max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
+    explosion_radius: Math.max(12, Number(input.explosionRadius) || EXPLOSION_RADIUS),
+    explosion_damage_multiplier: Math.max(0.2, Number(input.explosionDamageMultiplier) || 1),
+    crit: Boolean(input.crit),
     active: true,
   });
 
@@ -480,7 +526,11 @@ function spawnFireball(input) {
     spawn_time_ms: nowMs,
     render_scale: Math.max(0.2, Number(input.renderScale) || 1),
     radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
+    gravity_scale: Math.max(0.25, Number(input.gravityScale) || 1),
     max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
+    explosion_radius: Math.max(12, Number(input.explosionRadius) || EXPLOSION_RADIUS),
+    explosion_damage_multiplier: Math.max(0.2, Number(input.explosionDamageMultiplier) || 1),
+    crit: Boolean(input.crit),
   });
 }
 
@@ -697,7 +747,7 @@ function updateFireballs(input) {
   for (const [id, f] of input.state.fireballs.entries()) {
     if (!f.active) continue;
 
-    f.vy += GRAVITY * input.dt * 60;
+    f.vy += GRAVITY * Math.max(0.25, Number(f.gravity_scale) || 1) * input.dt * 60;
     f.x += f.vx * input.dt;
     f.y += f.vy * input.dt;
 
@@ -718,6 +768,8 @@ function updateFireballs(input) {
         ownerType: f.owner_type,
         ownerEnemyId: f.owner_enemy_id,
         damage: f.damage,
+        radius: f.explosion_radius,
+        damageMultiplier: f.explosion_damage_multiplier,
         sourceVx: f.vx,
         sourceVy: f.vy,
       });
@@ -741,6 +793,8 @@ function updateFireballs(input) {
         ownerType: f.owner_type,
         ownerEnemyId: f.owner_enemy_id,
         damage: f.damage,
+        radius: f.explosion_radius,
+        damageMultiplier: f.explosion_damage_multiplier,
         sourceVx: f.vx,
         sourceVy: f.vy,
       });
@@ -761,6 +815,8 @@ function updateFireballs(input) {
           ownerType: f.owner_type,
           ownerEnemyId: f.owner_enemy_id,
           damage: f.damage,
+          radius: f.explosion_radius,
+          damageMultiplier: f.explosion_damage_multiplier,
           directHitSid: sid,
           sourceVx: f.vx,
           sourceVy: f.vy,
@@ -792,6 +848,8 @@ function updateFireballs(input) {
           ownerType: f.owner_type,
           ownerEnemyId: f.owner_enemy_id,
           damage: f.damage,
+          radius: f.explosion_radius,
+          damageMultiplier: f.explosion_damage_multiplier,
           directHitEnemyId: enemyId,
           sourceVx: f.vx,
           sourceVy: f.vy,
@@ -843,8 +901,8 @@ function updateExplosions(input) {
 
 function applyExplosionDamage(input) {
   const nowSec = Date.now() / 1000;
-  const radius = EXPLOSION_RADIUS * 2.35;
-  const ENEMY_EXPLOSION_DIRECT_DAMAGE = Math.max(1, Math.round(input.damage ?? FIREBALL_DAMAGE));
+  const radius = Math.max(24, Number(input.radius) || EXPLOSION_RADIUS) * 2.35;
+  const ENEMY_EXPLOSION_DIRECT_DAMAGE = Math.max(1, Math.round((input.damage ?? FIREBALL_DAMAGE) * Math.max(0.2, Number(input.damageMultiplier) || 1)));
   const ENEMY_EXPLOSION_SPLASH_MIN_PROXIMITY = 0.28;
 
   for (const [sid, player] of input.state.players.entries()) {
@@ -886,13 +944,26 @@ function applyExplosionDamage(input) {
     player.pending_projectile_angle = null;
     player.pending_projectile_vx = 0;
     player.pending_projectile_vy = 0;
-    player.health -= damage;
+    const reduction = Math.max(0, Math.min(0.72, Number(getPlayerRunStats(player).damageReduction) || 0));
+    const reducedDamage = Math.max(1, Math.round(damage * (1 - reduction)));
+    player.health -= reducedDamage;
 
     if (player.health <= 0) {
       player.health = 0;
       player.is_dying = true;
       player.death_time = nowSec;
       dropSoulsForPlayerDeath(input.state, input.io, player);
+      if (input.ownerType === 'player' && input.ownerSid && input.ownerSid !== sid) {
+        const killer = input.state.players.get(input.ownerSid);
+        if (killer) {
+          const xpResult = gainPlayerXp(killer, 36);
+          emitProgressionNotification(input.io, input.ownerSid, {
+            type: 'player_kill',
+            xp: xpResult.gainedXp,
+            message: `Fireball kill on ${player.name || `P${sid.slice(0, 4)}`}  +${xpResult.gainedXp} XP`,
+          });
+        }
+      }
       input.io.emit('player_dying', {
         sid,
         x: player.x,
@@ -907,7 +978,7 @@ function applyExplosionDamage(input) {
 
     input.io.emit('player_hit', {
       sid,
-      damage,
+      damage: reducedDamage,
       health: player.health,
       is_dying: player.is_dying,
       x: input.x,
@@ -956,7 +1027,7 @@ function applyExplosionDamage(input) {
 
 /**
  * Creates an explosion.
- * @param {{state: any, io: import('socket.io').Server, x: number, y: number, ownerSid?: string | null, ownerType?: string, ownerEnemyId?: string | null, damage?: number, directHitSid?: string, directHitEnemyId?: string, sourceVx?: number, sourceVy?: number}} input
+ * @param {{state: any, io: import('socket.io').Server, x: number, y: number, ownerSid?: string | null, ownerType?: string, ownerEnemyId?: string | null, damage?: number, radius?: number, damageMultiplier?: number, directHitSid?: string, directHitEnemyId?: string, sourceVx?: number, sourceVy?: number}} input
  */
 function createExplosion(input) {
   const nowMs = Date.now();
@@ -964,8 +1035,9 @@ function createExplosion(input) {
   input.state.nextExplosionId += 1;
   const nowSec = nowMs / 1000;
 
-  input.state.explosions.set(id, { id, x: input.x, y: input.y, spawn_time: nowSec, spawn_time_ms: nowMs, active: true });
-  input.io.emit('explosion_created', { id, x: input.x, y: input.y, spawn_time_ms: nowMs });
+  const radius = Math.max(12, Number(input.radius) || EXPLOSION_RADIUS);
+  input.state.explosions.set(id, { id, x: input.x, y: input.y, radius, spawn_time: nowSec, spawn_time_ms: nowMs, active: true });
+  input.io.emit('explosion_created', { id, x: input.x, y: input.y, radius, spawn_time_ms: nowMs });
   applyExplosionDamage(input);
 }
 
