@@ -2997,23 +2997,43 @@
                 );
                 pinchStartViewZoom = sharedViewZoom;
                 suppressNextCanvasTap = true;
+            } else if (e.touches.length === 1 && !chatActive && allAssetsLoaded && !joystickActive) {
+                // Single touch - start auto-fire for shooting
+                isTouchDown = true;
+                const touch = e.touches[0];
+                currentTouchClientX = touch.clientX;
+                currentTouchClientY = touch.clientY;
+                fireProjectileAtScreenPoint(touch.clientX, touch.clientY);
+                
+                // Start auto-fire
+                if (!touchAutoFireInterval) {
+                    touchAutoFireInterval = setInterval(() => {
+                        if (!chatActive && allAssetsLoaded && isTouchDown) {
+                            fireProjectileAtScreenPoint(currentTouchClientX, currentTouchClientY);
+                        }
+                    }, AUTO_FIRE_RATE_MS);
+                }
             }
         }
 
         function handleCanvasTouchMove(e) {
-            if (e.touches.length !== 2 || !pinchZoomActive) {
-                return;
-            }
-            e.preventDefault();
-            const nextDistance = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
-            if (pinchStartDistance <= 0) {
-                return;
-            }
+            if (e.touches.length === 2 && pinchZoomActive) {
+                e.preventDefault();
+                const nextDistance = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                if (pinchStartDistance <= 0) {
+                    return;
+                }
 
-            setSharedViewZoom(pinchStartViewZoom * (nextDistance / pinchStartDistance));
+                setSharedViewZoom(pinchStartViewZoom * (nextDistance / pinchStartDistance));
+            } else if (e.touches.length === 1 && isTouchDown) {
+                // Single touch while holding - update shooting position to follow finger
+                const touch = e.touches[0];
+                currentTouchClientX = touch.clientX;
+                currentTouchClientY = touch.clientY;
+            }
         }
 
         function handleCanvasTouchEnd(e) {
@@ -3027,7 +3047,13 @@
 
         function handleCanvasTouchRelease(e) {
             handleCanvasTouchEnd(e);
-            handleCanvasTapAttack(e);
+            
+            // Stop auto-fire when touch is released
+            if (touchAutoFireInterval) {
+                clearInterval(touchAutoFireInterval);
+                touchAutoFireInterval = null;
+            }
+            isTouchDown = false;
         }
 
         function handleCanvasWheelZoom(e) {
@@ -7618,6 +7644,12 @@
         let currentMouseClientX = 0;
         let currentMouseClientY = 0;
         let isMouseDown = false;
+
+        // Touch event handlers for fireball shooting (auto-fire)
+        let touchAutoFireInterval = null;
+        let currentTouchClientX = 0;
+        let currentTouchClientY = 0;
+        let isTouchDown = false;
 
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0 && !chatActive && allAssetsLoaded) { // Left click
