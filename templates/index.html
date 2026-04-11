@@ -236,7 +236,7 @@
             left: 50%;
             top: 18px;
             transform: translateX(-50%);
-            z-index: 210;
+            z-index: 230;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -290,6 +290,19 @@
                 opacity: 1;
                 transform: translateY(0) scale(1);
             }
+        }
+        @keyframes progression-toast-out {
+            from {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-10px) scale(0.96);
+            }
+        }
+        .progression-toast.fading-out {
+            animation: progression-toast-out 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
         }
         #upgrade-draft-overlay {
             position: fixed;
@@ -7855,7 +7868,10 @@
                 xp: toastXp,
                 label: toastType === 'player_kill' ? 'Player Slain' : toastType === 'enemy_kill' ? 'Enemy Slain' : 'Soul Event',
                 createdAt: Date.now(),
-                duration: 3600
+                duration: 5000,
+                victimName: payload?.victimName || null,
+                killerName: payload?.killerName || null,
+                weapon: payload?.weapon || null
             });
 
             if (progressionToasts.length > 4) {
@@ -7865,6 +7881,9 @@
             renderProgressionToasts();
         }
 
+        let lastRenderedToastCount = -1;
+        let lastRenderedToastIds = new Set();
+
         function renderProgressionToasts() {
             if (!progressionFeedElement) {
                 return;
@@ -7872,13 +7891,52 @@
 
             const now = Date.now();
             pruneArrayInPlace(progressionToasts, (toast) => now - toast.createdAt < toast.duration);
-            progressionFeedElement.innerHTML = progressionToasts.map((toast) => `
-                <div class="progression-toast ${escapeHtml(toast.type)}">
+
+            // Only re-render if toast list changed
+            const currentToastIds = new Set(progressionToasts.map(t => t.id));
+            const toastListChanged = 
+                progressionToasts.length !== lastRenderedToastCount ||
+                progressionToasts.some(t => !lastRenderedToastIds.has(t.id));
+
+            if (!toastListChanged) {
+                // Just update fade-out class on existing elements
+                const toastElements = progressionFeedElement.querySelectorAll('.progression-toast');
+                toastElements.forEach((el, index) => {
+                    const toast = progressionToasts[index];
+                    if (toast) {
+                        const timeLeft = toast.duration - (now - toast.createdAt);
+                        const isFadingOut = timeLeft < 500;
+                        if (isFadingOut && !el.classList.contains('fading-out')) {
+                            el.classList.add('fading-out');
+                        } else if (!isFadingOut && el.classList.contains('fading-out')) {
+                            el.classList.remove('fading-out');
+                        }
+                    }
+                });
+                return;
+            }
+
+            lastRenderedToastCount = progressionToasts.length;
+            lastRenderedToastIds = currentToastIds;
+
+            progressionFeedElement.innerHTML = progressionToasts.map((toast) => {
+                const timeLeft = toast.duration - (now - toast.createdAt);
+                const isFadingOut = timeLeft < 500;
+
+                // Format message with colored names if structured data is available
+                let formattedMessage = toast.message;
+                if (toast.victimName && toast.killerName && toast.weapon) {
+                    formattedMessage = `<span style="color: #ff6b6b;">${escapeHtml(toast.victimName)}</span> killed by <span style="color: #6bb6ff;">${escapeHtml(toast.killerName)}</span> with ${escapeHtml(toast.weapon)}`;
+                }
+
+                return `
+                <div class="progression-toast ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''}">
                     <div class="progression-toast-xp">${escapeHtml(toast.label)}</div>
-                    <div class="progression-toast-title">${escapeHtml(toast.message)}</div>
+                    <div class="progression-toast-title">${formattedMessage}</div>
                     <div class="progression-toast-xp">${toast.xp > 0 ? `XP Gained: +${toast.xp}` : 'Soul Event'}</div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
 
             if (
                 isUpgradeDraftActive() &&

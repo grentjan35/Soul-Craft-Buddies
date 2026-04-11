@@ -11,7 +11,14 @@ function listCharacters(input) {
 
   try {
     const entries = fs.readdirSync(baseDir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const characters = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    
+    // Sort with 'blanky' first, then alphabetically
+    return characters.sort((a, b) => {
+      if (a === 'blanky') return -1;
+      if (b === 'blanky') return 1;
+      return a.localeCompare(b);
+    });
   } catch {
     return [];
   }

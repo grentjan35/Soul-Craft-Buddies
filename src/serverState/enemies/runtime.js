@@ -2650,7 +2650,10 @@ function damageEnemy(input) {
         emitProgressionNotification(input.io, input.sourceSid, {
           type: 'enemy_kill',
           xp: xpResult.gainedXp,
-          message: `${enemy.type || 'Enemy'} slain by fireball  +${xpResult.gainedXp} XP`,
+          message: `${enemy.type || 'Enemy'} killed by ${player.name || `P${input.sourceSid.slice(0, 4)}`} with fireball`,
+          victimName: enemy.type || 'Enemy',
+          killerName: player.name || `P${input.sourceSid.slice(0, 4)}`,
+          weapon: 'fireball',
         });
       }
     }

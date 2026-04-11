@@ -957,10 +957,25 @@ function applyExplosionDamage(input) {
         const killer = input.state.players.get(input.ownerSid);
         if (killer) {
           const xpResult = gainPlayerXp(killer, 36);
+          const victimName = player.name || `P${sid.slice(0, 4)}`;
+          const killerName = killer.name || `P${input.ownerSid.slice(0, 4)}`;
+          // Broadcast player kill to everyone
+          input.io.emit('progression_notification', {
+            type: 'player_kill',
+            xp: 0, // No XP shown to everyone
+            message: `${victimName} killed by ${killerName} with fireball`,
+            victimName,
+            killerName,
+            weapon: 'fireball',
+          });
+          // Send XP notification only to the killer
           emitProgressionNotification(input.io, input.ownerSid, {
             type: 'player_kill',
             xp: xpResult.gainedXp,
-            message: `Fireball kill on ${player.name || `P${sid.slice(0, 4)}`}  +${xpResult.gainedXp} XP`,
+            message: `${victimName} killed by ${killerName} with fireball`,
+            victimName,
+            killerName,
+            weapon: 'fireball',
           });
         }
       }
