@@ -700,7 +700,7 @@ function createAssetsRouter(deps) {
     }
 
     const relativeFromRoot = webPathToProjectRelativePath(assetPath);
-    const resolved = resolveUnderBaseDir({ baseDir: deps.projectRoot, userPath: relativeFromRoot });
+    const resolved = resolveUnderBaseDir({ baseDir: deps.staticDir, userPath: relativeFromRoot });
     if (!resolved.ok) {
       res.status(403).send('Unauthorized path');
       return;
