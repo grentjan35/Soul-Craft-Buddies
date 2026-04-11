@@ -13,8 +13,8 @@ function createSocketServer(input) {
     cors: { origin: '*' },
     serveClient: true,
     transports: ['websocket', 'polling'],
-    httpCompression: false,
-    perMessageDeflate: false,
+    httpCompression: true,
+    perMessageDeflate: true,
     pingTimeout: 60000,
     pingInterval: 25000,
   });
