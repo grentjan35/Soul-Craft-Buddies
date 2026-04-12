@@ -2304,7 +2304,6 @@
                 <span id="settings-title">Settings</span>
                 <button id="close-settings-btn" class="settings-close" type="button" aria-label="Close settings">X</button>
             </div>
-            <p class="settings-subtitle">Tune the hall for your run. Changes apply immediately and persist between visits.</p>
             <div class="settings-grid">
                 <div class="settings-row">
                     <div class="settings-row-header">
@@ -3551,9 +3550,9 @@
                 menuAudio.play('click', 0.45);
                 closeSettingsBtn.focus();
                 
-                // Show exit button only when in-game (start-screen is hidden)
+                // Show exit button only when in-game
                 if (exitToMenuRow && exitToMenuBtn) {
-                    const isInGame = startScreen.style.visibility === 'hidden';
+                    const isInGame = openSettingsBtn.classList.contains('in-game');
                     exitToMenuRow.style.display = isInGame ? 'block' : 'none';
                 }
             }
