@@ -320,6 +320,8 @@ function createAssetsRouter(deps) {
   const publicSlimeSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'slime'), publicSlimeSounds);
   const publicGargoyleSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'gargoyle'), publicGargoyleSounds);
   const publicStrikerSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'striker'), publicStrikerSounds);
+  const publicGuiAssets = new Set(['jump_button.png', 'play.png']);
+  const publicGuiAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'GUI'), publicGuiAssets);
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -499,6 +501,16 @@ function createAssetsRouter(deps) {
     }
 
     sendPublicCachedFile(res, publicStrikerSoundFiles, soundName);
+  });
+
+  router.get('/gui/:name', (req, res) => {
+    const assetName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicGuiAssets.has(assetName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    sendPublicCachedFile(res, publicGuiAssetFiles, assetName);
   });
 
   router.post('/api/request_asset', (req, res) => {
