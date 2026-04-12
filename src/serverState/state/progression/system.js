@@ -505,6 +505,9 @@ function getPlayerProgressionPayload(player) {
     pendingChoices: progression.pendingChoices,
     selectedCards: progression.selectedCards.slice(-12),
     totalCards: progression.selectedCards.length,
+    runStats: {
+      ...progression.runStats,
+    },
   };
 }
 

@@ -73,7 +73,7 @@
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
         #souls-leaderboard {
             position: fixed;
-            top: 12px;
+            top: 100px;
             right: 12px;
             min-width: 220px;
             max-width: min(340px, 42vw);
@@ -1056,10 +1056,10 @@
         }
 
         .menu-settings-btn {
-            position: absolute;
+            position: fixed;
             top: 18px;
             right: 18px;
-            z-index: 12;
+            z-index: 4000;
             min-width: 164px;
             height: 54px;
             padding: 0 18px;
@@ -1067,6 +1067,7 @@
             align-items: center;
             justify-content: center;
             gap: 12px;
+            pointer-events: auto;
             background:
                 linear-gradient(180deg, rgba(43, 55, 73, 0.95), rgba(17, 22, 31, 0.98));
             border: 2px solid rgba(123, 186, 255, 0.8);
@@ -1387,7 +1388,7 @@
         .settings-modal {
             position: absolute;
             inset: 0;
-            z-index: 20;
+            z-index: 5000;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1659,6 +1660,20 @@
             .menu-settings-btn span:last-child {
                 display: none;
             }
+        }
+
+        .menu-settings-btn.in-game span:last-child {
+            display: none;
+        }
+
+        .menu-settings-btn.in-game {
+            position: fixed;
+            top: 18px;
+            right: 18px;
+            z-index: 4000;
+            min-width: 56px;
+            width: 56px;
+            padding: 0;
         }
 
         @media (max-width: 480px) {
@@ -2179,13 +2194,13 @@
     </svg>
 </head>
 <body>
-    <div id="start-screen">
-    <canvas id="menu-bg-canvas"></canvas>
-    <div class="menu-ink"></div>
     <button id="open-settings-btn" class="menu-settings-btn" type="button" aria-haspopup="dialog" aria-controls="settings-modal" aria-label="Open settings">
         <span class="menu-settings-icon" aria-hidden="true"></span>
         <span>Settings</span>
     </button>
+    <div id="start-screen">
+    <canvas id="menu-bg-canvas"></canvas>
+    <div class="menu-ink"></div>
 
     <div class="menu-stage" id="menu-stage">
         <div class="menu-main-layout">
@@ -2212,47 +2227,6 @@
         </div>
     </div>
 
-    <div id="settings-modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
-        <div class="settings-window menu-panel-frame">
-            <div class="settings-header">
-                <span id="settings-title">Settings</span>
-                <button id="close-settings-btn" class="settings-close" type="button" aria-label="Close settings">X</button>
-            </div>
-            <p class="settings-subtitle">Tune the hall for your run. Changes apply immediately and persist between visits.</p>
-            <div class="settings-grid">
-                <div class="settings-row">
-                    <div class="settings-row-header">
-                        <span>Sound Effects</span>
-                        <span class="settings-value" id="settings-sfx-value">100%</span>
-                    </div>
-                    <p class="settings-row-copy">Adjust clicks, combat hits, footsteps, and menu feedback.</p>
-                    <input id="settings-sfx" type="range" min="0" max="100" step="1" value="100">
-                </div>
-                <div class="settings-row">
-                    <div class="settings-row-header">
-                        <span>Music</span>
-                        <span class="settings-value" id="settings-music-value">100%</span>
-                    </div>
-                    <p class="settings-row-copy">Lower or raise the combat music bed without muting effects.</p>
-                    <input id="settings-music" type="range" min="0" max="100" step="1" value="100">
-                </div>
-                <div class="settings-row">
-                    <div class="settings-toggle">
-                        <div>
-                            <div class="settings-toggle-copy">Mobile Controls</div>
-                            <p class="settings-row-copy">Show or hide the on-screen joystick and jump control on touch devices.</p>
-                        </div>
-                        <label class="settings-switch" aria-label="Toggle mobile controls">
-                            <input id="settings-mobile-controls" type="checkbox">
-                            <span class="settings-switch-track">
-                                <span class="settings-switch-thumb"></span>
-                            </span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
     <div id="loading-screen" class="pixelated-loading">
@@ -2323,6 +2297,50 @@
     </div>
     <div id="jump-button" class="mobile-action-button">
         <img src="/gui/jump_button.png" alt="Jump" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;">
+    </div>
+    <div id="settings-modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+        <div class="settings-window menu-panel-frame">
+            <div class="settings-header">
+                <span id="settings-title">Settings</span>
+                <button id="close-settings-btn" class="settings-close" type="button" aria-label="Close settings">X</button>
+            </div>
+            <p class="settings-subtitle">Tune the hall for your run. Changes apply immediately and persist between visits.</p>
+            <div class="settings-grid">
+                <div class="settings-row">
+                    <div class="settings-row-header">
+                        <span>Sound Effects</span>
+                        <span class="settings-value" id="settings-sfx-value">100%</span>
+                    </div>
+                    <p class="settings-row-copy">Adjust clicks, combat hits, footsteps, and menu feedback.</p>
+                    <input id="settings-sfx" type="range" min="0" max="100" step="1" value="100">
+                </div>
+                <div class="settings-row">
+                    <div class="settings-row-header">
+                        <span>Music</span>
+                        <span class="settings-value" id="settings-music-value">100%</span>
+                    </div>
+                    <p class="settings-row-copy">Lower or raise the combat music bed without muting effects.</p>
+                    <input id="settings-music" type="range" min="0" max="100" step="1" value="100">
+                </div>
+                <div class="settings-row">
+                    <div class="settings-toggle">
+                        <div>
+                            <div class="settings-toggle-copy">Mobile Controls</div>
+                            <p class="settings-row-copy">Show or hide the on-screen joystick and jump control on touch devices.</p>
+                        </div>
+                        <label class="settings-switch" aria-label="Toggle mobile controls">
+                            <input id="settings-mobile-controls" type="checkbox">
+                            <span class="settings-switch-track">
+                                <span class="settings-switch-thumb"></span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-row" id="exit-to-menu-row" style="display: none;">
+                    <button id="exit-to-menu-btn" type="button" style="width: 100%; padding: 14px; background: linear-gradient(180deg, rgba(180, 60, 60, 0.9), rgba(120, 30, 30, 0.95)); border: 2px solid rgba(255, 100, 100, 0.7); border-radius: 12px; color: white; font: inherit; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; font-size: 0.9rem;">Exit to Main Menu</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script id="vertex-shader" type="x-shader/x-vertex">
@@ -3016,6 +3034,7 @@
                 const touch = e.touches[0];
                 currentTouchClientX = touch.clientX;
                 currentTouchClientY = touch.clientY;
+                updateAimPreviewFromClientPoint(touch.clientX, touch.clientY);
                 fireProjectileAtScreenPoint(touch.clientX, touch.clientY);
                 
                 // Start auto-fire
@@ -3046,6 +3065,7 @@
                 const touch = e.touches[0];
                 currentTouchClientX = touch.clientX;
                 currentTouchClientY = touch.clientY;
+                updateAimPreviewFromClientPoint(touch.clientX, touch.clientY);
             }
         }
 
@@ -3174,7 +3194,17 @@
             const distance = Math.hypot(dx, dy);
             socket.emit('projectile_fire', { angle, distance, dx, dy });
         }
-        
+
+        function getLocalRunStats() {
+            return localProgressionState?.runStats || null;
+        }
+
+        function updateAimPreviewFromClientPoint(clientX, clientY) {
+            const { worldX, worldY } = getCanvasWorldPoint(clientX, clientY);
+            mousePosition.x = worldX;
+            mousePosition.y = worldY;
+        }
+
         function handleJumpStart(e) {
             e.preventDefault();
             if (chatActive || isUpgradeDraftActive() || jumpButtonPressed) return;
@@ -3436,6 +3466,8 @@
             const settingsMobileControls = document.getElementById('settings-mobile-controls');
             const settingsSfxValue = document.getElementById('settings-sfx-value');
             const settingsMusicValue = document.getElementById('settings-music-value');
+            const exitToMenuBtn = document.getElementById('exit-to-menu-btn');
+            const exitToMenuRow = document.getElementById('exit-to-menu-row');
             
             let targetX = 0, targetY = 0;
             let currX = 0, currY = 0;
@@ -3518,6 +3550,12 @@
                 settingsModal.hidden = false;
                 menuAudio.play('click', 0.45);
                 closeSettingsBtn.focus();
+                
+                // Show exit button only when in-game (start-screen is hidden)
+                if (exitToMenuRow && exitToMenuBtn) {
+                    const isInGame = startScreen.style.visibility === 'hidden';
+                    exitToMenuRow.style.display = isInGame ? 'block' : 'none';
+                }
             }
 
             function closeSettingsModal() {
@@ -5181,6 +5219,10 @@
 
                 startScreenReady = true;
                 startScreen.style.visibility = 'visible';
+                // Remove in-game class from settings button to show text
+                if (openSettingsBtn) {
+                    openSettingsBtn.classList.remove('in-game');
+                }
                 startScreen.style.transition = 'opacity 0.35s ease';
                 loadingScreen.style.transition = 'opacity 0.35s ease';
                 startScreen.style.opacity = '1';
@@ -5468,6 +5510,14 @@
 
             openSettingsBtn.addEventListener('click', openSettingsModal);
             closeSettingsBtn.addEventListener('click', closeSettingsModal);
+            
+            if (exitToMenuBtn) {
+                exitToMenuBtn.addEventListener('click', () => {
+                    closeSettingsModal();
+                    // Return to main menu by reloading the page
+                    window.location.reload();
+                });
+            }
             settingsModal.addEventListener('click', (event) => {
                 if (event.target === settingsModal) {
                     closeSettingsModal();
@@ -5532,6 +5582,10 @@
                 
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
+                // Add in-game class to settings button to show only icon
+                if (openSettingsBtn) {
+                    openSettingsBtn.classList.add('in-game');
+                }
                 setTimeout(() => {
                     stopMenuRendering();
                     startScreen.style.display = 'none';
@@ -7427,7 +7481,8 @@
             pendingLevelUps: 0,
             pendingChoices: null,
             selectedCards: [],
-            totalCards: 0
+            totalCards: 0,
+            runStats: null
         };
         let upgradeSelectionPending = false;
         let lastRenderedUpgradeDraftKey = '';
@@ -7462,8 +7517,6 @@
         const dynamicLightUniformBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
         const radialSpriteCache = new Map();
         let enemyHitboxDebugEnabled = false;
-        
-
         // Keyboard input handling
         window.addEventListener('keydown', (e) => {
             // Disable movement keys when chat is active
@@ -7670,6 +7723,7 @@
                 isMouseDown = true;
                 currentMouseClientX = e.clientX;
                 currentMouseClientY = e.clientY;
+                updateAimPreviewFromClientPoint(e.clientX, e.clientY);
                 fireProjectileAtScreenPoint(e.clientX, e.clientY);
                 
                 // Start auto-fire
@@ -7700,9 +7754,7 @@
         });
         
         canvas.addEventListener('mousemove', (e) => {
-            const { worldX, worldY } = getCanvasWorldPoint(e.clientX, e.clientY);
-            mousePosition.x = worldX;
-            mousePosition.y = worldY;
+            updateAimPreviewFromClientPoint(e.clientX, e.clientY);
             // Update current mouse position for auto-fire
             currentMouseClientX = e.clientX;
             currentMouseClientY = e.clientY;
