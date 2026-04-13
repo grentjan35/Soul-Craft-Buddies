@@ -28,7 +28,6 @@ async function createApp(config) {
       secretKey: config.secretKey,
       projectRoot: config.projectRoot,
       staticDir: config.staticDir,
-      chunkDir: config.chunkDir,
       manifestPath: config.manifestPath,
     })
   );

@@ -13,7 +13,7 @@ RUN npm ci --omit=dev
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p data secure_asset_chunks
+RUN mkdir -p data
 
 # Expose port (will be overridden by PORT env var)
 EXPOSE 5000

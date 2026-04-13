@@ -15,5 +15,3 @@ services:
         value: 0.0.0.0
       - key: DATA_DIR
         value: data
-      - key: CHUNK_DIR
-        value: secure_asset_chunks

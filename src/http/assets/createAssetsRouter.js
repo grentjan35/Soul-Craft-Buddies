@@ -251,7 +251,7 @@ function sendPublicCachedFile(res, lookup, assetName) {
 
 /**
  * Creates the secure asset routes.
- * @param {{secretKey: string, projectRoot: string, staticDir: string, chunkDir: string, manifestPath: string}} deps
+ * @param {{secretKey: string, projectRoot: string, staticDir: string, manifestPath: string}} deps
  * @returns {import('express').Router}
  */
 function createAssetsRouter(deps) {
@@ -586,7 +586,6 @@ function createAssetsRouter(deps) {
       secretKey: deps.secretKey,
       payload: {
         path: assetPath,
-        chunk_ids: assetInfo.chunk_ids,
         iat_ms: Date.now(),
         asset_sid: assetSession.sessionId,
       },
@@ -595,7 +594,6 @@ function createAssetsRouter(deps) {
 
     res.json({
       token,
-      chunk_ids: assetInfo.chunk_ids,
       total_size: assetInfo.total_size,
     });
   });
@@ -761,55 +759,6 @@ function createAssetsRouter(deps) {
       res,
       fullPath: resolved.fullPath,
       downloadName: path.basename(resolved.fullPath),
-    });
-  });
-
-  router.get('/api/asset_chunk/:token/:chunkId', (req, res) => {
-    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
-    if (!assetSession.ok) {
-      res.status(assetSession.status).send(assetSession.reason);
-      return;
-    }
-
-    const token = String(req.params.token ?? '');
-    const chunkId = String(req.params.chunkId ?? '');
-
-    const verified = verifyToken({ secretKey: deps.secretKey, token });
-    if (!verified.ok) {
-      res.status(verified.reason === 'Token expired' ? 401 : 403).send(verified.reason);
-      return;
-    }
-
-    const payload = verified.payload;
-    if (!tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })) {
-      res.status(403).send('Access Denied');
-      return;
-    }
-
-    // Enforce Python-like short window for chunk download usage.
-    // Python uses max_age=30 seconds for chunk token.
-    const iatMs = typeof payload.iat_ms === 'number' ? payload.iat_ms : 0;
-    if (!iatMs || Date.now() - iatMs > 30_000) {
-      res.status(401).send('Token expired');
-      return;
-    }
-
-    const chunkIds = Array.isArray(payload.chunk_ids) ? payload.chunk_ids : [];
-    if (!chunkIds.includes(chunkId)) {
-      res.status(403).send('Unauthorized chunk');
-      return;
-    }
-
-    const chunkPath = path.join(deps.chunkDir, `${chunkId}.bin`);
-    if (!fs.existsSync(chunkPath)) {
-      res.status(404).send('Chunk not found');
-      return;
-    }
-
-    sendProtectedBinaryFile({
-      res,
-      fullPath: chunkPath,
-      downloadName: `${chunkId}.bin`,
     });
   });
 

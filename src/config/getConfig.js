@@ -13,16 +13,13 @@ require('dotenv').config();
  *   staticDir: string,
  *   templatesDir: string,
  *   dataDir: string,
- *   chunkDir: string,
  *   manifestPath: string
  * }}
  */
 function getConfig() {
   const projectRoot = path.resolve(__dirname, '..', '..');
   const defaultDataDir = path.join(projectRoot, 'data');
-  const defaultChunkDir = path.join(projectRoot, 'secure_asset_chunks');
   const dataDir = path.resolve(process.env.DATA_DIR ?? defaultDataDir);
-  const chunkDir = path.resolve(process.env.CHUNK_DIR ?? defaultChunkDir);
   const templatesDir = path.resolve(process.env.TEMPLATES_DIR ?? path.join(projectRoot, 'templates'));
   const staticDir = path.resolve(process.env.STATIC_DIR ?? path.join(projectRoot, 'static'));
   const manifestPath = path.resolve(process.env.MANIFEST_PATH ?? path.join(projectRoot, 'manifest.json'));
@@ -38,7 +35,6 @@ function getConfig() {
     process.env.SECRET_KEY ?? 'platformer_buddies_secure_key_v2_2026!';
 
   fs.mkdirSync(dataDir, { recursive: true });
-  fs.mkdirSync(chunkDir, { recursive: true });
 
   return {
     port,
@@ -48,7 +44,6 @@ function getConfig() {
     staticDir,
     templatesDir,
     dataDir,
-    chunkDir,
     manifestPath,
   };
 }
