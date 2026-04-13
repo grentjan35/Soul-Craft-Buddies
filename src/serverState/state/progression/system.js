@@ -18,6 +18,7 @@ const BASE_PLAYER_RUN_STATS = Object.freeze({
   xpGainMultiplier: 1,
   soulMagnetMultiplier: 1,
   soulHealMultiplier: 1,
+  regainPerSecond: 0.5,
   fireballDamage: 12,
   fireballExplosionRadius: 20,
   fireballExplosionDamageMultiplier: 1,
@@ -238,6 +239,15 @@ function buildUpgradeCatalog() {
       values: [0.08, 0.1, 0.12, 0.15, 0.18, 0.22],
       apply: (stats, value) => { stats.soulHealMultiplier *= 1 + value; },
       describe: (value) => `Soul healing ${percentLabel(value)}.`,
+    }),
+    createFamilyDefinition({
+      family: 'regain',
+      name: 'Regen',
+      category: 'survival',
+      art: 'heart',
+      values: [0.12, 0.18, 0.26, 0.35, 0.48, 0.65],
+      apply: (stats, value) => { stats.regainPerSecond += value; },
+      describe: (value) => `Regen ${flatLabel(value)} HP per second.`,
     }),
   ];
 
@@ -473,6 +483,7 @@ function applyUpgradeSelection(player, cardId) {
   progression.runStats.attackDuration = Math.max(0.24, progression.runStats.attackDuration);
   progression.runStats.fireballGravityScale = Math.max(0.25, progression.runStats.fireballGravityScale);
   progression.runStats.fireballProjectileCount = Math.max(1, Math.round(progression.runStats.fireballProjectileCount));
+  progression.runStats.regainPerSecond = Math.max(0, progression.runStats.regainPerSecond);
   progression.upgradeLevels[card.family] = (progression.upgradeLevels[card.family] || 0) + 1;
   progression.selectedCards.push({
     id: card.id,

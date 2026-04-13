@@ -18,8 +18,32 @@
             --adaptive-chat-expanded-height: 150px;
             --adaptive-chat-font-size: 14px;
             --adaptive-chat-input-font-size: 16px;
+            --adaptive-joystick-size: 120px;
+            --adaptive-joystick-thumb-size: 50px;
+            --adaptive-hud-width: 360px;
+            --adaptive-hud-gap: 10px;
+            --adaptive-hud-panel-padding-y: 14px;
+            --adaptive-hud-panel-padding-x: 18px;
+            --adaptive-hud-bar-padding-x: 16px;
+            --adaptive-hud-bar-padding-bottom: 16px;
+            --adaptive-hud-track-height: 32px;
+            --adaptive-hud-label-font-size: 0.95rem;
+            --adaptive-feed-width: 560px;
+            --adaptive-feed-gap: 10px;
+            --adaptive-toast-width: 520px;
+            --adaptive-toast-padding-y: 14px;
+            --adaptive-toast-padding-x: 18px;
+            --adaptive-leaderboard-width: 340px;
+            --adaptive-leaderboard-top: 100px;
+            --adaptive-chat-edge: 12px;
             --menu-display-width: 100vw;
             --menu-display-height: 100vh;
+            --ui-panel-bg:
+                linear-gradient(180deg, rgba(34, 24, 11, 0.94), rgba(10, 7, 4, 0.97));
+            --ui-panel-border: rgba(205, 169, 104, 0.9);
+            --ui-panel-highlight:
+                linear-gradient(180deg, rgba(108, 77, 30, 0.34), rgba(45, 28, 12, 0.18));
+            --ui-panel-blue-glow: rgba(123, 186, 255, 0.18);
         }
 
         html, body {
@@ -71,40 +95,78 @@
             z-index: 2;
         }
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
+        .in-game-frame {
+            position: relative;
+            background:
+                radial-gradient(circle at 50% 46%, rgba(73, 119, 212, 0.12), transparent 30%),
+                linear-gradient(180deg, rgba(18, 25, 37, 0.92), rgba(10, 13, 21, 0.96));
+            border: 3px solid rgba(205, 169, 104, 0.9);
+            box-shadow:
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
+                inset 0 0 30px rgba(10, 7, 4, 0.8),
+                inset 0 0 42px rgba(96, 156, 255, 0.08),
+                inset 0 0 72px rgba(91, 149, 255, 0.12),
+                0 16px 48px rgba(0, 0, 0, 0.36),
+                0 0 34px rgba(82, 138, 255, 0.12);
+            overflow: hidden;
+        }
+        .in-game-frame::before,
+        .in-game-frame::after {
+            content: "";
+            position: absolute;
+            pointer-events: none;
+        }
+        .in-game-frame::before {
+            inset: 10px;
+            border: 2px solid rgba(237, 213, 161, 0.88);
+            border-radius: 10px;
+            opacity: 0.9;
+        }
+        .in-game-frame::after {
+            inset: 0;
+            background: none;
+            filter: none;
+            opacity: 0;
+        }
+        .in-game-frame-blue {
+            background:
+                radial-gradient(circle at 50% 46%, rgba(73, 119, 212, 0.14), transparent 30%),
+                linear-gradient(180deg, rgba(18, 25, 37, 0.92), rgba(10, 13, 21, 0.96));
+        }
         #souls-leaderboard {
             position: fixed;
-            top: 100px;
-            right: 12px;
+            top: var(--adaptive-leaderboard-top);
+            right: var(--adaptive-chat-edge);
             min-width: 220px;
-            max-width: min(340px, 42vw);
+            width: min(var(--adaptive-leaderboard-width), 42vw);
+            max-width: min(var(--adaptive-leaderboard-width), 42vw);
             z-index: 150;
             pointer-events: none;
-            color: #e6f2ff;
+            color: #f5e0b4;
             font-family: 'EB Garamond', serif;
             display: none;
-            border: 1px solid rgba(123, 166, 255, 0.42);
-            background:
-                linear-gradient(180deg, rgba(8, 15, 35, 0.9), rgba(3, 7, 20, 0.9));
-            border-radius: 12px;
-            box-shadow:
-                0 0 20px rgba(66, 136, 255, 0.2),
-                inset 0 0 20px rgba(109, 63, 255, 0.12);
+            border-radius: 0;
             backdrop-filter: blur(4px);
             overflow: hidden;
         }
         .souls-leaderboard-header {
-            padding: 8px 12px;
+            position: relative;
+            z-index: 1;
+            padding: 14px 18px 10px;
             letter-spacing: 0.16em;
             text-transform: uppercase;
             font-size: 0.78rem;
-            color: #b9d8ff;
-            border-bottom: 1px solid rgba(136, 173, 255, 0.25);
-            background: linear-gradient(180deg, rgba(60, 103, 211, 0.22), rgba(17, 31, 67, 0.1));
+            color: #f6e2b4;
+            border-bottom: 1px solid rgba(205, 169, 104, 0.4);
+            background: linear-gradient(180deg, rgba(108, 77, 30, 0.28), rgba(45, 28, 12, 0.06));
         }
         .souls-leaderboard-body {
+            position: relative;
+            z-index: 1;
             max-height: 220px;
             overflow: hidden;
-            padding: 6px;
+            padding: 8px 12px 12px;
         }
         .souls-row {
             display: grid;
@@ -117,11 +179,11 @@
             line-height: 1.2;
         }
         .souls-row--me {
-            background: linear-gradient(90deg, rgba(86, 134, 255, 0.26), rgba(128, 92, 255, 0.16));
-            box-shadow: inset 0 0 14px rgba(123, 186, 255, 0.2);
+            background: linear-gradient(90deg, rgba(212, 179, 114, 0.2), rgba(123, 186, 255, 0.08));
+            box-shadow: inset 0 0 14px rgba(212, 179, 114, 0.16);
         }
         .souls-rank {
-            color: #8db9ff;
+            color: #d9bd73;
             text-align: right;
             font-variant-numeric: tabular-nums;
         }
@@ -129,12 +191,12 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            color: #eef5ff;
+            color: #f8efd9;
         }
         .souls-count {
             font-variant-numeric: tabular-nums;
-            color: #8ec4ff;
-            text-shadow: 0 0 12px rgba(86, 176, 255, 0.35);
+            color: #f3d896;
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.24);
         }
         #run-hud {
             position: fixed;
@@ -142,54 +204,45 @@
             left: 14px;
             z-index: 180;
             display: none;
-            width: min(360px, calc(100vw - 28px));
+            width: min(var(--adaptive-hud-width), calc(100vw - 28px));
             pointer-events: none;
-            color: #e6f2ff;
+            color: #f5e0b4;
             font-family: 'EB Garamond', serif;
+            display: none;
+            flex-direction: column;
+            gap: var(--adaptive-hud-gap);
         }
         .run-hud-badge {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-            padding: 6px 12px;
-            border: 1px solid rgba(123, 166, 255, 0.42);
-            border-radius: 999px;
-            background: linear-gradient(180deg, rgba(8, 15, 35, 0.9), rgba(3, 7, 20, 0.9));
-            box-shadow: 0 0 20px rgba(66, 136, 255, 0.2), inset 0 0 20px rgba(109, 63, 255, 0.12);
-            letter-spacing: 0.08em;
+            justify-content: space-between;
+            gap: 12px;
+            padding: var(--adaptive-hud-panel-padding-y) var(--adaptive-hud-panel-padding-x);
+            border-radius: 0;
+            letter-spacing: 0.12em;
             text-transform: uppercase;
             font-size: 0.78rem;
         }
         .run-hud-level {
-            color: #b9d8ff;
-            text-shadow: 0 0 18px rgba(123, 186, 255, 0.25);
+            color: #f6e2b4;
+            text-shadow: 0 0 18px rgba(212, 179, 114, 0.18);
         }
         .run-bar-shell {
             position: relative;
             overflow: hidden;
-            margin-bottom: 10px;
-            padding: 5px;
-            border: 1px solid rgba(123, 166, 255, 0.42);
-            border-radius: 14px;
-            background: linear-gradient(180deg, rgba(8, 15, 35, 0.9), rgba(3, 7, 20, 0.9));
-            box-shadow: 0 0 20px rgba(66, 136, 255, 0.2), inset 0 0 20px rgba(109, 63, 255, 0.12);
-        }
-        .run-bar-shell::before {
-            content: '';
-            position: absolute;
-            inset: 1px;
-            border-radius: 11px;
-            pointer-events: none;
-            background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0), rgba(255,255,255,0.08));
-            mix-blend-mode: screen;
+            padding: var(--adaptive-hud-panel-padding-y) var(--adaptive-hud-bar-padding-x) var(--adaptive-hud-bar-padding-bottom);
+            border-radius: 0;
         }
         .run-bar-track {
+            z-index: 1;
             position: relative;
-            height: 28px;
-            border-radius: 10px;
+            height: var(--adaptive-hud-track-height);
+            border-radius: 0;
             overflow: hidden;
-            background: rgba(12, 8, 9, 0.92);
+            background: linear-gradient(180deg, rgba(22, 14, 8, 0.96), rgba(8, 5, 3, 0.98));
+            box-shadow:
+                inset 0 0 0 2px rgba(9, 11, 18, 0.94),
+                inset 0 0 18px rgba(0, 0, 0, 0.34);
         }
         .run-bar-fill {
             position: absolute;
@@ -220,16 +273,16 @@
             align-items: center;
             justify-content: space-between;
             padding: 0 12px;
-            font-size: 0.95rem;
-            letter-spacing: 0.06em;
+            font-size: var(--adaptive-hud-label-font-size);
+            letter-spacing: 0.12em;
             text-transform: uppercase;
             text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 0, 0, 0.4);
-            color: #eef5ff;
+            color: #f7efdb;
         }
         .run-bar-value {
             font-variant-numeric: tabular-nums;
-            color: #8ec4ff;
-            text-shadow: 0 0 12px rgba(86, 176, 255, 0.35);
+            color: #f3d896;
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
         }
         #progression-feed {
             position: fixed;
@@ -240,46 +293,53 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 10px;
-            width: min(560px, calc(100vw - 28px));
+            gap: var(--adaptive-feed-gap);
+            width: min(var(--adaptive-feed-width), calc(100vw - 28px));
             pointer-events: none;
         }
         .progression-toast {
-            width: min(100%, 520px);
-            padding: 14px 18px;
-            border-radius: 16px;
-            border: 1px solid rgba(123, 166, 255, 0.42);
-            background:
-                radial-gradient(circle at top center, rgba(255,255,255,0.14), rgba(255,255,255,0) 38%),
-                linear-gradient(180deg, rgba(8, 15, 35, 0.95), rgba(3, 7, 20, 0.97));
-            box-shadow: 0 18px 38px rgba(0,0,0,0.42), 0 0 30px rgba(66, 136, 255, 0.2), inset 0 0 20px rgba(109, 63, 255, 0.12);
-            color: #eef5ff;
+            width: min(100%, var(--adaptive-toast-width));
+            padding: var(--adaptive-toast-padding-y) var(--adaptive-toast-padding-x);
+            border-radius: 0;
+            color: #f7efdb;
             opacity: 0;
             transform: translateY(-10px) scale(0.96);
             animation: progression-toast-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
             text-align: center;
         }
         .progression-toast.player_kill {
-            border-color: rgba(123, 186, 255, 0.6);
-            box-shadow: 0 18px 38px rgba(0,0,0,0.42), 0 0 34px rgba(91, 149, 255, 0.3);
+            box-shadow:
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
+                inset 0 0 30px rgba(10, 7, 4, 0.8),
+                inset 0 0 42px rgba(96, 156, 255, 0.08),
+                inset 0 0 72px rgba(91, 149, 255, 0.12),
+                0 16px 48px rgba(0, 0, 0, 0.36),
+                0 0 34px rgba(82, 138, 255, 0.12);
         }
         .progression-toast.enemy_kill {
-            border-color: rgba(123, 186, 255, 0.6);
-            box-shadow: 0 18px 38px rgba(0,0,0,0.42), 0 0 34px rgba(91, 149, 255, 0.3);
+            box-shadow:
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
+                inset 0 0 30px rgba(10, 7, 4, 0.8),
+                inset 0 0 42px rgba(96, 156, 255, 0.08),
+                inset 0 0 72px rgba(91, 149, 255, 0.12),
+                0 16px 48px rgba(0, 0, 0, 0.36),
+                0 0 34px rgba(82, 138, 255, 0.12);
         }
         .progression-toast-title {
             font-size: 1.02rem;
             line-height: 1.3;
-            color: #b9d8ff;
-            text-shadow: 0 0 12px rgba(123, 186, 255, 0.25);
+            color: #f6e2b4;
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.22);
         }
         .progression-toast-xp {
             margin-top: 6px;
             font-size: 0.82rem;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: #8ec4ff;
-            text-shadow: 0 0 12px rgba(86, 176, 255, 0.35);
+            color: #f3d896;
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
         }
         @keyframes progression-toast-in {
             from {
@@ -313,8 +373,8 @@
             justify-content: center;
             padding: 24px;
             background:
-                radial-gradient(circle at center, rgba(255, 151, 64, 0.12), rgba(0, 0, 0, 0) 30%),
-                linear-gradient(180deg, rgba(7, 6, 10, 0.34), rgba(4, 4, 8, 0.82));
+                radial-gradient(circle at center, rgba(212, 179, 114, 0.14), rgba(0, 0, 0, 0) 32%),
+                linear-gradient(180deg, rgba(18, 12, 8, 0.32), rgba(4, 4, 8, 0.84));
             backdrop-filter: blur(12px);
         }
         #upgrade-draft-overlay.is-visible {
@@ -330,7 +390,7 @@
         .upgrade-draft-header {
             text-align: center;
             color: #fef2dd;
-            text-shadow: 0 0 18px rgba(255, 161, 84, 0.25);
+            text-shadow: 0 0 18px rgba(212, 179, 114, 0.22);
         }
         .upgrade-draft-title {
             font-size: clamp(1.8rem, 4vw, 3rem);
@@ -341,7 +401,7 @@
             margin-top: 6px;
             font-size: 1rem;
             letter-spacing: 0.08em;
-            color: rgba(255, 228, 186, 0.9);
+            color: rgba(246, 226, 180, 0.92);
         }
         .upgrade-draft-cards {
             display: grid;
@@ -353,20 +413,13 @@
             position: relative;
             min-height: 370px;
             padding: 14px;
-            border: 1px solid rgba(255, 222, 190, 0.2);
-            border-radius: 24px;
-            background:
-                radial-gradient(circle at 20% 0%, rgba(255,255,255,0.18), rgba(255,255,255,0) 30%),
-                linear-gradient(180deg, rgba(21, 11, 14, 0.95), rgba(8, 7, 16, 0.98));
+            border-radius: 0;
             color: #fff7ea;
             text-align: left;
             cursor: pointer;
             transform: translateY(28px) scale(0.94);
             opacity: 0;
             animation: upgrade-card-in 460ms cubic-bezier(0.2, 0.8, 0.18, 1) forwards;
-            box-shadow:
-                0 16px 44px rgba(0, 0, 0, 0.38),
-                inset 0 0 22px rgba(255, 255, 255, 0.04);
             transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, filter 180ms ease;
             pointer-events: auto;
             overflow: hidden;
@@ -374,9 +427,9 @@
         .upgrade-card::before {
             content: '';
             position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            inset: 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(237, 213, 161, 0.24);
             pointer-events: none;
         }
         .upgrade-card::after {
@@ -391,9 +444,13 @@
         .upgrade-card:hover,
         .upgrade-card:focus-visible {
             transform: translateY(-6px) scale(1.02);
-            border-color: rgba(255, 240, 212, 0.4);
             box-shadow:
-                0 20px 60px rgba(0, 0, 0, 0.44),
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
+                inset 0 0 30px rgba(10, 7, 4, 0.8),
+                inset 0 0 42px rgba(96, 156, 255, 0.08),
+                inset 0 0 72px rgba(91, 149, 255, 0.12),
+                0 16px 48px rgba(0, 0, 0, 0.36),
                 0 0 28px var(--card-glow, rgba(255, 164, 91, 0.18));
             outline: none;
         }
@@ -1020,12 +1077,12 @@
         .menu-panel-frame {
             position: absolute;
             background:
-                linear-gradient(180deg, rgba(29, 37, 50, 0.9), rgba(9, 12, 18, 0.94));
-            border: 3px solid rgba(83, 101, 128, 0.95);
+                linear-gradient(180deg, rgba(34, 24, 11, 0.94), rgba(10, 7, 4, 0.97));
+            border: 3px solid rgba(205, 169, 104, 0.9);
             box-shadow:
-                inset 0 0 0 2px rgba(9, 11, 18, 0.94),
-                inset 0 0 0 4px rgba(93, 117, 148, 0.65),
-                inset 0 0 30px rgba(9, 12, 20, 0.75),
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
+                inset 0 0 30px rgba(10, 7, 4, 0.8),
                 0 16px 48px rgba(0, 0, 0, 0.36);
             overflow: hidden;
         }
@@ -1039,7 +1096,7 @@
 
         .menu-panel-frame::before {
             inset: 10px;
-            border: 2px solid rgba(123, 186, 255, 0.8);
+            border: 2px solid rgba(237, 213, 161, 0.88);
             border-radius: 10px;
             opacity: 0.9;
         }
@@ -1048,10 +1105,10 @@
             inset: 0;
             background:
                 radial-gradient(circle at 20px 20px, rgba(123, 186, 255, 0.8) 0 8px, transparent 8px),
-                radial-gradient(circle at calc(100% - 20px) 20px, rgba(123, 186, 255, 0.8) 0 8px, transparent 8px),
-                radial-gradient(circle at 20px calc(100% - 20px), rgba(123, 186, 255, 0.8) 0 8px, transparent 8px),
-                radial-gradient(circle at calc(100% - 20px) calc(100% - 20px), rgba(123, 186, 255, 0.8) 0 8px, transparent 8px);
-            filter: drop-shadow(0 0 5px rgba(91, 149, 255, 0.4));
+                radial-gradient(circle at calc(100% - 20px) 20px, rgba(237, 213, 161, 0.88) 0 8px, transparent 8px),
+                radial-gradient(circle at 20px calc(100% - 20px), rgba(237, 213, 161, 0.88) 0 8px, transparent 8px),
+                radial-gradient(circle at calc(100% - 20px) calc(100% - 20px), rgba(237, 213, 161, 0.88) 0 8px, transparent 8px);
+            filter: drop-shadow(0 0 5px rgba(212, 179, 114, 0.28));
             opacity: 0.95;
         }
 
@@ -1309,6 +1366,7 @@
             margin-top: 10px;
         }
 
+
         #play-btn {
             position: relative;
             align-self: center;
@@ -1494,6 +1552,21 @@
             justify-content: space-between;
             gap: 16px;
         }
+        .settings-toggle.is-disabled {
+            opacity: 0.48;
+        }
+        .settings-toggle.is-disabled .settings-switch {
+            pointer-events: none;
+        }
+        .settings-toggle.is-disabled .settings-switch-track {
+            border-color: rgba(110, 118, 132, 0.52);
+            background: linear-gradient(180deg, rgba(32, 38, 50, 0.86), rgba(14, 17, 23, 0.92));
+            box-shadow: inset 0 0 0 2px rgba(11, 13, 19, 0.84);
+        }
+        .settings-toggle.is-disabled .settings-switch-thumb {
+            box-shadow: none;
+            filter: grayscale(0.45) brightness(0.82);
+        }
 
         .settings-toggle-copy {
             color: #f0e6c8;
@@ -1676,6 +1749,27 @@
             padding: 0;
         }
 
+        @media (hover: none) and (pointer: coarse) {
+            .menu-settings-btn.in-game {
+                top: 10px;
+                right: 10px;
+                min-width: 48px;
+                width: 48px;
+                height: 48px;
+            }
+
+            #run-hud {
+                top: 10px;
+                left: 10px;
+                width: min(var(--adaptive-hud-width), calc(100vw - 78px));
+            }
+
+            #progression-feed {
+                top: 10px;
+                width: min(var(--adaptive-feed-width), calc(100vw - 20px));
+            }
+        }
+
         @media (max-width: 480px) {
             .menu-stage {
                 padding: 68px 4px 8px;
@@ -1713,7 +1807,7 @@
             top: 0; left: 0;
             width: 100%; height: 100%;
             background: #000; /* Solid black matches the SOULCRAFT theme */
-            display: flex;
+            display: none;
             flex-direction: column;
             justify-content: center;
             align-items: center;
@@ -1725,7 +1819,15 @@
         
         .loading-container {
             text-align: center;
-            /* Removed scaling - normal size loading UI */
+            padding: 22px 26px;
+            border-radius: 22px;
+            background:
+                linear-gradient(180deg, rgba(45, 28, 12, 0.92), rgba(16, 10, 6, 0.98));
+            border: 2px solid rgba(212, 179, 114, 0.72);
+            box-shadow:
+                0 0 0 1px rgba(78, 54, 24, 0.85) inset,
+                0 18px 50px rgba(0, 0, 0, 0.45),
+                0 0 36px rgba(212, 179, 114, 0.14);
         }
 
         .loading-container.is-boot-hidden {
@@ -1735,50 +1837,48 @@
         }
         
         .loading-title {
-            font-size: 1.5rem; /* Smaller, cleaner font size */
-            color: #ffffff;
-            letter-spacing: 8px;
+            font-size: 1.55rem;
+            color: #f6e2b4;
+            letter-spacing: 0.2em;
             margin-bottom: 15px;
+            text-shadow: 0 2px 0 rgba(73, 44, 17, 0.92), 0 0 18px rgba(255, 228, 171, 0.18);
         }
         
         
         .loading-progress-container {
-            width: 300px; /* Wider bar */
-            height: 20px;   /* Much thicker bar */
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            width: 300px;
+            height: 20px;
+            background: rgba(47, 27, 11, 0.92);
+            border: 1px solid rgba(205, 169, 104, 0.45);
             margin: 0 auto;
             overflow: hidden;
-            border-radius: 10px; /* Rounded corners for modern look */
+            border-radius: 10px;
         }
         
         .loading-progress-fill {
             width: 0%;
             height: 100%;
-            background: #fff; /* Solid white for a crisp pixel look */
+            background: linear-gradient(90deg, #c8a35a, #f1d58f);
             transition: width 0.18s ease-out;
+            box-shadow: 0 0 16px rgba(241, 213, 143, 0.3);
         }
         
         
         .loading-meta {
             margin-top: 12px;
             display: flex;
-            justify-content: space-between;
-            gap: 16px;
+            justify-content: flex-end;
             width: 300px;
-            color: rgba(255, 255, 255, 0.72);
+            color: #f5e0b4;
             font-size: 0.85rem;
             letter-spacing: 2px;
-        }
-
-        .loading-stage {
-            text-align: left;
         }
 
         .loading-percent {
             min-width: 48px;
             text-align: right;
             font-variant-numeric: tabular-nums;
+            text-shadow: 0 1px 0 rgba(57, 35, 15, 0.9);
         }
 
         .loading-complete {
@@ -1812,26 +1912,23 @@
         #chat-container {
             position: fixed;
             bottom: 20px;
-            right: 20px;
+            right: var(--adaptive-chat-edge);
             z-index: 100;
             font-family: 'EB Garamond', serif;
             width: var(--adaptive-chat-width);
-            max-width: calc(100vw - 40px);
+            max-width: calc(100vw - (var(--adaptive-chat-edge) * 2));
             display: none;
             touch-action: manipulation;
         }
 
         #chat-box {
-            background: linear-gradient(180deg, rgba(8, 15, 35, 0.9), rgba(3, 7, 20, 0.9));
-            border: 1px solid rgba(123, 166, 255, 0.42);
-            border-radius: 12px;
+            border-radius: 0;
             margin-bottom: 8px;
             overflow: hidden;
             display: none;
             transition: all 0.3s ease;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 0 20px rgba(66, 136, 255, 0.2), inset 0 0 20px rgba(109, 63, 255, 0.12);
         }
 
         #chat-box.collapsed {
@@ -1843,20 +1940,22 @@
         }
 
         #chat-header {
-            background: linear-gradient(180deg, rgba(60, 103, 211, 0.22), rgba(17, 31, 67, 0.1));
+            position: relative;
+            z-index: 1;
+            background: linear-gradient(180deg, rgba(108, 77, 30, 0.28), rgba(45, 28, 12, 0.06));
             padding: 6px 8px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            color: #b9d8ff;
+            color: #f6e2b4;
             font-family: 'EB Garamond', serif;
             font-size: var(--adaptive-chat-font-size);
             font-weight: bold;
             cursor: pointer;
             user-select: none;
             flex-shrink: 0;
-            border-bottom: 1px solid rgba(136, 173, 255, 0.25);
-            text-shadow: 0 0 18px rgba(123, 186, 255, 0.25);
+            border-bottom: 1px solid rgba(205, 169, 104, 0.35);
+            text-shadow: 0 0 18px rgba(212, 179, 114, 0.18);
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
@@ -1866,13 +1965,15 @@
         }
 
         #chat-header:hover {
-            background: linear-gradient(180deg, rgba(86, 134, 255, 0.32), rgba(31, 53, 128, 0.18));
+            background:
+                linear-gradient(180deg, rgba(132, 92, 36, 0.42), rgba(58, 35, 15, 0.22)),
+                linear-gradient(90deg, rgba(123, 186, 255, 0.14), transparent);
         }
 
         #chat-toggle {
             background: none;
             border: none;
-            color: #8db9ff;
+            color: #f3d896;
             font-size: 12px;
             cursor: pointer;
             padding: 2px 4px;
@@ -1887,14 +1988,16 @@
         }
 
         #chat-toggle:hover {
-            background: rgba(123, 186, 255, 0.2);
-            color: #b9d8ff;
+            background: rgba(212, 179, 114, 0.16);
+            color: #fff0c6;
         }
 
         #chat-messages {
+            position: relative;
+            z-index: 1;
             font-family: 'EB Garamond', serif;
             font-size: var(--adaptive-chat-font-size);
-            color: #e6f2ff;
+            color: #f8efd9;
             min-height: 0;
             max-height: 100%;
             overflow-y: auto;
@@ -1918,8 +2021,8 @@
             margin-bottom: 4px;
             padding: 4px 8px;
             border-radius: 6px;
-            background: rgba(12, 8, 9, 0.92);
-            border: 1px solid rgba(136, 173, 255, 0.15);
+            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
+            border: 1px solid rgba(205, 169, 104, 0.18);
             word-wrap: break-word;
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
@@ -1931,22 +2034,22 @@
         }
 
         .chat-message .player-id {
-            color: #8ec4ff;
+            color: #f3d896;
             font-weight: bold;
             display: inline-block;
             margin-right: 6px;
-            text-shadow: 0 0 12px rgba(86, 176, 255, 0.35);
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
         }
 
         .chat-message .message-text {
-            color: #eef5ff;
+            color: #f8efd9;
         }
 
         #chat-input {
-            background: rgba(12, 8, 9, 0.92);
-            border: 1px solid rgba(136, 173, 255, 0.25);
-            border-radius: 8px;
-            color: #eef5ff;
+            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
+            border: 2px solid rgba(205, 169, 104, 0.42);
+            border-radius: 0;
+            color: #f8efd9;
             padding: 8px 12px;
             font-size: var(--adaptive-chat-input-font-size);
             font-family: 'EB Garamond', serif;
@@ -1963,13 +2066,13 @@
 
         #chat-input:focus {
             outline: none;
-            border-color: rgba(123, 186, 255, 0.6);
-            background: rgba(12, 8, 9, 0.96);
-            box-shadow: 0 0 18px rgba(91, 149, 255, 0.34);
+            border-color: rgba(237, 213, 161, 0.82);
+            background: linear-gradient(180deg, rgba(22, 15, 10, 0.98), rgba(10, 7, 4, 1));
+            box-shadow: 0 0 18px rgba(212, 179, 114, 0.28);
         }
 
         #chat-input::placeholder {
-            color: rgba(141, 185, 255, 0.5);
+            color: rgba(246, 226, 180, 0.45);
             font-style: italic;
         }
 
@@ -1984,12 +2087,12 @@
         }
 
         #chat-box::-webkit-scrollbar-thumb {
-            background: rgba(123, 166, 255, 0.3);
+            background: rgba(205, 169, 104, 0.3);
             border-radius: 3px;
         }
 
         #chat-box::-webkit-scrollbar-thumb:hover {
-            background: rgba(123, 166, 255, 0.5);
+            background: rgba(205, 169, 104, 0.5);
         }
 
         /* Mobile Controls Styling */
@@ -2021,8 +2124,8 @@
 
         #joystick-container {
             position: relative;
-            width: 120px;
-            height: 120px;
+            width: var(--adaptive-joystick-size);
+            height: var(--adaptive-joystick-size);
             pointer-events: auto;
         }
 
@@ -2031,39 +2134,47 @@
             width: 100%;
             height: 100%;
             border-radius: 50%;
-            background: linear-gradient(180deg, rgba(8, 15, 35, 0.7), rgba(3, 7, 20, 0.8));
-            border: 2px solid rgba(123, 166, 255, 0.42);
+            background:
+                radial-gradient(circle at 50% 30%, rgba(123, 186, 255, 0.1), transparent 48%),
+                linear-gradient(180deg, rgba(34, 24, 11, 0.9), rgba(10, 7, 4, 0.96));
+            border: 3px solid rgba(205, 169, 104, 0.9);
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 0 20px rgba(66, 136, 255, 0.2), inset 0 0 20px rgba(109, 63, 255, 0.12);
+            box-shadow:
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.22),
+                inset 0 0 24px rgba(10, 7, 4, 0.8),
+                inset 0 0 32px rgba(96, 156, 255, 0.08),
+                0 16px 36px rgba(0, 0, 0, 0.28),
+                0 0 22px rgba(82, 138, 255, 0.1);
         }
 
         #joystick-thumb {
             position: absolute;
-            width: 50px;
-            height: 50px;
+            width: var(--adaptive-joystick-thumb-size);
+            height: var(--adaptive-joystick-thumb-size);
             border-radius: 50%;
-            background: linear-gradient(180deg, rgba(86, 134, 255, 0.6), rgba(56, 103, 240, 0.7));
-            border: 2px solid rgba(123, 186, 255, 0.8);
+            background: linear-gradient(180deg, rgba(212, 179, 114, 0.88), rgba(155, 114, 49, 0.96));
+            border: 2px solid rgba(237, 213, 161, 0.86);
             transition: none;
             transform: translate(-50%, -50%);
             left: 50%;
             top: 50%;
-            box-shadow: 0 0 18px rgba(91, 149, 255, 0.34);
+            box-shadow: 0 0 18px rgba(212, 179, 114, 0.28);
         }
 
         #joystick-thumb.active {
-            background: linear-gradient(180deg, rgba(96, 145, 255, 0.8), rgba(66, 113, 250, 0.9));
-            box-shadow: 0 0 28px rgba(91, 149, 255, 0.54);
+            background: linear-gradient(180deg, rgba(241, 213, 143, 0.96), rgba(184, 134, 59, 0.98));
+            box-shadow: 0 0 28px rgba(212, 179, 114, 0.4);
         }
 
         .mobile-action-button {
             width: var(--mobile-action-size);
             height: var(--mobile-action-size);
             border-radius: 50%;
-            border: 3px solid rgba(123, 166, 255, 0.8);
-            color: #eef5ff;
+            border: 3px solid rgba(205, 169, 104, 0.88);
+            color: #f8efd9;
             font-family: 'EB Garamond', serif;
             font-weight: bold;
             font-size: 16px;
@@ -2077,8 +2188,8 @@
             transition: all 0.1s ease;
             box-sizing: border-box;
             background: transparent;
-            box-shadow: 0 0 18px rgba(91, 149, 255, 0.34);
-            text-shadow: 0 0 12px rgba(86, 176, 255, 0.35);
+            box-shadow: 0 0 18px rgba(212, 179, 114, 0.24);
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.24);
         }
 
         #jump-button {
@@ -2094,36 +2205,22 @@
         }
 
         #jump-button:active {
-            background: rgba(96, 145, 255, 0.3);
-            box-shadow: 0 0 28px rgba(91, 149, 255, 0.54), inset 0 0 20px rgba(96, 145, 255, 0.4);
+            background: rgba(212, 179, 114, 0.18);
+            box-shadow: 0 0 28px rgba(212, 179, 114, 0.38), inset 0 0 20px rgba(212, 179, 114, 0.24);
         }
 
         #jump-button.jump-button-pressed {
-            background: rgba(96, 145, 255, 0.3);
-            box-shadow: 0 0 28px rgba(91, 149, 255, 0.54), inset 0 0 20px rgba(96, 145, 255, 0.4);
+            background: rgba(212, 179, 114, 0.18);
+            box-shadow: 0 0 28px rgba(212, 179, 114, 0.38), inset 0 0 20px rgba(212, 179, 114, 0.24);
             transform: scale(0.95);
         }
 
         /* Responsive scaling for different screen sizes */
         @media (max-width: 768px) {
             :root {
-                --mobile-controls-height: 168px;
-                --mobile-edge-gap: 16px;
-                --mobile-action-size: 74px;
-                --mobile-action-gap: 12px;
                 --mobile-chat-width: 240px;
             }
 
-            #joystick-container {
-                width: 112px;
-                height: 112px;
-            }
-            
-            #joystick-thumb {
-                width: 44px;
-                height: 44px;
-            }
-            
             .mobile-action-button {
                 font-size: 14px;
             }
@@ -2132,23 +2229,9 @@
 
         @media (max-width: 480px) {
             :root {
-                --mobile-controls-height: 148px;
-                --mobile-edge-gap: 10px;
-                --mobile-action-size: 64px;
-                --mobile-action-gap: 10px;
                 --mobile-chat-width: 160px;
             }
-            
-            #joystick-container {
-                width: 96px;
-                height: 96px;
-            }
-            
-            #joystick-thumb {
-                width: 40px;
-                height: 40px;
-            }
-            
+
             .mobile-action-button {
                 font-size: 12px;
             }
@@ -2157,25 +2240,25 @@
         @media (hover: none) and (pointer: coarse) {
             #chat-container {
                 left: auto;
-                right: 12px;
+                right: 10px;
                 width: min(var(--adaptive-chat-width), calc(100vw - 24px));
                 max-width: calc(100vw - 24px);
-                bottom: var(--mobile-chat-bottom-offset);
+                bottom: calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 8px);
             }
 
             #chat-box.expanded {
-                height: min(var(--adaptive-chat-expanded-height), 28vh);
-                max-height: min(var(--adaptive-chat-expanded-height), 28vh);
+                height: min(var(--adaptive-chat-expanded-height), 24vh);
+                max-height: min(var(--adaptive-chat-expanded-height), 24vh);
             }
 
             #chat-messages {
                 height: auto;
-                max-height: min(112px, 20vh);
+                max-height: min(96px, 16vh);
             }
 
             #jump-button {
                 position: fixed;
-                right: calc(12px + min(var(--mobile-chat-width), calc(100vw - 24px)) + var(--mobile-action-gap));
+                right: 10px;
                 bottom: var(--mobile-chat-bottom-offset);
                 z-index: 101;
             }
@@ -2206,23 +2289,23 @@
         <div class="menu-main-layout">
             <div class="ui-container" id="ui-wrapper">
                 <div class="menu-hero-panel menu-panel-frame">
-                    <div class="start-title">SOULCLASH</div>
+                    <div class="start-title" data-custom-alphabet="title">SOULCLASH</div>
                     <div class="entry-stack" id="entry-stack">
                         <input type="text" id="player-name-input" class="start-input" placeholder="Enter Name" maxlength="12">
                         <div class="character-select-shell is-visible" id="character-select-shell" aria-live="polite">
                             <div class="character-select-header">
-                                <span>Choose Your Soul</span>
-                                <span class="character-select-status" id="character-select-status">Loading...</span>
+                                <span data-custom-alphabet="label">Choose a soul</span>
+                                <span class="character-select-status" id="character-select-status" data-custom-alphabet="label">Loading...</span>
                             </div>
                             <div class="character-carousel" id="character-carousel">
                                 <div class="character-carousel-track" id="character-carousel-track"></div>
                             </div>
-                            <div class="character-select-footnote" id="character-select-footnote">Choose a soul.</div>
+                            <div class="character-select-footnote" id="character-select-footnote" data-custom-alphabet="label">Choose a soul</div>
                         </div>
                     </div>
                 </div>
 
-                <button id="play-btn" class="play-btn" type="button">PLAY</button>
+                <button id="play-btn" class="play-btn" type="button" data-custom-alphabet="button">PLAY</button>
             </div>
         </div>
     </div>
@@ -2231,43 +2314,42 @@
 
     <div id="loading-screen" class="pixelated-loading">
         <div class="loading-container">
-            <div class="loading-title">LOADING</div>
+            <div class="loading-title" data-custom-alphabet="title">LOADING</div>
             <div class="loading-progress-container">
                 <div id="loading-bar-fill" class="loading-progress-fill"></div>
             </div>
             <div class="loading-meta">
-                <div id="loading-stage-text" class="loading-stage">Initializing...</div>
-                <div id="loading-percent-text" class="loading-percent">0%</div>
+                <div id="loading-percent-text" class="loading-percent" data-custom-alphabet="dynamic">0%</div>
             </div>
         </div>
     </div>
     <canvas id="gameCanvas"></canvas>
     <canvas id="glCanvas" style="display: none;"></canvas>
     <div id="run-hud" aria-live="polite">
-        <div class="run-hud-badge"><span>Soul Draft</span><strong id="run-level-badge" class="run-hud-level">Lv. 1</strong></div>
-        <div class="run-bar-shell">
+        <div class="run-hud-badge in-game-frame in-game-frame-blue"><span data-custom-alphabet="label">Soul Draft</span><strong id="run-level-badge" class="run-hud-level" data-custom-alphabet="dynamic">Lvl. 1</strong></div>
+        <div class="run-bar-shell in-game-frame in-game-frame-blue">
             <div class="run-bar-track">
                 <div id="run-hp-fill" class="run-bar-fill hp"></div>
-                <div class="run-bar-label"><span>HP</span><strong id="run-hp-value" class="run-bar-value">100 / 100</strong></div>
+                <div class="run-bar-label"><span data-custom-alphabet="label">HP</span><strong id="run-hp-value" class="run-bar-value" data-custom-alphabet="dynamic">100 / 100</strong></div>
             </div>
         </div>
-        <div class="run-bar-shell">
+        <div class="run-bar-shell in-game-frame in-game-frame-blue">
             <div class="run-bar-track">
                 <div id="run-xp-fill" class="run-bar-fill xp"></div>
-                <div class="run-bar-label"><span>XP</span><strong id="run-xp-value" class="run-bar-value">0 / 30</strong></div>
+                <div class="run-bar-label"><span data-custom-alphabet="label">XP</span><strong id="run-xp-value" class="run-bar-value" data-custom-alphabet="dynamic">0 / 30</strong></div>
             </div>
         </div>
     </div>
     <div id="progression-feed" aria-live="polite"></div>
-    <div id="souls-leaderboard" aria-live="polite">
-        <div class="souls-leaderboard-header">Soul Leaderboard</div>
+    <div id="souls-leaderboard" class="in-game-frame in-game-frame-blue" aria-live="polite">
+        <div class="souls-leaderboard-header" data-custom-alphabet="title">Soul Leaderboard</div>
         <div id="souls-leaderboard-body" class="souls-leaderboard-body"></div>
     </div>
     <div id="upgrade-draft-overlay" aria-live="polite">
         <div class="upgrade-draft-shell">
             <div class="upgrade-draft-header">
-                <div class="upgrade-draft-title">Choose Your Boon</div>
-                <div id="upgrade-draft-subtitle" class="upgrade-draft-subtitle">A new soul trait stirs in the flame.</div>
+                <div class="upgrade-draft-title" data-custom-alphabet="title">Choose Your Boon</div>
+                <div id="upgrade-draft-subtitle" class="upgrade-draft-subtitle" data-custom-alphabet="dynamic">A new soul trait stirs in the flame.</div>
             </div>
             <div id="upgrade-draft-cards" class="upgrade-draft-cards"></div>
         </div>
@@ -2275,10 +2357,10 @@
     
     <!-- Chat Input -->
     <div id="chat-container">
-        <div id="chat-box">
+        <div id="chat-box" class="in-game-frame in-game-frame-blue">
             <div id="chat-header">
-                <span>Chat</span>
-                <button id="chat-toggle" title="Toggle Chat">▼</button>
+                <span data-custom-alphabet="label">Chat</span>
+                <button id="chat-toggle" title="Toggle Chat" data-custom-alphabet="button">▼</button>
             </div>
             <div id="chat-messages"></div>
         </div>
@@ -2295,20 +2377,20 @@
             </div>
         </div>
     </div>
-    <div id="jump-button" class="mobile-action-button">
+    <div id="jump-button" class="mobile-action-button" data-custom-alphabet="button">
         <img src="/gui/jump_button.png" alt="Jump" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;">
     </div>
     <div id="settings-modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
         <div class="settings-window menu-panel-frame">
             <div class="settings-header">
-                <span id="settings-title">Settings</span>
-                <button id="close-settings-btn" class="settings-close" type="button" aria-label="Close settings">X</button>
+                <span id="settings-title" data-custom-alphabet="title">Settings</span>
+                <button id="close-settings-btn" class="settings-close" type="button" aria-label="Close settings" data-custom-alphabet="button">X</button>
             </div>
             <div class="settings-grid">
                 <div class="settings-row">
                     <div class="settings-row-header">
-                        <span>Sound Effects</span>
-                        <span class="settings-value" id="settings-sfx-value">100%</span>
+                        <span data-custom-alphabet="label">Sound Effects</span>
+                        <span class="settings-value" id="settings-sfx-value" data-custom-alphabet="dynamic">100%</span>
                     </div>
                     <p class="settings-row-copy">Adjust clicks, combat hits, footsteps, and menu feedback.</p>
                     <input id="settings-sfx" type="range" min="0" max="100" step="1" value="100">
@@ -2316,7 +2398,7 @@
                 <div class="settings-row">
                     <div class="settings-row-header">
                         <span>Music</span>
-                        <span class="settings-value" id="settings-music-value">100%</span>
+                        <span class="settings-value" id="settings-music-value" data-custom-alphabet="dynamic">100%</span>
                     </div>
                     <p class="settings-row-copy">Lower or raise the combat music bed without muting effects.</p>
                     <input id="settings-music" type="range" min="0" max="100" step="1" value="100">
@@ -2324,8 +2406,8 @@
                 <div class="settings-row">
                     <div class="settings-toggle">
                         <div>
-                            <div class="settings-toggle-copy">Mobile Controls</div>
-                            <p class="settings-row-copy">Show or hide the on-screen joystick and jump control on touch devices.</p>
+                            <div class="settings-toggle-copy" data-custom-alphabet="label">Mobile Controls</div>
+                            <p class="settings-row-copy" data-custom-alphabet="dynamic">Show or hide the on-screen joystick and jump control on touch devices.</p>
                         </div>
                         <label class="settings-switch" aria-label="Toggle mobile controls">
                             <input id="settings-mobile-controls" type="checkbox">
@@ -2336,7 +2418,7 @@
                     </div>
                 </div>
                 <div class="settings-row" id="exit-to-menu-row" style="display: none;">
-                    <button id="exit-to-menu-btn" type="button" style="width: 100%; padding: 14px; background: linear-gradient(180deg, rgba(180, 60, 60, 0.9), rgba(120, 30, 30, 0.95)); border: 2px solid rgba(255, 100, 100, 0.7); border-radius: 12px; color: white; font: inherit; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; font-size: 0.9rem;">Exit to Main Menu</button>
+                    <button id="exit-to-menu-btn" type="button" style="width: 100%; padding: 14px; background: linear-gradient(180deg, rgba(180, 60, 60, 0.9), rgba(120, 30, 30, 0.95)); border: 2px solid rgba(255, 100, 100, 0.7); border-radius: 12px; color: white; font: inherit; letter-spacing: 0.2em; text-transform: uppercase; cursor: pointer; font-size: 0.9rem;" data-custom-alphabet="button">Exit to Main Menu</button>
                 </div>
             </div>
         </div>
@@ -2827,6 +2909,454 @@
             }
 
             return response.text();
+        }
+
+        const CUSTOM_ALPHABET_GLYPH_MAP = new Map([
+            ['A', 'A'],
+            ['B', 'B'],
+            ['C', 'C'],
+            ['D', 'D'],
+            ['E', 'E'],
+            ['F', 'F'],
+            ['G', 'G'],
+            ['H', 'H'],
+            ['I', 'I'],
+            ['J', 'J'],
+            ['K', 'K'],
+            ['L', 'L'],
+            ['M', 'M'],
+            ['N', 'N'],
+            ['O', 'O'],
+            ['P', 'P'],
+            ['Q', 'Q'],
+            ['R', 'R'],
+            ['S', 'S'],
+            ['T', 'T'],
+            ['U', 'U'],
+            ['V', 'V'],
+            ['W', 'W'],
+            ['X', 'X'],
+            ['Y', 'Y'],
+            ['Z', 'Z'],
+            ['0', '0'],
+            ['1', '1'],
+            ['2', '2'],
+            ['3', '3'],
+            ['4', '4'],
+            ['5', '5'],
+            ['6', '6'],
+            ['7', '7'],
+            ['8', '8'],
+            ['9', '9'],
+            ['!', '!'],
+            ['#', '#'],
+            ['$', '$'],
+            ['%', '%'],
+            ['&', '&'],
+            ['(', '('],
+            [')', ')'],
+            ['+', '+'],
+            ['=', '='],
+            ['@', '@'],
+            ['*', 'asterisk'],
+            ['.', 'period'],
+            [':', 'colon'],
+            [';', 'semi_colon'],
+            ['?', 'question_mark'],
+            ['/', 'right_slash'],
+            ['<', 'less_than_sign'],
+            ['>', 'greater_than_sign'],
+        ]);
+        const CUSTOM_ALPHABET_CHARS = Array.from(CUSTOM_ALPHABET_GLYPH_MAP.keys());
+        const CUSTOM_ALPHABET_SPRITESHEET_SEQUENCE = [
+            'A','B','C','D','E','F','G','H',
+            'I','J','K','L','M','N','O','P',
+            'Q','R','S','T','U','V','W','X',
+            'Y','Z','0','1','2','3','4','5',
+            '6','7','8','9','!','@','#','$',
+            '%','^','&','*','(',')','-','=',
+            '+',':',';','<','>','.','/','?'
+        ];
+        const CUSTOM_ALPHABET_SPRITESHEET_COLUMNS = 7;
+        const CUSTOM_ALPHABET_SPRITESHEET_ROWS = 8;
+        const CUSTOM_ALPHABET_SPRITESHEET_URL = '/gui/font_spritesheet.png?v=2';
+        const CUSTOM_TEXT_SCALE = 0.22;
+        const CUSTOM_TEXT_LETTER_SPACING_SHRINK = 9;
+        const customAlphabetCache = new Map();
+        let customAlphabetLoadPromise = null;
+        let customAlphabetSpritesheetBitmap = null;
+        let customAlphabetSpritesheetPromise = null;
+
+        function normalizeCustomAlphabetChar(char) {
+            const upper = String(char ?? '').toUpperCase();
+            return CUSTOM_ALPHABET_GLYPH_MAP.has(upper) ? upper : null;
+        }
+
+        function getCustomAlphabetAssetUrl(letter) {
+            const assetName = CUSTOM_ALPHABET_GLYPH_MAP.get(letter) || letter;
+            return `/api/gui/alphabet/${encodeURIComponent(assetName)}`;
+        }
+
+        async function loadCustomAlphabetSpritesheet() {
+            if (customAlphabetSpritesheetBitmap) {
+                return customAlphabetSpritesheetBitmap;
+            }
+
+            if (!customAlphabetSpritesheetPromise) {
+                customAlphabetSpritesheetPromise = fetch(CUSTOM_ALPHABET_SPRITESHEET_URL, {
+                    cache: 'no-cache'
+                })
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`Failed to load font spritesheet: ${response.status}`);
+                        }
+                        return response.blob();
+                    })
+                    .then((blob) => createImageBitmap(blob))
+                    .then((bitmap) => {
+                        customAlphabetSpritesheetBitmap = bitmap;
+                        return bitmap;
+                    })
+                    .catch((error) => {
+                        customAlphabetSpritesheetPromise = null;
+                        throw error;
+                    });
+            }
+
+            return customAlphabetSpritesheetPromise;
+        }
+
+        async function sliceCustomAlphabetGlyphFromSpritesheet(letter) {
+            const glyphIndex = CUSTOM_ALPHABET_SPRITESHEET_SEQUENCE.indexOf(letter);
+            if (glyphIndex < 0) {
+                return null;
+            }
+
+            const spritesheet = await loadCustomAlphabetSpritesheet();
+            const cellWidth = Math.floor(spritesheet.width / CUSTOM_ALPHABET_SPRITESHEET_COLUMNS);
+            const cellHeight = Math.floor(spritesheet.height / CUSTOM_ALPHABET_SPRITESHEET_ROWS);
+            const column = glyphIndex % CUSTOM_ALPHABET_SPRITESHEET_COLUMNS;
+            const row = Math.floor(glyphIndex / CUSTOM_ALPHABET_SPRITESHEET_COLUMNS);
+
+            return createImageBitmap(
+                spritesheet,
+                column * cellWidth,
+                row * cellHeight,
+                cellWidth,
+                cellHeight
+            );
+        }
+
+        async function loadCustomAlphabetGlyph(letter) {
+            const normalizedLetter = normalizeCustomAlphabetChar(letter);
+            if (!normalizedLetter) {
+                return null;
+            }
+
+            if (customAlphabetCache.has(normalizedLetter)) {
+                return customAlphabetCache.get(normalizedLetter);
+            }
+
+            try {
+                let bitmap = null;
+
+                try {
+                    bitmap = await sliceCustomAlphabetGlyphFromSpritesheet(normalizedLetter);
+                } catch (spritesheetError) {
+                    console.warn(`Failed to load spritesheet glyph ${normalizedLetter}:`, spritesheetError);
+                }
+
+                if (!bitmap) {
+                    bitmap = await fetchProtectedBlob(getCustomAlphabetAssetUrl(normalizedLetter), 'image/png')
+                        .then((blob) => createImageBitmap(blob));
+                }
+
+                customAlphabetCache.set(normalizedLetter, bitmap);
+                return bitmap;
+            } catch (error) {
+                console.warn(`Failed to load custom alphabet glyph ${normalizedLetter} (${CUSTOM_ALPHABET_GLYPH_MAP.get(normalizedLetter)}):`, error);
+                customAlphabetCache.set(normalizedLetter, null);
+                return null;
+            }
+        }
+
+        async function preloadCustomAlphabet() {
+            if (!customAlphabetLoadPromise) {
+                customAlphabetLoadPromise = Promise.all(
+                    CUSTOM_ALPHABET_CHARS.map((letter) => loadCustomAlphabetGlyph(letter))
+                ).catch((error) => {
+                    customAlphabetLoadPromise = null;
+                    throw error;
+                });
+            }
+
+            return customAlphabetLoadPromise;
+        }
+
+        function getCustomAlphabetAdvanceAdjustment(currentEntry, nextEntry, scale, letterSpacing) {
+            const baseSpacing = letterSpacing * scale;
+            const nextBreaksWord = !nextEntry || nextEntry.type === 'space';
+            if (nextBreaksWord) {
+                return baseSpacing;
+            }
+
+            return baseSpacing - CUSTOM_TEXT_LETTER_SPACING_SHRINK * scale;
+        }
+
+        function drawCustomAlphabetText(ctx, text, x, y, options = {}) {
+            const {
+                align = 'center',
+                scale = 1,
+                letterSpacing = 0,
+                wordSpacing = 0,
+                trimOverlap = 0,
+                fallbackFont = 'bold 8px "EB Garamond", serif',
+                fillStyle = '#f7f1e8',
+                strokeStyle = 'rgba(0, 0, 0, 0.75)',
+                strokeWidth = 3,
+            } = options;
+
+            const value = String(text ?? '');
+            const glyphs = [];
+            let totalWidth = 0;
+
+            for (const rawChar of value) {
+                if (rawChar === ' ') {
+                    glyphs.push({ type: 'space' });
+                    continue;
+                }
+
+                const letter = normalizeCustomAlphabetChar(rawChar);
+                if (!letter) {
+                    glyphs.push({ type: 'fallback', char: rawChar });
+                    continue;
+                }
+
+                const glyph = customAlphabetCache.get(letter);
+                if (!glyph) {
+                    glyphs.push({ type: 'fallback', char: rawChar });
+                    continue;
+                }
+
+                const glyphWidth = glyph.width * CUSTOM_TEXT_SCALE * scale;
+                const glyphHeight = glyph.height * CUSTOM_TEXT_SCALE * scale;
+                glyphs.push({ type: 'glyph', glyph, width: glyphWidth, height: glyphHeight });
+            }
+
+            if (!glyphs.length) {
+                return;
+            }
+
+            for (let index = 0; index < glyphs.length; index++) {
+                const entry = glyphs[index];
+                const nextEntry = glyphs[index + 1] || null;
+
+                if (entry.type === 'space') {
+                    totalWidth += Math.max(2, wordSpacing * scale);
+                    continue;
+                }
+
+                if (entry.type === 'glyph') {
+                    totalWidth += entry.width - trimOverlap * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+                    continue;
+                }
+
+                totalWidth += 4 * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+            }
+
+            if (align === 'center') {
+                x -= totalWidth / 2;
+            } else if (align === 'right') {
+                x -= totalWidth;
+            }
+
+            ctx.save();
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = fillStyle;
+            ctx.strokeStyle = strokeStyle;
+            ctx.lineWidth = strokeWidth;
+
+            let cursorX = x;
+            const baselineY = y;
+            for (let index = 0; index < glyphs.length; index++) {
+                const entry = glyphs[index];
+                const nextEntry = glyphs[index + 1] || null;
+                if (entry.type === 'glyph') {
+                    const drawX = cursorX;
+                    const drawY = baselineY - entry.height / 2;
+                    ctx.drawImage(entry.glyph, drawX, drawY, entry.width, entry.height);
+                    cursorX += entry.width + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+                    continue;
+                }
+
+                if (entry.type === 'space') {
+                    cursorX += Math.max(2, wordSpacing * scale);
+                    continue;
+                }
+
+                ctx.font = fallbackFont;
+                ctx.strokeText(entry.char, cursorX, baselineY);
+                ctx.fillText(entry.char, cursorX, baselineY);
+                cursorX += 4 * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+            }
+
+            ctx.restore();
+        }
+
+        function renderCustomAlphabetToCanvas(text, options = {}) {
+            const {
+                scale = 1,
+                letterSpacing = 0,
+                wordSpacing = 0,
+                trimOverlap = 0,
+                paddingX = 2,
+                paddingY = 2,
+                background = 'transparent',
+            } = options;
+
+            const value = String(text ?? '');
+            const measurements = [];
+            let width = paddingX * 2;
+            let height = paddingY * 2;
+
+            for (const rawChar of value) {
+                if (rawChar === ' ') {
+                    measurements.push({ type: 'space' });
+                    continue;
+                }
+
+                const letter = normalizeCustomAlphabetChar(rawChar);
+                const glyph = letter ? customAlphabetCache.get(letter) : null;
+                if (glyph) {
+                    const glyphWidth = glyph.width * CUSTOM_TEXT_SCALE * scale;
+                    const glyphHeight = glyph.height * CUSTOM_TEXT_SCALE * scale;
+                    measurements.push({ type: 'glyph', glyph, width: glyphWidth, height: glyphHeight });
+                    height = Math.max(height, glyphHeight + paddingY * 2);
+                } else {
+                    measurements.push({ type: 'fallback', char: rawChar });
+                    height = Math.max(height, 10 * scale + paddingY * 2);
+                }
+            }
+
+            for (let index = 0; index < measurements.length; index++) {
+                const entry = measurements[index];
+                const nextEntry = measurements[index + 1] || null;
+
+                if (entry.type === 'space') {
+                    width += Math.max(2, wordSpacing * scale);
+                    continue;
+                }
+
+                if (entry.type === 'glyph') {
+                    width += entry.width + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+                    continue;
+                }
+
+                width += 4 * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.ceil(width));
+            canvas.height = Math.max(1, Math.ceil(height));
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                return null;
+            }
+
+            if (background !== 'transparent') {
+                ctx.fillStyle = background;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            let cursorX = paddingX;
+            const baselineY = canvas.height / 2;
+            for (let index = 0; index < measurements.length; index++) {
+                const entry = measurements[index];
+                const nextEntry = measurements[index + 1] || null;
+                if (entry.type === 'glyph') {
+                    ctx.drawImage(entry.glyph, cursorX, baselineY - entry.height / 2, entry.width, entry.height);
+                    cursorX += entry.width + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+                    continue;
+                }
+
+                if (entry.type === 'space') {
+                    cursorX += Math.max(2, wordSpacing * scale);
+                    continue;
+                }
+
+                ctx.font = `bold ${Math.max(6, Math.round(8 * scale))}px "EB Garamond", serif`;
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#f7f1e8';
+                ctx.fillText(entry.char, cursorX, baselineY);
+                cursorX += 4 * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+            }
+
+            return canvas;
+        }
+
+        function applyCustomAlphabetToElement(element, options = {}) {
+            if (!element) return;
+            const text = String(element.dataset.customAlphabetText ?? element.textContent ?? '').trim();
+            if (!text) return;
+
+            element.dataset.customAlphabetText = text;
+            const canvas = renderCustomAlphabetToCanvas(text, options);
+            if (!canvas) return;
+
+            element.textContent = '';
+            element.style.display = 'inline-block';
+            element.style.lineHeight = '0';
+            element.style.verticalAlign = 'middle';
+            element.style.fontSize = '0';
+            element.appendChild(canvas);
+        }
+
+        function setCustomAlphabetText(element, text) {
+            if (!element) return;
+            element.dataset.customAlphabetText = String(text ?? '');
+            applyCustomAlphabetToElement(element, element.dataset.customAlphabet === 'title'
+                ? { scale: 1.22, letterSpacing: -1, wordSpacing: 4 }
+                : element.dataset.customAlphabet === 'label'
+                    ? { scale: 0.7, letterSpacing: -1, wordSpacing: 4 }
+                    : element.dataset.customAlphabet === 'button'
+                        ? { scale: 0.66, letterSpacing: -1, wordSpacing: 4 }
+                        : { scale: 0.7, letterSpacing: -1, wordSpacing: 4 });
+        }
+
+        function bindCustomAlphabetInput(input, mirror) {
+            if (!input || !mirror) return;
+
+            const sync = () => {
+                const value = String(input.value ?? '');
+                setCustomAlphabetText(mirror, value || input.placeholder || '');
+                mirror.style.opacity = value ? '1' : '0.65';
+            };
+
+            input.addEventListener('input', sync);
+            input.addEventListener('change', sync);
+            sync();
+        }
+
+        function refreshCustomAlphabetUi(root = document) {
+            root.querySelectorAll('[data-custom-alphabet="title"]').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 1.22, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('[data-custom-alphabet="label"]').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.7, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('[data-custom-alphabet="button"]').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.66, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('[data-custom-alphabet="dynamic"]').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.7, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.character-card-label').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.66, letterSpacing: -1, wordSpacing: 4 });
+            });
         }
 
         async function getCharacterToken(characterName) {
@@ -3445,7 +3975,7 @@
         }
 
         // Start Screen Logic
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const startScreen = document.getElementById('start-screen');
             const loadingScreen = document.getElementById('loading-screen');
             const loadingContainer = loadingScreen?.querySelector('.loading-container');
@@ -3463,10 +3993,15 @@
             const settingsSfx = document.getElementById('settings-sfx');
             const settingsMusic = document.getElementById('settings-music');
             const settingsMobileControls = document.getElementById('settings-mobile-controls');
+            const settingsMobileControlsToggle = settingsMobileControls?.closest('.settings-toggle');
             const settingsSfxValue = document.getElementById('settings-sfx-value');
             const settingsMusicValue = document.getElementById('settings-music-value');
             const exitToMenuBtn = document.getElementById('exit-to-menu-btn');
             const exitToMenuRow = document.getElementById('exit-to-menu-row');
+            await preloadCustomAlphabet().catch((error) => {
+                console.warn('Custom alphabet preload failed during boot:', error);
+            });
+            refreshCustomAlphabetUi();
             
             let targetX = 0, targetY = 0;
             let currX = 0, currY = 0;
@@ -3485,10 +4020,9 @@
             startScreen.style.visibility = 'hidden';
             loadingStage = 'Forging cards...';
             updateLoadingScreen();
-            loadingScreen.style.display = 'flex';
-            loadingScreen.style.opacity = '1';
+            loadingScreen.style.display = 'none';
+            loadingScreen.style.opacity = '0';
             loadingContainer?.classList.add('is-boot-hidden');
-
             window.addEventListener('mousemove', (e) => {
                 targetX = (e.clientX / window.innerWidth - 0.5);
                 targetY = (e.clientY / window.innerHeight - 0.5);
@@ -3515,7 +4049,6 @@
             
             // Initialize WebGL
             initGL();
-
             let sharedGameAudioContext = null;
             const registeredGameAudioSystems = new Set();
 
@@ -3533,14 +4066,16 @@
             bindGlobalAudioRecovery();
 
             function updateSettingsValueLabels() {
-                settingsSfxValue.textContent = `${Math.round(getSfxSetting() * 100)}%`;
-                settingsMusicValue.textContent = `${Math.round(getMusicSetting() * 100)}%`;
+                setCustomAlphabetText(settingsSfxValue, `${Math.round(getSfxSetting() * 100)}%`);
+                setCustomAlphabetText(settingsMusicValue, `${Math.round(getMusicSetting() * 100)}%`);
             }
 
             function syncSettingsForm() {
                 settingsSfx.value = String(Math.round(getSfxSetting() * 100));
                 settingsMusic.value = String(Math.round(getMusicSetting() * 100));
                 settingsMobileControls.checked = menuSettings.showMobileControls !== false;
+                settingsMobileControls.disabled = !isMobile;
+                settingsMobileControlsToggle?.classList.toggle('is-disabled', !isMobile);
                 updateSettingsValueLabels();
                 applyMobileControlsVisibility();
             }
@@ -5197,14 +5732,18 @@
             }
 
             function updateSelectionCopy(message, isError = false) {
-                characterStatus.textContent = message;
+                if (!message) {
+                    characterStatus.textContent = '';
+                    return;
+                }
+                setCustomAlphabetText(characterStatus, message);
                 characterStatus.style.color = isError ? '#ff8f8f' : '#8fb6ff';
             }
 
             function setFootnote(message) {
                 characterFootnote.classList.add('is-refreshing');
                 requestAnimationFrame(() => {
-                    characterFootnote.textContent = message;
+                    setCustomAlphabetText(characterFootnote, message);
                     requestAnimationFrame(() => {
                         characterFootnote.classList.remove('is-refreshing');
                     });
@@ -5223,11 +5762,8 @@
                     openSettingsBtn.classList.remove('in-game');
                 }
                 startScreen.style.transition = 'opacity 0.35s ease';
-                loadingScreen.style.transition = 'opacity 0.35s ease';
                 startScreen.style.opacity = '1';
-                loadingScreen.style.opacity = '0';
                 await new Promise((resolve) => setTimeout(resolve, 360));
-                loadingScreen.style.display = 'none';
                 loadingContainer?.classList.add('is-boot-hidden');
             }
 
@@ -5270,9 +5806,9 @@
                 if (selectedCharacter === focused.character) {
                     updateSelectionCopy(`SELECTED: ${formatCharacterName(focused.character)}`);
                 } else if (selectedCharacter) {
-                    updateSelectionCopy('SELECTED');
+                    updateSelectionCopy('Press play to start');
                 } else {
-                    updateSelectionCopy('Choose a soul');
+                    updateSelectionCopy('');
                 }
             }
 
@@ -5296,7 +5832,7 @@
                 selectedCharacter = focused.character;
                 menuAudio.play('set', 0.7);
                 updateFocusedCardTransforms();
-                setFootnote(`${formatCharacterName(selectedCharacter)} chosen. Press play when ready.`);
+                setFootnote('Press play to start');
             }
 
             function renderCharacterCarousel() {
@@ -5321,6 +5857,7 @@
 
                     const label = document.createElement('div');
                     label.className = 'character-card-label';
+                    label.dataset.customAlphabet = 'label';
                     label.textContent = formatCharacterName(entry.character);
 
                     button.appendChild(cardCanvas);
@@ -5333,13 +5870,14 @@
                 });
 
                 updateFocusedCardTransforms();
+                refreshCustomAlphabetUi();
             }
 
             async function loadCharacterSelections() {
                 try {
-                    updateSelectionCopy('Forging cards...');
-                    setFootnote('The archive is opening.');
-                    loadingStage = 'Forging cards...';
+                    updateSelectionCopy('Loading');
+                    setFootnote('Loading');
+                    loadingStage = 'Loading';
                     updateLoadingScreen();
 
                     availableCharacterSelections = await withTimeout(
@@ -5414,6 +5952,7 @@
                     renderCharacterCarousel();
                     selectionUiReady = true;
                     updateSelectionCopy('Choose a soul');
+                    setFootnote('Choose a soul.');
                     syncSoulChooserVisibility();
                     playBtn.classList.remove('disabled');
                     await revealStartScreen();
@@ -5539,6 +6078,10 @@
             });
 
             settingsMobileControls.addEventListener('change', () => {
+                if (!isMobile) {
+                    settingsMobileControls.checked = false;
+                    return;
+                }
                 menuSettings.showMobileControls = settingsMobileControls.checked;
                 commitSettings();
                 menuAudio.play('set', 0.55);
@@ -5558,10 +6101,18 @@
 
             function startGame() {
                 if (!selectedCharacter) {
-                    updateSelectionCopy('Choose a soul', true);
-                    setFootnote('Center a card, tap it, then press play.');
-                    syncSoulChooserVisibility();
-                    return;
+                    const blankySelection = availableCharacterSelections.find((entry) => entry.character === 'blanky');
+                    if (blankySelection) {
+                        selectedCharacter = 'blanky';
+                        focusIndex = Math.max(0, availableCharacterSelections.indexOf(blankySelection));
+                        updateFocusedCardTransforms();
+                        setFootnote('Blanky was chosen automatically.');
+                    } else {
+                        updateSelectionCopy('Choose a soul', true);
+                        setFootnote('Center a card, tap it, then press play.');
+                        syncSoulChooserVisibility();
+                        return;
+                    }
                 }
 
                 let name = nameInput.value.trim();
@@ -5575,7 +6126,7 @@
                 myPlayerName = name;
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
-                loadingStage = 'Forging soul link...';
+                loadingStage = 'Loading';
                 loadingProgress = 0;
                 updateLoadingScreen();
                 
@@ -5726,11 +6277,109 @@
             const chatInputFontSize = Math.round(
                 Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02) * sharedViewZoom)
             );
+            const hudWidth = Math.round(
+                Math.min(
+                    isMobile ? 300 : 420,
+                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22)) * sharedViewZoom
+                )
+            );
+            const hudGap = Math.round(
+                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)) * sharedViewZoom)
+            );
+            const hudPanelPaddingY = Math.round(
+                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
+            );
+            const hudPanelPaddingX = Math.round(
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
+            );
+            const hudBarPaddingX = Math.round(
+                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)) * sharedViewZoom)
+            );
+            const hudBarPaddingBottom = Math.round(
+                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)) * sharedViewZoom)
+            );
+            const hudTrackHeight = Math.round(
+                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)) * sharedViewZoom)
+            );
+            const hudLabelFontSize = Math.max(
+                0.72,
+                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)) * sharedViewZoom)
+            );
+            const leaderboardWidth = Math.round(
+                Math.min(
+                    isMobile ? 220 : 340,
+                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18)) * sharedViewZoom
+                )
+            );
+            const leaderboardTop = Math.round(
+                Math.min(isMobile ? 82 : 112, Math.max(isMobile ? 64 : 88, displayHeight * (isMobile ? 0.095 : 0.11)))
+            );
+            const feedWidth = Math.round(
+                Math.min(
+                    isMobile ? 360 : 560,
+                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32)) * sharedViewZoom
+                )
+            );
+            const toastWidth = Math.round(
+                Math.min(
+                    isMobile ? 340 : 520,
+                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28)) * sharedViewZoom
+                )
+            );
+            const toastPaddingY = Math.round(
+                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
+            );
+            const toastPaddingX = Math.round(
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
+            );
+            const chatEdge = Math.round(
+                Math.min(isMobile ? 12 : 20, Math.max(8, displayWidth * (isMobile ? 0.014 : 0.01)))
+            );
+            const mobileActionSize = Math.round(
+                Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)) * sharedViewZoom)
+            );
+            const joystickSize = Math.round(
+                Math.min(isMobile ? 116 : 120, Math.max(isMobile ? 78 : 92, displayWidth * (isMobile ? 0.13 : 0.07)) * sharedViewZoom)
+            );
+            const joystickThumbSize = Math.round(
+                Math.min(isMobile ? 46 : 50, Math.max(isMobile ? 34 : 40, joystickSize * 0.42))
+            );
+            const mobileControlsHeight = Math.round(
+                Math.min(isMobile ? 168 : 184, Math.max(isMobile ? 116 : 132, displayHeight * (isMobile ? 0.22 : 0.18)) * sharedViewZoom)
+            );
+            const mobileEdgeGap = Math.round(
+                Math.min(isMobile ? 16 : 20, Math.max(8, displayWidth * (isMobile ? 0.02 : 0.012)))
+            );
+            const mobileActionGap = Math.round(
+                Math.min(isMobile ? 12 : 14, Math.max(8, displayWidth * (isMobile ? 0.018 : 0.01)))
+            );
 
             document.documentElement.style.setProperty('--adaptive-chat-width', `${chatWidth}px`);
             document.documentElement.style.setProperty('--adaptive-chat-expanded-height', `${chatExpandedHeight}px`);
             document.documentElement.style.setProperty('--adaptive-chat-font-size', `${chatFontSize}px`);
             document.documentElement.style.setProperty('--adaptive-chat-input-font-size', `${chatInputFontSize}px`);
+            document.documentElement.style.setProperty('--adaptive-joystick-size', `${joystickSize}px`);
+            document.documentElement.style.setProperty('--adaptive-joystick-thumb-size', `${joystickThumbSize}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-width', `${hudWidth}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-gap', `${hudGap}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-panel-padding-y', `${hudPanelPaddingY}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-panel-padding-x', `${hudPanelPaddingX}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-bar-padding-x', `${hudBarPaddingX}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-bar-padding-bottom', `${hudBarPaddingBottom}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-track-height', `${hudTrackHeight}px`);
+            document.documentElement.style.setProperty('--adaptive-hud-label-font-size', `${hudLabelFontSize}rem`);
+            document.documentElement.style.setProperty('--adaptive-leaderboard-width', `${leaderboardWidth}px`);
+            document.documentElement.style.setProperty('--adaptive-leaderboard-top', `${leaderboardTop}px`);
+            document.documentElement.style.setProperty('--adaptive-feed-width', `${feedWidth}px`);
+            document.documentElement.style.setProperty('--adaptive-feed-gap', `${hudGap}px`);
+            document.documentElement.style.setProperty('--adaptive-toast-width', `${toastWidth}px`);
+            document.documentElement.style.setProperty('--adaptive-toast-padding-y', `${toastPaddingY}px`);
+            document.documentElement.style.setProperty('--adaptive-toast-padding-x', `${toastPaddingX}px`);
+            document.documentElement.style.setProperty('--adaptive-chat-edge', `${chatEdge}px`);
+            document.documentElement.style.setProperty('--mobile-action-size', `${mobileActionSize}px`);
+            document.documentElement.style.setProperty('--mobile-controls-height', `${mobileControlsHeight}px`);
+            document.documentElement.style.setProperty('--mobile-edge-gap', `${mobileEdgeGap}px`);
+            document.documentElement.style.setProperty('--mobile-action-gap', `${mobileActionGap}px`);
             
             if (glCanvas) {
                 glCanvas.width = renderWidth;
@@ -5867,14 +6516,10 @@
          * Updates the loading stage and percent labels.
          */
         function renderLoadingText() {
-            const stageText = document.getElementById('loading-stage-text');
             const percentText = document.getElementById('loading-percent-text');
 
-            if (stageText) {
-                stageText.textContent = loadingStage;
-            }
             if (percentText) {
-                percentText.textContent = `${Math.round(visualProgress)}%`;
+                setCustomAlphabetText(percentText, `${Math.round(visualProgress)}%`);
             }
         }
 
@@ -6130,20 +6775,21 @@
                     return;
                 }
                 
-                loadingStage = 'Negotiating soul handshake...';
+                loadingStage = 'Loading';
                 updateLoadingScreen();
 
                 const metaRes = await fetch(`/api/character_metadata/${assignedCharacter}`);
                 characterMetadata = await metaRes.json();
                 characterMetadataCache[assignedCharacter] = characterMetadata;
                 
-                loadingStage = 'Resolving runtime dependencies...';
+                loadingStage = 'Loading';
                 updateLoadingScreen();
 
                 const assetNames = Object.keys(characterMetadata);
                 
                 // Get token for character asset access
                 const characterToken = await getCharacterToken(assignedCharacter);
+                const alphabetPromise = preloadCustomAlphabet();
                 
                 // Load all assets in parallel using tokenized endpoint for security
                 const loadPromises = assetNames.map(async (name, index) => {
@@ -6155,18 +6801,18 @@
                     // Calculate progress based on both character assets and additional loading stages
                     const characterProgress = ((index + 1) / assetNames.length) * 70; // 70% for character assets
                     loadingProgress = characterProgress;
-                    loadingStage = 'Streaming encrypted modules...';
+                    loadingStage = 'Loading';
                     updateLoadingScreen();
                     return asset;
                 });
                 
-                await Promise.all(loadPromises);
+                await Promise.all([Promise.all(loadPromises), alphabetPromise]);
                 
                 // Store assets in the multi-character cache
                 playerCharacterAssets[assignedCharacter] = {...characterAssets};
                 
                 // Load map and other assets
-                loadingStage = 'Synchronizing realm state...';
+                loadingStage = 'Loading';
                 loadingProgress = 80;
                 updateLoadingScreen();
                 
@@ -6175,12 +6821,12 @@
                     Promise.resolve().then(() => syncCurrentMapToServer(true))
                 ]);
                 
-                loadingStage = 'Compiling client context...';
+                loadingStage = 'Loading';
                 loadingProgress = 95;
                 updateLoadingScreen();
                 
                 loadingProgress = 100;
-                loadingStage = 'Link established.';
+                loadingStage = 'Loading';
                 updateLoadingScreen();
                 
                 // Keep only a tiny minimum hold so fast loads do not flicker.
@@ -6195,7 +6841,7 @@
                 
             } catch (error) {
                 console.error('Error loading character assets:', error);
-                loadingStage = 'Handshake interrupted';
+                loadingStage = 'Loading';
                 updateLoadingScreen();
             }
         }
@@ -6317,6 +6963,7 @@
         function updateLoadingScreen() {
             updateLoadingBar(loadingProgress);
             renderLoadingText();
+            refreshCustomAlphabetUi();
         }
 
         function hideLoadingScreen() {
@@ -6832,7 +7479,7 @@
                 return;
             }
 
-            loadingStage = 'Drawing distant realms...';
+                    loadingStage = 'Loading';
             loadingProgress = Math.max(loadingProgress, 82);
             updateLoadingScreen();
             await Promise.all(
@@ -6842,7 +7489,7 @@
                     .map((assetName) => loadBackgroundBitmap(assetName))
             );
 
-            loadingStage = 'Weaving foreground veil...';
+            loadingStage = 'Loading';
             loadingProgress = Math.max(loadingProgress, 88);
             updateLoadingScreen();
 
@@ -7805,7 +8452,7 @@
         }
 
         function formatRunBarValue(current, max) {
-            return `${Math.max(0, Math.round(current))} / ${Math.max(1, Math.round(max))}`;
+            return `${Math.max(0, Math.round(current))}/${Math.max(1, Math.round(max))}`;
         }
 
         function updateRunHud() {
@@ -7823,10 +8470,10 @@
             const level = Math.max(1, Number(localProgressionState?.level) || 1);
 
             runHpFillElement.style.width = `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%`;
-            runHpValueElement.textContent = formatRunBarValue(health, maxHealth);
+            setCustomAlphabetText(runHpValueElement, formatRunBarValue(health, maxHealth));
             runXpFillElement.style.width = `${Math.max(0, Math.min(100, (xp / xpToNext) * 100))}%`;
-            runXpValueElement.textContent = formatRunBarValue(xp, xpToNext);
-            runLevelBadgeElement.textContent = `Lv. ${level}`;
+            setCustomAlphabetText(runXpValueElement, formatRunBarValue(xp, xpToNext));
+            setCustomAlphabetText(runLevelBadgeElement, `Lvl. ${level}`);
         }
 
         function escapeHtml(value) {
@@ -7867,7 +8514,7 @@
                 upgradeDraftShownAt = Date.now();
                 upgradeDraftInteractionUnlockAt = upgradeDraftShownAt + UPGRADE_DRAFT_REVEAL_LOCK_MS;
             }
-            upgradeDraftSubtitleElement.textContent = `Level ${Math.max(1, Number(localProgressionState.level) || 1)} soul draft${localProgressionState.pendingLevelUps > 1 ? ` - ${localProgressionState.pendingLevelUps} picks waiting` : ''}`;
+            setCustomAlphabetText(upgradeDraftSubtitleElement, `Level ${Math.max(1, Number(localProgressionState.level) || 1)} soul draft${localProgressionState.pendingLevelUps > 1 ? ` - ${localProgressionState.pendingLevelUps} picks waiting` : ''}`);
             const cardsLocked = Date.now() < upgradeDraftInteractionUnlockAt;
             if (
                 draftKey === lastRenderedUpgradeDraftKey &&
@@ -7885,7 +8532,7 @@
                 return `
                     <button
                         type="button"
-                        class="upgrade-card${pendingClass}${lockedClass}"
+                        class="upgrade-card in-game-frame in-game-frame-blue${pendingClass}${lockedClass}"
                         data-card-id="${escapeHtml(card.id)}"
                         style="--card-accent:${accent};--card-glow:${glow};animation-delay:${index * 70}ms"
                     >
@@ -7982,7 +8629,7 @@
                 }
 
                 return `
-                <div class="progression-toast ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''}">
+                <div class="progression-toast in-game-frame in-game-frame-blue ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''}">
                     <div class="progression-toast-xp">${escapeHtml(toast.label)}</div>
                     <div class="progression-toast-title">${formattedMessage}</div>
                     <div class="progression-toast-xp">${toast.xp > 0 ? `XP Gained: +${toast.xp}` : 'Soul Event'}</div>
@@ -8064,6 +8711,7 @@
                     on_ground: pos.on_ground,
                     character: pos.character,
                     name: pos.name,
+                    level: typeof pos.level === 'number' ? pos.level : 1,
                     health: typeof pos.health === 'number' ? pos.health : PLAYER_MAX_HEALTH,
                     max_health: typeof pos.max_health === 'number' ? pos.max_health : PLAYER_MAX_HEALTH,
                     is_attacking: Boolean(pos.is_attacking),
@@ -8081,6 +8729,7 @@
                     on_ground: pos.on_ground,
                     character: pos.character,
                     name: pos.name,
+                    level: typeof pos.level === 'number' ? pos.level : 1,
                     health: typeof pos.health === 'number' ? pos.health : PLAYER_MAX_HEALTH,
                     max_health: typeof pos.max_health === 'number' ? pos.max_health : PLAYER_MAX_HEALTH,
                     is_attacking: Boolean(pos.is_attacking),
@@ -8191,6 +8840,7 @@
                     const nextEnemyState = {
                         id: enemyId,
                         type: enemyPos.type,
+                        displayName: enemyPos.displayName,
                         x: enemyPos.x,
                         y: enemyPos.y,
                         vx: enemyPos.vx,
@@ -8230,6 +8880,7 @@
                         action: enemyPos.action,
                         direction: enemyPos.direction,
                         on_ground: enemyPos.on_ground,
+                        displayName: enemyPos.displayName,
                         health: enemyPos.health,
                         max_health: enemyPos.max_health,
                         alive: enemyPos.alive,
@@ -9008,6 +9659,7 @@
                     on_ground: typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativePlayerState[sid].on_ground,
                     character: sampled.character ?? authoritativePlayerState[sid].character,
                     name: sampled.name ?? authoritativePlayerState[sid].name,
+                    level: typeof sampled.level === 'number' ? sampled.level : authoritativePlayerState[sid].level,
                     health: sampled.health ?? authoritativePlayerState[sid].health,
                     max_health: sampled.max_health ?? authoritativePlayerState[sid].max_health,
                     is_attacking: typeof sampled.is_attacking === 'boolean' ? sampled.is_attacking : authoritativePlayerState[sid].is_attacking,
@@ -9265,6 +9917,24 @@
             ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
             ctx.lineWidth = 1;
             ctx.strokeRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
+        }
+
+        function drawEntityNameplate(ctx, entityX, entityY, label, level, cameraX, cameraY, yOffset = 84) {
+            const displayLabel = String(label || '').trim();
+            if (!displayLabel) return;
+
+            const displayLevel = Math.max(1, Math.round(Number(level) || 1));
+            const text = `${displayLabel} LVL. ${displayLevel}`;
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+            ctx.shadowBlur = 3;
+            drawCustomAlphabetText(ctx, text, entityX - cameraX, entityY - cameraY - yOffset, {
+                align: 'center',
+                scale: 0.45,
+                letterSpacing: 0,
+            });
+            ctx.restore();
         }
 
         function drawHealthBar(ctx, playerX, playerY, health, maxHealth, cameraX, cameraY) {
@@ -12172,6 +12842,16 @@
                                 flashAlpha,
                                 cacheKey: `enemy|${frameInfo.cacheKey}`
                             });
+                            drawEntityNameplate(
+                                ctx,
+                                state.x,
+                                state.y,
+                                state.displayName || state.type || 'Enemy',
+                                state.level,
+                                cameraX,
+                                cameraY,
+                                frameInfo.renderDims.height / 2 + 16
+                            );
                         }
                     } else if (failedEnemyTypes.has(state.type)) {
                         ctx.fillStyle = '#c24747';
@@ -12583,7 +13263,7 @@
                 drawExplosions(nowMs, renderServerTimeMs, effectVisibleBounds);
 
                 // --- DRAW PLAYER NAMES BEFORE WEBGL ---
-                // Draw names here so they are affected by to shader
+                // Draw names here so they are affected by the shader
                 for (const sid in playerState) {
                     // Skip rendering dying players (they are rendered separately with death animation)
                     if (dyingPlayers[sid]) {
@@ -12594,25 +13274,21 @@
                     if (!state) continue;
                     
                     const pos = { x: state.x, y: state.y };
-                    const displayName = state.name || `P${sid.substring(0, 4)}`;
                     const renderDims = playerRenderDimensions[sid] || { width: 60, height: 60 };
                     if (!isWorldRectVisible(pos.x - renderDims.width / 2, pos.y - renderDims.height / 2, renderDims.width, renderDims.height, 60, visibleBounds)) {
                         continue;
                     }
                     
-                    // Position exactly where it was before to avoid shifting
-                    const nameY = pos.y - cameraY - renderDims.height / 2 - 10;
-                    const nameX = pos.x - cameraX;
-
-                    ctx.save();
-                    ctx.font = 'bold 16px "EB Garamond", serif';
-                    ctx.textAlign = 'center';
-                    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-                    ctx.shadowBlur = 2;
-                    
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillText(displayName, nameX, nameY);
-                    ctx.restore();
+                            drawEntityNameplate(
+                                ctx,
+                                pos.x,
+                                pos.y,
+                                state.name || `P${sid.substring(0, 4)}`,
+                                sid === socket.id ? (localProgressionState?.level || state.level) : state.level,
+                                cameraX,
+                                cameraY,
+                                renderDims.height / 2 + 16
+                            );
                 }
                 // --- END PLAYER NAMES ---
 
@@ -12649,22 +13325,21 @@
                         ctx.save();
                         ctx.globalAlpha = opacity;
                         ctx.scale(scale, scale);
-                        ctx.font = 'bold 18px "EB Garamond", serif';
-                        ctx.textAlign = 'center';
                         
                         // Match the position exactly so it doesn't shift
                         // 70 pixels above the player head to clear the name tag
                         const textX = (pos.x - cameraX) / scale;
                         const textY = (pos.y - cameraY - 70) / scale; 
 
-                        // Black outline for clarity
-                        ctx.strokeStyle = '#000000';
-                        ctx.lineWidth = 3;
-                        ctx.strokeText(chatMsg.text, textX, textY);
-                        
-                        // White fill
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fillText(chatMsg.text, textX, textY);
+                        drawCustomAlphabetText(ctx, chatMsg.text, textX, textY, {
+                            align: 'center',
+                            scale: 0.5,
+                            letterSpacing: 0,
+                            fillStyle: '#ffffff',
+                            strokeStyle: '#000000',
+                            strokeWidth: 3,
+                            fallbackFont: 'bold 10px "EB Garamond", serif',
+                        });
                         ctx.restore();
                     } else {
                         // Remove expired messages

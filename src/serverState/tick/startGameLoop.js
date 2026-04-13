@@ -120,6 +120,32 @@ function updateDeathsAndRespawns(input) {
     input.io.emit('player_respawned', { sid });
   }
 }
+
+function applyPassivePlayerRegeneration(input) {
+  const dt = Number(input.dt) || 0;
+  if (dt <= 0) {
+    return;
+  }
+
+  for (const p of input.state.players.values()) {
+    if (p.is_dying) {
+      continue;
+    }
+
+    const runStats = getPlayerRunStats(p);
+    const regenPerSecond = Math.max(0, Number(runStats.regainPerSecond) || 0);
+    if (regenPerSecond <= 0) {
+      continue;
+    }
+
+    const maxHealth = Math.max(1, Math.round(runStats.maxHealth || PLAYER_MAX_HEALTH));
+    if (p.health >= maxHealth) {
+      continue;
+    }
+
+    p.health = Math.min(maxHealth, p.health + regenPerSecond * dt);
+  }
+}
 function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
@@ -160,6 +186,7 @@ function startGameLoop(input) {
       updateFireballs({ state: input.state, dt, io: input.io });
       updateExplosions({ state: input.state, io: input.io });
       updateDeathsAndRespawns({ state: input.state, io: input.io });
+      applyPassivePlayerRegeneration({ state: input.state, dt });
       cleanupDeadBodies({ state: input.state });
     }
 
@@ -199,6 +226,7 @@ function broadcastState(input) {
     if (p.is_dying) continue;
     playersPayload[sid] = {
       name: p.name,
+      level: Math.max(1, Math.round(getPlayerProgressionPayload(p).level || 1)),
       x: round1(p.x),
       y: round1(p.y),
       vy: round1(p.vy),

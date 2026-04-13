@@ -1,0 +1,1031 @@
+{
+  "generatedAt": "2026-04-12T22:22:42.156Z",
+  "cards": [
+    {
+      "id": "fireball_damage_1",
+      "family": "fireball_damage",
+      "title": "Ember Might I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_damage_2",
+      "family": "fireball_damage",
+      "title": "Ember Might II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_damage_3",
+      "family": "fireball_damage",
+      "title": "Ember Might III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_damage_4",
+      "family": "fireball_damage",
+      "title": "Ember Might IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_damage_5",
+      "family": "fireball_damage",
+      "title": "Ember Might V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_damage_6",
+      "family": "fireball_damage",
+      "title": "Ember Might VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_radius_1",
+      "family": "fireball_radius",
+      "title": "Blast Bloom I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_radius_2",
+      "family": "fireball_radius",
+      "title": "Blast Bloom II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_radius_3",
+      "family": "fireball_radius",
+      "title": "Blast Bloom III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_radius_4",
+      "family": "fireball_radius",
+      "title": "Blast Bloom IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_radius_5",
+      "family": "fireball_radius",
+      "title": "Blast Bloom V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_radius_6",
+      "family": "fireball_radius",
+      "title": "Blast Bloom VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_size_1",
+      "family": "fireball_size",
+      "title": "Cinder Mass I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_size_2",
+      "family": "fireball_size",
+      "title": "Cinder Mass II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_size_3",
+      "family": "fireball_size",
+      "title": "Cinder Mass III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_size_4",
+      "family": "fireball_size",
+      "title": "Cinder Mass IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_size_5",
+      "family": "fireball_size",
+      "title": "Cinder Mass V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_size_6",
+      "family": "fireball_size",
+      "title": "Cinder Mass VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_range_1",
+      "family": "fireball_range",
+      "title": "Long Cast I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_range_2",
+      "family": "fireball_range",
+      "title": "Long Cast II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_range_3",
+      "family": "fireball_range",
+      "title": "Long Cast III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_range_4",
+      "family": "fireball_range",
+      "title": "Long Cast IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_range_5",
+      "family": "fireball_range",
+      "title": "Long Cast V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_range_6",
+      "family": "fireball_range",
+      "title": "Long Cast VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_speed_1",
+      "family": "fireball_speed",
+      "title": "Flaring Velocity I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_speed_2",
+      "family": "fireball_speed",
+      "title": "Flaring Velocity II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_speed_3",
+      "family": "fireball_speed",
+      "title": "Flaring Velocity III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_speed_4",
+      "family": "fireball_speed",
+      "title": "Flaring Velocity IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_speed_5",
+      "family": "fireball_speed",
+      "title": "Flaring Velocity V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_speed_6",
+      "family": "fireball_speed",
+      "title": "Flaring Velocity VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_reload_1",
+      "family": "fireball_reload",
+      "title": "Quickened Sigil I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_reload_2",
+      "family": "fireball_reload",
+      "title": "Quickened Sigil II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_reload_3",
+      "family": "fireball_reload",
+      "title": "Quickened Sigil III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_reload_4",
+      "family": "fireball_reload",
+      "title": "Quickened Sigil IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_reload_5",
+      "family": "fireball_reload",
+      "title": "Quickened Sigil V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_reload_6",
+      "family": "fireball_reload",
+      "title": "Quickened Sigil VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_crit_1",
+      "family": "fireball_crit",
+      "title": "Ashen Insight I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_crit_2",
+      "family": "fireball_crit",
+      "title": "Ashen Insight II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_crit_3",
+      "family": "fireball_crit",
+      "title": "Ashen Insight III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_crit_4",
+      "family": "fireball_crit",
+      "title": "Ashen Insight IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_crit_5",
+      "family": "fireball_crit",
+      "title": "Ashen Insight V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_crit_6",
+      "family": "fireball_crit",
+      "title": "Ashen Insight VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_crit_damage_1",
+      "family": "fireball_crit_damage",
+      "title": "Pyre Verdict I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_crit_damage_2",
+      "family": "fireball_crit_damage",
+      "title": "Pyre Verdict II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_crit_damage_3",
+      "family": "fireball_crit_damage",
+      "title": "Pyre Verdict III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_crit_damage_4",
+      "family": "fireball_crit_damage",
+      "title": "Pyre Verdict IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_crit_damage_5",
+      "family": "fireball_crit_damage",
+      "title": "Pyre Verdict V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_crit_damage_6",
+      "family": "fireball_crit_damage",
+      "title": "Pyre Verdict VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_multishot_1",
+      "family": "fireball_multishot",
+      "title": "Twin Pyre I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 2
+    },
+    {
+      "id": "fireball_multishot_2",
+      "family": "fireball_multishot",
+      "title": "Twin Pyre II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 4
+    },
+    {
+      "id": "fireball_multishot_3",
+      "family": "fireball_multishot",
+      "title": "Twin Pyre III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 6
+    },
+    {
+      "id": "fireball_multishot_4",
+      "family": "fireball_multishot",
+      "title": "Twin Pyre IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_multishot_5",
+      "family": "fireball_multishot",
+      "title": "Twin Pyre V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 12
+    },
+    {
+      "id": "fireball_multishot_6",
+      "family": "fireball_multishot",
+      "title": "Twin Pyre VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 16
+    },
+    {
+      "id": "fireball_splash_damage_1",
+      "family": "fireball_splash_damage",
+      "title": "Inferno Core I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_splash_damage_2",
+      "family": "fireball_splash_damage",
+      "title": "Inferno Core II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_splash_damage_3",
+      "family": "fireball_splash_damage",
+      "title": "Inferno Core III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_splash_damage_4",
+      "family": "fireball_splash_damage",
+      "title": "Inferno Core IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_splash_damage_5",
+      "family": "fireball_splash_damage",
+      "title": "Inferno Core V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_splash_damage_6",
+      "family": "fireball_splash_damage",
+      "title": "Inferno Core VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "fireball_gravity_1",
+      "family": "fireball_gravity",
+      "title": "Steady Flame I",
+      "category": "fireball",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "fireball_gravity_2",
+      "family": "fireball_gravity",
+      "title": "Steady Flame II",
+      "category": "fireball",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "fireball_gravity_3",
+      "family": "fireball_gravity",
+      "title": "Steady Flame III",
+      "category": "fireball",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "fireball_gravity_4",
+      "family": "fireball_gravity",
+      "title": "Steady Flame IV",
+      "category": "fireball",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "fireball_gravity_5",
+      "family": "fireball_gravity",
+      "title": "Steady Flame V",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "fireball_gravity_6",
+      "family": "fireball_gravity",
+      "title": "Steady Flame VI",
+      "category": "fireball",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "xp_gain_1",
+      "family": "xp_gain",
+      "title": "Scholar of Ash I",
+      "category": "utility",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "xp_gain_2",
+      "family": "xp_gain",
+      "title": "Scholar of Ash II",
+      "category": "utility",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "xp_gain_3",
+      "family": "xp_gain",
+      "title": "Scholar of Ash III",
+      "category": "utility",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "xp_gain_4",
+      "family": "xp_gain",
+      "title": "Scholar of Ash IV",
+      "category": "utility",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "xp_gain_5",
+      "family": "xp_gain",
+      "title": "Scholar of Ash V",
+      "category": "utility",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "xp_gain_6",
+      "family": "xp_gain",
+      "title": "Scholar of Ash VI",
+      "category": "utility",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "move_speed_1",
+      "family": "move_speed",
+      "title": "Wayfarer Step I",
+      "category": "movement",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "move_speed_2",
+      "family": "move_speed",
+      "title": "Wayfarer Step II",
+      "category": "movement",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "move_speed_3",
+      "family": "move_speed",
+      "title": "Wayfarer Step III",
+      "category": "movement",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "move_speed_4",
+      "family": "move_speed",
+      "title": "Wayfarer Step IV",
+      "category": "movement",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "move_speed_5",
+      "family": "move_speed",
+      "title": "Wayfarer Step V",
+      "category": "movement",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "move_speed_6",
+      "family": "move_speed",
+      "title": "Wayfarer Step VI",
+      "category": "movement",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "jump_power_1",
+      "family": "jump_power",
+      "title": "Skybound Anklet I",
+      "category": "movement",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "jump_power_2",
+      "family": "jump_power",
+      "title": "Skybound Anklet II",
+      "category": "movement",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "jump_power_3",
+      "family": "jump_power",
+      "title": "Skybound Anklet III",
+      "category": "movement",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "jump_power_4",
+      "family": "jump_power",
+      "title": "Skybound Anklet IV",
+      "category": "movement",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "jump_power_5",
+      "family": "jump_power",
+      "title": "Skybound Anklet V",
+      "category": "movement",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "jump_power_6",
+      "family": "jump_power",
+      "title": "Skybound Anklet VI",
+      "category": "movement",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "max_health_1",
+      "family": "max_health",
+      "title": "Crimson Vessel I",
+      "category": "survival",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "max_health_2",
+      "family": "max_health",
+      "title": "Crimson Vessel II",
+      "category": "survival",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "max_health_3",
+      "family": "max_health",
+      "title": "Crimson Vessel III",
+      "category": "survival",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "max_health_4",
+      "family": "max_health",
+      "title": "Crimson Vessel IV",
+      "category": "survival",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "max_health_5",
+      "family": "max_health",
+      "title": "Crimson Vessel V",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "max_health_6",
+      "family": "max_health",
+      "title": "Crimson Vessel VI",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "damage_reduction_1",
+      "family": "damage_reduction",
+      "title": "Iron Prayer I",
+      "category": "survival",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "damage_reduction_2",
+      "family": "damage_reduction",
+      "title": "Iron Prayer II",
+      "category": "survival",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "damage_reduction_3",
+      "family": "damage_reduction",
+      "title": "Iron Prayer III",
+      "category": "survival",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "damage_reduction_4",
+      "family": "damage_reduction",
+      "title": "Iron Prayer IV",
+      "category": "survival",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 8
+    },
+    {
+      "id": "damage_reduction_5",
+      "family": "damage_reduction",
+      "title": "Iron Prayer V",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 11
+    },
+    {
+      "id": "damage_reduction_6",
+      "family": "damage_reduction",
+      "title": "Iron Prayer VI",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 14
+    },
+    {
+      "id": "soul_magnet_1",
+      "family": "soul_magnet",
+      "title": "Spirit Magnet I",
+      "category": "utility",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "soul_magnet_2",
+      "family": "soul_magnet",
+      "title": "Spirit Magnet II",
+      "category": "utility",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "soul_magnet_3",
+      "family": "soul_magnet",
+      "title": "Spirit Magnet III",
+      "category": "utility",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "soul_magnet_4",
+      "family": "soul_magnet",
+      "title": "Spirit Magnet IV",
+      "category": "utility",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "soul_magnet_5",
+      "family": "soul_magnet",
+      "title": "Spirit Magnet V",
+      "category": "utility",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "soul_magnet_6",
+      "family": "soul_magnet",
+      "title": "Spirit Magnet VI",
+      "category": "utility",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "soul_heal_1",
+      "family": "soul_heal",
+      "title": "Kindled Recovery I",
+      "category": "survival",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "soul_heal_2",
+      "family": "soul_heal",
+      "title": "Kindled Recovery II",
+      "category": "survival",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "soul_heal_3",
+      "family": "soul_heal",
+      "title": "Kindled Recovery III",
+      "category": "survival",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "soul_heal_4",
+      "family": "soul_heal",
+      "title": "Kindled Recovery IV",
+      "category": "survival",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "soul_heal_5",
+      "family": "soul_heal",
+      "title": "Kindled Recovery V",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "soul_heal_6",
+      "family": "soul_heal",
+      "title": "Kindled Recovery VI",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    },
+    {
+      "id": "regain_1",
+      "family": "regain",
+      "title": "Regen I",
+      "category": "survival",
+      "rarity": "common",
+      "tier": 1,
+      "minLevel": 1
+    },
+    {
+      "id": "regain_2",
+      "family": "regain",
+      "title": "Regen II",
+      "category": "survival",
+      "rarity": "uncommon",
+      "tier": 2,
+      "minLevel": 3
+    },
+    {
+      "id": "regain_3",
+      "family": "regain",
+      "title": "Regen III",
+      "category": "survival",
+      "rarity": "rare",
+      "tier": 3,
+      "minLevel": 5
+    },
+    {
+      "id": "regain_4",
+      "family": "regain",
+      "title": "Regen IV",
+      "category": "survival",
+      "rarity": "epic",
+      "tier": 4,
+      "minLevel": 7
+    },
+    {
+      "id": "regain_5",
+      "family": "regain",
+      "title": "Regen V",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 5,
+      "minLevel": 9
+    },
+    {
+      "id": "regain_6",
+      "family": "regain",
+      "title": "Regen VI",
+      "category": "survival",
+      "rarity": "legendary",
+      "tier": 6,
+      "minLevel": 11
+    }
+  ]
+}

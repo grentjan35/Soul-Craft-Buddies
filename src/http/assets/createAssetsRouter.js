@@ -320,8 +320,27 @@ function createAssetsRouter(deps) {
   const publicSlimeSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'slime'), publicSlimeSounds);
   const publicGargoyleSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'gargoyle'), publicGargoyleSounds);
   const publicStrikerSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'striker'), publicStrikerSounds);
-  const publicGuiAssets = new Set(['jump_button.png', 'play.png']);
+  const publicGuiAssets = new Set(['jump_button.png', 'play.png', 'font_spritesheet.png']);
   const publicGuiAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'GUI'), publicGuiAssets);
+  const guiAlphabetLookup = new Map();
+
+  try {
+    const alphabetDir = path.join(deps.staticDir, 'assets', 'GUI', 'alphabet');
+    for (const entry of fs.readdirSync(alphabetDir, { withFileTypes: true })) {
+      if (!entry.isFile()) {
+        continue;
+      }
+
+      const glyphName = path.parse(entry.name).name.trim().toUpperCase();
+      if (!glyphName) {
+        continue;
+      }
+
+      guiAlphabetLookup.set(glyphName, path.join(alphabetDir, entry.name));
+    }
+  } catch {
+    // Alphabet is optional at startup; requests will 404 if absent.
+  }
 
   router.post('/api/asset_session', (_req, res) => {
     const token = signToken({
@@ -335,6 +354,21 @@ function createAssetsRouter(deps) {
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({ token });
+  });
+
+  router.get('/api/gui/alphabet/:letter', (req, res) => {
+    const letter = String(req.params.letter ?? '').trim().toUpperCase();
+    const letterPath = guiAlphabetLookup.get(letter);
+    if (!letterPath) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: letterPath,
+      downloadName: `${letter}.png`,
+    });
   });
 
   router.get('/audio/menu/:name', (req, res) => {

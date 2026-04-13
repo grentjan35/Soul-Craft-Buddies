@@ -3149,6 +3149,8 @@ function serializeEnemiesForState(state, options = {}) {
     payload[enemy.id] = {
       id: enemy.id,
       type: enemy.type,
+      displayName: definition.displayName,
+      level: Math.max(1, Math.round(Number(enemy.max_health) || Number(definition.stats.maxHealth) || 1)),
       x: Math.round(enemy.x * 10) / 10,
       y: Math.round(enemy.y * 10) / 10,
       vx: Math.round(enemy.vx * 10) / 10,
