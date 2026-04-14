@@ -2979,7 +2979,7 @@
         ];
         const CUSTOM_ALPHABET_SPRITESHEET_COLUMNS = 7;
         const CUSTOM_ALPHABET_SPRITESHEET_ROWS = 8;
-        const CUSTOM_ALPHABET_SPRITESHEET_URL = '/gui/font_spritesheet.png?v=2';
+        const CUSTOM_ALPHABET_SPRITESHEET_URL = '/api/gui/font_spritesheet?v=3';
         const CUSTOM_TEXT_SCALE = 0.22;
         const CUSTOM_TEXT_LETTER_SPACING_SHRINK = 9;
         const customAlphabetCache = new Map();
@@ -3003,15 +3003,7 @@
             }
 
             if (!customAlphabetSpritesheetPromise) {
-                customAlphabetSpritesheetPromise = fetch(CUSTOM_ALPHABET_SPRITESHEET_URL, {
-                    cache: 'no-cache'
-                })
-                    .then((response) => {
-                        if (!response.ok) {
-                            throw new Error(`Failed to load font spritesheet: ${response.status}`);
-                        }
-                        return response.blob();
-                    })
+                customAlphabetSpritesheetPromise = fetchProtectedBlob(CUSTOM_ALPHABET_SPRITESHEET_URL, 'image/png')
                     .then((blob) => createImageBitmap(blob))
                     .then((bitmap) => {
                         customAlphabetSpritesheetBitmap = bitmap;

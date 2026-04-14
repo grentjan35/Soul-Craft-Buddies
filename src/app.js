@@ -29,6 +29,7 @@ async function createApp(config) {
       projectRoot: config.projectRoot,
       staticDir: config.staticDir,
       manifestPath: config.manifestPath,
+      assetCdnBaseUrl: config.assetCdnBaseUrl,
     })
   );
 

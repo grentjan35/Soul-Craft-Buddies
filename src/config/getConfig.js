@@ -13,7 +13,8 @@ require('dotenv').config();
  *   staticDir: string,
  *   templatesDir: string,
  *   dataDir: string,
- *   manifestPath: string
+ *   manifestPath: string,
+ *   assetCdnBaseUrl: string
  * }}
  */
 function getConfig() {
@@ -33,6 +34,9 @@ function getConfig() {
   const bindHost = process.env.HOST ?? '0.0.0.0';
   const secretKey =
     process.env.SECRET_KEY ?? 'platformer_buddies_secure_key_v2_2026!';
+  const assetCdnBaseUrl = String(
+    process.env.ASSET_CDN_BASE_URL ?? 'https://grentjan35.github.io/my-game-assets-soulclash'
+  ).trim().replace(/\/+$/, '');
 
   fs.mkdirSync(dataDir, { recursive: true });
 
@@ -45,6 +49,7 @@ function getConfig() {
     templatesDir,
     dataDir,
     manifestPath,
+    assetCdnBaseUrl,
   };
 }
 

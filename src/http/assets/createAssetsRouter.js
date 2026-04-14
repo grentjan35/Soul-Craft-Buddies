@@ -249,9 +249,79 @@ function sendPublicCachedFile(res, lookup, assetName) {
   res.sendFile(fullPath);
 }
 
+function buildExternalAssetUrl(baseUrl, relativeAssetPath) {
+  const normalizedBase = String(baseUrl ?? '').trim().replace(/\/+$/, '');
+  const normalizedRelative = String(relativeAssetPath ?? '')
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+
+  if (!normalizedBase || !normalizedRelative) {
+    return '';
+  }
+
+  return `${normalizedBase}/assets/${normalizedRelative}`;
+}
+
+function redirectToExternalAssetIfConfigured(res, baseUrl, relativeAssetPath) {
+  const externalUrl = buildExternalAssetUrl(baseUrl, relativeAssetPath);
+  if (!externalUrl) {
+    return false;
+  }
+
+  res.redirect(302, externalUrl);
+  return true;
+}
+
+async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadName = '', options = {}) {
+  const externalUrl = buildExternalAssetUrl(baseUrl, relativeAssetPath);
+  if (!externalUrl) {
+    return false;
+  }
+
+  let response;
+  try {
+    response = await fetch(externalUrl, {
+      redirect: 'follow',
+      cache: 'no-store',
+    });
+  } catch {
+    return false;
+  }
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+  if (options.protectedResponse) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (downloadName) {
+      res.setHeader('Content-Disposition', `attachment; filename="${path.basename(downloadName)}"`);
+    }
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+    res.setHeader('Content-Type', contentType);
+    if (downloadName) {
+      res.setHeader('Content-Disposition', `inline; filename="${path.basename(downloadName)}"`);
+    }
+  }
+  res.setHeader('Content-Length', Buffer.byteLength(buffer));
+  res.send(buffer);
+  return true;
+}
+
 /**
  * Creates the secure asset routes.
- * @param {{secretKey: string, projectRoot: string, staticDir: string, manifestPath: string}} deps
+ * @param {{secretKey: string, projectRoot: string, staticDir: string, manifestPath: string, assetCdnBaseUrl: string}} deps
  * @returns {import('express').Router}
  */
 function createAssetsRouter(deps) {
@@ -320,7 +390,7 @@ function createAssetsRouter(deps) {
   const publicSlimeSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'slime'), publicSlimeSounds);
   const publicGargoyleSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'gargoyle'), publicGargoyleSounds);
   const publicStrikerSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'striker'), publicStrikerSounds);
-  const publicGuiAssets = new Set(['jump_button.png', 'play.png', 'font_spritesheet.png']);
+  const publicGuiAssets = new Set(['jump_button.png', 'play.png']);
   const publicGuiAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'GUI'), publicGuiAssets);
   const guiAlphabetLookup = new Map();
 
@@ -356,11 +426,22 @@ function createAssetsRouter(deps) {
     res.json({ token });
   });
 
-  router.get('/api/gui/alphabet/:letter', (req, res) => {
+  router.get('/api/gui/alphabet/:letter', async (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const letter = String(req.params.letter ?? '').trim().toUpperCase();
     const letterPath = guiAlphabetLookup.get(letter);
     if (!letterPath) {
       res.status(404).send('Not Found');
+      return;
+    }
+
+    const filename = path.basename(letterPath);
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('GUI', 'alphabet', filename), `${letter}.png`, { protectedResponse: true })) {
       return;
     }
 
@@ -371,19 +452,52 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/audio/menu/:name', (req, res) => {
+  router.get('/api/gui/font_spritesheet', async (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const spritesheetPath = path.join(deps.staticDir, 'assets', 'GUI', 'font_spritesheet.png');
+    if (!fs.existsSync(spritesheetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('GUI', 'font_spritesheet.png'), 'font_spritesheet.png', { protectedResponse: true })) {
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: spritesheetPath,
+      downloadName: 'font_spritesheet.png',
+    });
+  });
+
+  router.get('/audio/menu/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicMenuSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicMenuSoundFiles, soundName);
   });
 
-  router.get('/audio/footsteps/:name', (req, res) => {
+  router.get('/audio/footsteps/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicFootstepPattern.test(soundName)) {
       res.status(404).send('Not Found');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'footsteps', soundName), soundName)) {
       return;
     }
 
@@ -403,10 +517,14 @@ function createAssetsRouter(deps) {
     res.sendFile(soundPath);
   });
 
-  router.get('/audio/spider_footsteps/:name', (req, res) => {
+  router.get('/audio/spider_footsteps/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicSpiderFootstepPattern.test(soundName)) {
       res.status(404).send('Not Found');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'footsteps', 'spider footsteps', soundName), soundName)) {
       return;
     }
 
@@ -426,10 +544,14 @@ function createAssetsRouter(deps) {
     res.sendFile(soundPath);
   });
 
-  router.get('/audio/slime_footsteps/:name', (req, res) => {
+  router.get('/audio/slime_footsteps/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicSlimeFootstepPattern.test(soundName)) {
       res.status(404).send('Not Found');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'footsteps', 'slime footsteps', soundName), soundName)) {
       return;
     }
 
@@ -449,30 +571,42 @@ function createAssetsRouter(deps) {
     res.sendFile(soundPath);
   });
 
-  router.get('/audio/:name', (req, res) => {
+  router.get('/audio/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicGameplaySounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicGameplaySoundFiles, soundName);
   });
 
-  router.get('/audio/fireball/:name', (req, res) => {
+  router.get('/audio/fireball/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicFireballSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'fireball', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicFireballSoundFiles, soundName);
   });
 
-  router.get('/audio/hurt/:name', (req, res) => {
+  router.get('/audio/hurt/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicPlayerHurtPattern.test(soundName)) {
       res.status(404).send('Not Found');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'hurt', soundName), soundName)) {
       return;
     }
 
@@ -487,60 +621,84 @@ function createAssetsRouter(deps) {
     res.sendFile(soundPath);
   });
 
-  router.get('/audio/spider/:name', (req, res) => {
+  router.get('/audio/spider/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicSpiderSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'spider', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicSpiderSoundFiles, soundName);
   });
 
-  router.get('/audio/bat/:name', (req, res) => {
+  router.get('/audio/bat/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicBatSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'bat', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicBatSoundFiles, soundName);
   });
 
-  router.get('/audio/slime/:name', (req, res) => {
+  router.get('/audio/slime/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicSlimeSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'slime', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicSlimeSoundFiles, soundName);
   });
 
-  router.get('/audio/gargoyle/:name', (req, res) => {
+  router.get('/audio/gargoyle/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicGargoyleSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'gargoyle', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicGargoyleSoundFiles, soundName);
   });
 
-  router.get('/audio/striker/:name', (req, res) => {
+  router.get('/audio/striker/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicStrikerSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'striker', soundName), soundName)) {
+      return;
+    }
+
     sendPublicCachedFile(res, publicStrikerSoundFiles, soundName);
   });
 
-  router.get('/gui/:name', (req, res) => {
+  router.get('/gui/:name', async (req, res) => {
     const assetName = String(req.params.name ?? '').trim().toLowerCase();
     if (!publicGuiAssets.has(assetName)) {
       res.status(404).send('Not Found');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('GUI', assetName), assetName)) {
       return;
     }
 
@@ -717,7 +875,7 @@ function createAssetsRouter(deps) {
     res.json({ token });
   });
 
-  router.get('/api/asset/:token', (req, res) => {
+  router.get('/api/asset/:token', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send(assetSession.reason);
@@ -755,6 +913,11 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    const relativeFromAssets = path.relative(path.join(deps.staticDir, 'assets'), resolved.fullPath);
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, relativeFromAssets, path.basename(resolved.fullPath), { protectedResponse: true })) {
+      return;
+    }
+
     sendProtectedBinaryFile({
       res,
       fullPath: resolved.fullPath,
@@ -762,7 +925,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/tileset/:token', (req, res) => {
+  router.get('/api/tileset/:token', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -790,6 +953,10 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('tileset', 'tileset.png'), 'tileset.png', { protectedResponse: true })) {
+      return;
+    }
+
     sendProtectedBinaryFile({
       res,
       fullPath: tilesetPath,
@@ -797,7 +964,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/background/:token', (req, res) => {
+  router.get('/api/background/:token', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -826,6 +993,10 @@ function createAssetsRouter(deps) {
 
     if (!bgPath || !fs.existsSync(bgPath)) {
       res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('tileset', path.basename(bgPath)), path.basename(bgPath), { protectedResponse: true })) {
       return;
     }
 
@@ -865,7 +1036,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/background_asset/:token/:filename', (req, res) => {
+  router.get('/api/background_asset/:token/:filename', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -902,6 +1073,10 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('tileset', filename), filename, { protectedResponse: true })) {
+      return;
+    }
+
     sendProtectedBinaryFile({
       res,
       fullPath: bgPath,
@@ -909,7 +1084,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/projectile_asset/:token/:projectile/:filename', (req, res) => {
+  router.get('/api/projectile_asset/:token/:projectile/:filename', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -947,6 +1122,10 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('projectiles', projectileName, filename), filename, { protectedResponse: true })) {
+      return;
+    }
+
     sendProtectedBinaryFile({
       res,
       fullPath: projectilePath,
@@ -954,7 +1133,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/character_assets/:token/:character/:asset', (req, res) => {
+  router.get('/api/character_assets/:token/:character/:asset', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -983,6 +1162,10 @@ function createAssetsRouter(deps) {
     const assetPath = path.join(deps.staticDir, 'assets', 'characters', character, `${asset}.png`);
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('characters', character, `${asset}.png`), `${character}_${asset}.png`, { protectedResponse: true })) {
       return;
     }
 
@@ -1016,13 +1199,17 @@ function createAssetsRouter(deps) {
     }
   });
 
-  router.get('/api/character_preview_asset/:character/:assetName', (req, res) => {
+  router.get('/api/character_preview_asset/:character/:assetName', async (req, res) => {
     const character = String(req.params.character ?? '').trim().toLowerCase();
     const assetName = String(req.params.assetName ?? '').trim().toLowerCase();
     const assetPath = path.join(deps.staticDir, 'assets', 'characters', character, `${assetName}.png`);
 
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('characters', character, `${assetName}.png`), `${character}_${assetName}.png`, { protectedResponse: true })) {
       return;
     }
 
@@ -1083,7 +1270,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/enemy_asset/:token/:enemyType/:assetName', (req, res) => {
+  router.get('/api/enemy_asset/:token/:enemyType/:assetName', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -1116,6 +1303,10 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('enemies', enemyType, `${assetName}.png`), `${enemyType}_${assetName}.png`, { protectedResponse: true })) {
+      return;
+    }
+
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1123,7 +1314,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/character_card/:token/:character', (req, res) => {
+  router.get('/api/character_card/:token/:character', async (req, res) => {
     const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
     if (!assetSession.ok) {
       res.status(assetSession.status).send('<h1>Access Denied</h1>');
@@ -1161,6 +1352,10 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', `${selection.cardAsset}.png`), 'character-card.png', { protectedResponse: true })) {
+      return;
+    }
+
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1168,7 +1363,7 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/character_card_preview/:character', (req, res) => {
+  router.get('/api/character_card_preview/:character', async (req, res) => {
     const character = String(req.params.character ?? '').trim().toLowerCase();
     const selection = selectableCharacters.find((entry) => entry.character === character);
     if (!selection) {
@@ -1179,6 +1374,10 @@ function createAssetsRouter(deps) {
     const assetPath = path.join(deps.staticDir, 'assets', 'cards', `${selection.cardAsset}.png`);
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', `${selection.cardAsset}.png`), `${selection.cardAsset}.png`, { protectedResponse: true })) {
       return;
     }
 
