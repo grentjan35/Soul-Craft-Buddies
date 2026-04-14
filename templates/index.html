@@ -2974,8 +2974,9 @@
         ];
         const CUSTOM_ALPHABET_SPRITESHEET_COLUMNS = 7;
         const CUSTOM_ALPHABET_SPRITESHEET_ROWS = 8;
+        const CUSTOM_ALPHABET_BASE_CELL_SIZE = 175;
+        const CUSTOM_ALPHABET_BASE_RENDER_SCALE = 0.22;
         const CUSTOM_ALPHABET_SPRITESHEET_URL = '/api/gui/font_spritesheet?v=3';
-        const CUSTOM_TEXT_SCALE = 0.22;
         const CUSTOM_TEXT_LETTER_SPACING_SHRINK = 9;
         const customAlphabetCache = new Map();
         let customAlphabetLoadPromise = null;
@@ -3032,6 +3033,11 @@
                 cellWidth,
                 cellHeight
             );
+        }
+
+        function getCustomAlphabetGlyphScale(glyph, scale = 1) {
+            const sourceWidth = Number(glyph?.width) || CUSTOM_ALPHABET_BASE_CELL_SIZE;
+            return (CUSTOM_ALPHABET_BASE_CELL_SIZE / sourceWidth) * CUSTOM_ALPHABET_BASE_RENDER_SCALE * scale;
         }
 
         async function loadCustomAlphabetGlyph(letter) {
@@ -3125,8 +3131,9 @@
                     continue;
                 }
 
-                const glyphWidth = glyph.width * CUSTOM_TEXT_SCALE * scale;
-                const glyphHeight = glyph.height * CUSTOM_TEXT_SCALE * scale;
+                const glyphScale = getCustomAlphabetGlyphScale(glyph, scale);
+                const glyphWidth = glyph.width * glyphScale;
+                const glyphHeight = glyph.height * glyphScale;
                 glyphs.push({ type: 'glyph', glyph, width: glyphWidth, height: glyphHeight });
             }
 
@@ -3215,8 +3222,9 @@
                 const letter = normalizeCustomAlphabetChar(rawChar);
                 const glyph = letter ? customAlphabetCache.get(letter) : null;
                 if (glyph) {
-                    const glyphWidth = glyph.width * CUSTOM_TEXT_SCALE * scale;
-                    const glyphHeight = glyph.height * CUSTOM_TEXT_SCALE * scale;
+                    const glyphScale = getCustomAlphabetGlyphScale(glyph, scale);
+                    const glyphWidth = glyph.width * glyphScale;
+                    const glyphHeight = glyph.height * glyphScale;
                     measurements.push({ type: 'glyph', glyph, width: glyphWidth, height: glyphHeight });
                     height = Math.max(height, glyphHeight + paddingY * 2);
                 } else {
@@ -6273,53 +6281,53 @@
             const chatWidth = Math.round(
                 Math.min(
                     isMobile ? 260 : 420,
-                    Math.max(isMobile ? 160 : 220, displayWidth * (isMobile ? 0.34 : 0.22))
+                    Math.max(isMobile ? 160 : 220, displayWidth * (isMobile ? 0.34 : 0.22)) * sharedViewZoom
                 )
             );
             const chatExpandedHeight = Math.round(
                 Math.min(
                     isMobile ? 160 : 220,
-                    Math.max(isMobile ? 92 : 120, displayHeight * (isMobile ? 0.26 : 0.2))
+                    Math.max(isMobile ? 92 : 120, displayHeight * (isMobile ? 0.26 : 0.2)) * sharedViewZoom
                 )
             );
             const chatFontSize = Math.round(
-                Math.min(isMobile ? 15 : 18, Math.max(11, displayWidth * 0.018))
+                Math.min(isMobile ? 15 : 18, Math.max(11, displayWidth * 0.018) * sharedViewZoom)
             );
             const chatInputFontSize = Math.round(
-                Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02))
+                Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02) * sharedViewZoom)
             );
             const hudWidth = Math.round(
                 Math.min(
                     isMobile ? 300 : 420,
-                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22))
+                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22)) * sharedViewZoom
                 )
             );
             const hudGap = Math.round(
-                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)))
+                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)) * sharedViewZoom)
             );
             const hudPanelPaddingY = Math.round(
-                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)))
+                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
             );
             const hudPanelPaddingX = Math.round(
-                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)))
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
             );
             const hudBarPaddingX = Math.round(
-                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)))
+                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)) * sharedViewZoom)
             );
             const hudBarPaddingBottom = Math.round(
-                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)))
+                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)) * sharedViewZoom)
             );
             const hudTrackHeight = Math.round(
-                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)))
+                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)) * sharedViewZoom)
             );
             const hudLabelFontSize = Math.max(
                 0.72,
-                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)))
+                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)) * sharedViewZoom)
             );
             const leaderboardWidth = Math.round(
                 Math.min(
                     isMobile ? 220 : 340,
-                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18))
+                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18)) * sharedViewZoom
                 )
             );
             const leaderboardTop = Math.round(
@@ -6328,35 +6336,35 @@
             const feedWidth = Math.round(
                 Math.min(
                     isMobile ? 360 : 560,
-                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32))
+                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32)) * sharedViewZoom
                 )
             );
             const toastWidth = Math.round(
                 Math.min(
                     isMobile ? 340 : 520,
-                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28))
+                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28)) * sharedViewZoom
                 )
             );
             const toastPaddingY = Math.round(
-                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)))
+                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
             );
             const toastPaddingX = Math.round(
-                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)))
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
             );
             const chatEdge = Math.round(
                 Math.min(isMobile ? 12 : 20, Math.max(8, displayWidth * (isMobile ? 0.014 : 0.01)))
             );
             const mobileActionSize = Math.round(
-                Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)))
+                Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)) * sharedViewZoom)
             );
             const joystickSize = Math.round(
-                Math.min(isMobile ? 116 : 120, Math.max(isMobile ? 78 : 92, displayWidth * (isMobile ? 0.13 : 0.07)))
+                Math.min(isMobile ? 116 : 120, Math.max(isMobile ? 78 : 92, displayWidth * (isMobile ? 0.13 : 0.07)) * sharedViewZoom)
             );
             const joystickThumbSize = Math.round(
                 Math.min(isMobile ? 46 : 50, Math.max(isMobile ? 34 : 40, joystickSize * 0.42))
             );
             const mobileControlsHeight = Math.round(
-                Math.min(isMobile ? 168 : 184, Math.max(isMobile ? 116 : 132, displayHeight * (isMobile ? 0.22 : 0.18)))
+                Math.min(isMobile ? 168 : 184, Math.max(isMobile ? 116 : 132, displayHeight * (isMobile ? 0.22 : 0.18)) * sharedViewZoom)
             );
             const mobileEdgeGap = Math.round(
                 Math.min(isMobile ? 16 : 20, Math.max(8, displayWidth * (isMobile ? 0.02 : 0.012)))
