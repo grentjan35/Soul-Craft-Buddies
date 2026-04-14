@@ -3346,27 +3346,27 @@
             });
 
             root.querySelectorAll('.upgrade-card-title').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.5, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 1.22, letterSpacing: -1, wordSpacing: 4 });
             });
 
             root.querySelectorAll('.upgrade-card-body').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.28, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 0.7, letterSpacing: -1, wordSpacing: 4 });
             });
 
             root.querySelectorAll('.upgrade-card-rarity').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.24, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 0.6, letterSpacing: -1, wordSpacing: 4 });
             });
 
             root.querySelectorAll('.upgrade-card-category').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.23, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 0.58, letterSpacing: -1, wordSpacing: 4 });
             });
 
             root.querySelectorAll('.upgrade-card-select').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.23, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 0.58, letterSpacing: -1, wordSpacing: 4 });
             });
 
             root.querySelectorAll('.upgrade-card-art').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.32, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 0.8, letterSpacing: -1, wordSpacing: 4 });
             });
         }
 
@@ -6273,53 +6273,53 @@
             const chatWidth = Math.round(
                 Math.min(
                     isMobile ? 260 : 420,
-                    Math.max(isMobile ? 160 : 220, displayWidth * (isMobile ? 0.34 : 0.22)) * sharedViewZoom
+                    Math.max(isMobile ? 160 : 220, displayWidth * (isMobile ? 0.34 : 0.22))
                 )
             );
             const chatExpandedHeight = Math.round(
                 Math.min(
                     isMobile ? 160 : 220,
-                    Math.max(isMobile ? 92 : 120, displayHeight * (isMobile ? 0.26 : 0.2)) * sharedViewZoom
+                    Math.max(isMobile ? 92 : 120, displayHeight * (isMobile ? 0.26 : 0.2))
                 )
             );
             const chatFontSize = Math.round(
-                Math.min(isMobile ? 15 : 18, Math.max(11, displayWidth * 0.018) * sharedViewZoom)
+                Math.min(isMobile ? 15 : 18, Math.max(11, displayWidth * 0.018))
             );
             const chatInputFontSize = Math.round(
-                Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02) * sharedViewZoom)
+                Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02))
             );
             const hudWidth = Math.round(
                 Math.min(
                     isMobile ? 300 : 420,
-                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22)) * sharedViewZoom
+                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22))
                 )
             );
             const hudGap = Math.round(
-                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)) * sharedViewZoom)
+                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)))
             );
             const hudPanelPaddingY = Math.round(
-                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
+                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)))
             );
             const hudPanelPaddingX = Math.round(
-                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)))
             );
             const hudBarPaddingX = Math.round(
-                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)) * sharedViewZoom)
+                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)))
             );
             const hudBarPaddingBottom = Math.round(
-                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)) * sharedViewZoom)
+                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)))
             );
             const hudTrackHeight = Math.round(
-                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)) * sharedViewZoom)
+                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)))
             );
             const hudLabelFontSize = Math.max(
                 0.72,
-                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)) * sharedViewZoom)
+                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)))
             );
             const leaderboardWidth = Math.round(
                 Math.min(
                     isMobile ? 220 : 340,
-                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18)) * sharedViewZoom
+                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18))
                 )
             );
             const leaderboardTop = Math.round(
@@ -6328,35 +6328,35 @@
             const feedWidth = Math.round(
                 Math.min(
                     isMobile ? 360 : 560,
-                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32)) * sharedViewZoom
+                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32))
                 )
             );
             const toastWidth = Math.round(
                 Math.min(
                     isMobile ? 340 : 520,
-                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28)) * sharedViewZoom
+                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28))
                 )
             );
             const toastPaddingY = Math.round(
-                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
+                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)))
             );
             const toastPaddingX = Math.round(
-                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)))
             );
             const chatEdge = Math.round(
                 Math.min(isMobile ? 12 : 20, Math.max(8, displayWidth * (isMobile ? 0.014 : 0.01)))
             );
             const mobileActionSize = Math.round(
-                Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)) * sharedViewZoom)
+                Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)))
             );
             const joystickSize = Math.round(
-                Math.min(isMobile ? 116 : 120, Math.max(isMobile ? 78 : 92, displayWidth * (isMobile ? 0.13 : 0.07)) * sharedViewZoom)
+                Math.min(isMobile ? 116 : 120, Math.max(isMobile ? 78 : 92, displayWidth * (isMobile ? 0.13 : 0.07)))
             );
             const joystickThumbSize = Math.round(
                 Math.min(isMobile ? 46 : 50, Math.max(isMobile ? 34 : 40, joystickSize * 0.42))
             );
             const mobileControlsHeight = Math.round(
-                Math.min(isMobile ? 168 : 184, Math.max(isMobile ? 116 : 132, displayHeight * (isMobile ? 0.22 : 0.18)) * sharedViewZoom)
+                Math.min(isMobile ? 168 : 184, Math.max(isMobile ? 116 : 132, displayHeight * (isMobile ? 0.22 : 0.18)))
             );
             const mobileEdgeGap = Math.round(
                 Math.min(isMobile ? 16 : 20, Math.max(8, displayWidth * (isMobile ? 0.02 : 0.012)))
