@@ -472,11 +472,6 @@
                 radial-gradient(circle at 50% 20%, rgba(255,255,255,0.22), rgba(255,255,255,0) 34%),
                 linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.2));
             overflow: hidden;
-        }
-        .upgrade-card-art::before {
-            content: attr(data-icon);
-            position: absolute;
-            inset: 0;
             display: grid;
             place-items: center;
             font-size: clamp(3.2rem, 6vw, 5rem);
@@ -2348,7 +2343,7 @@
     <div id="upgrade-draft-overlay" aria-live="polite">
         <div class="upgrade-draft-shell">
             <div class="upgrade-draft-header">
-                <div class="upgrade-draft-title" data-custom-alphabet="title">Choose Your Boon</div>
+                <div class="upgrade-draft-title" data-custom-alphabet="title">CHOOSE AN UPGRADE</div>
                 <div id="upgrade-draft-subtitle" class="upgrade-draft-subtitle" data-custom-alphabet="dynamic">A new soul trait stirs in the flame.</div>
             </div>
             <div id="upgrade-draft-cards" class="upgrade-draft-cards"></div>
@@ -3348,6 +3343,30 @@
 
             root.querySelectorAll('.character-card-label').forEach((element) => {
                 applyCustomAlphabetToElement(element, { scale: 0.66, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.upgrade-card-title').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 1.22, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.upgrade-card-body').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.7, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.upgrade-card-rarity').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.6, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.upgrade-card-category').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.58, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.upgrade-card-select').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.58, letterSpacing: -1, wordSpacing: 4 });
+            });
+
+            root.querySelectorAll('.upgrade-card-art').forEach((element) => {
+                applyCustomAlphabetToElement(element, { scale: 0.8, letterSpacing: -1, wordSpacing: 4 });
             });
         }
 
@@ -8528,17 +8547,18 @@
                         data-card-id="${escapeHtml(card.id)}"
                         style="--card-accent:${accent};--card-glow:${glow};animation-delay:${index * 70}ms"
                     >
-                        <div class="upgrade-card-art" data-icon="${icon}"></div>
+                        <div class="upgrade-card-art">${escapeHtml(icon)}</div>
                         <span class="upgrade-card-rarity">${escapeHtml(card.rarityLabel || card.rarity || 'Card')}</span>
                         <div class="upgrade-card-title">${escapeHtml(card.title)}</div>
                         <div class="upgrade-card-body">${escapeHtml(card.description)}</div>
                         <div class="upgrade-card-footer">
-                            <span>${escapeHtml(card.category || 'upgrade')}</span>
-                            <span>Select</span>
+                            <span class="upgrade-card-category">${escapeHtml(card.category || 'upgrade')}</span>
+                            <span class="upgrade-card-select">Select</span>
                         </div>
                     </button>
                 `;
             }).join('');
+            refreshCustomAlphabetUi(upgradeDraftCardsElement);
             lastRenderedUpgradeDraftKey = draftKey;
             lastRenderedUpgradeDraftPending = upgradeSelectionPending;
             lastRenderedUpgradeDraftLocked = cardsLocked;
