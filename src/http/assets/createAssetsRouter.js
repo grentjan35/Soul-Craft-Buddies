@@ -264,14 +264,68 @@ function buildExternalAssetUrl(baseUrl, relativeAssetPath) {
   return `${normalizedBase}/assets/${normalizedRelative}`;
 }
 
-function redirectToExternalAssetIfConfigured(res, baseUrl, relativeAssetPath) {
-  const externalUrl = buildExternalAssetUrl(baseUrl, relativeAssetPath);
-  if (!externalUrl) {
-    return false;
+const EXTERNAL_ASSET_CACHE_TTL_MS = 10 * 60 * 1000;
+const externalAssetCache = new Map();
+
+function getCachedExternalAsset(cacheKey) {
+  const cached = externalAssetCache.get(cacheKey);
+  if (!cached) {
+    return null;
   }
 
-  res.redirect(302, externalUrl);
-  return true;
+  if (cached.expiresAt <= Date.now()) {
+    externalAssetCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached;
+}
+
+function setCachedExternalAsset(cacheKey, value) {
+  externalAssetCache.set(cacheKey, {
+    ...value,
+    expiresAt: Date.now() + EXTERNAL_ASSET_CACHE_TTL_MS,
+  });
+}
+
+async function fetchExternalAssetBuffer(externalUrl) {
+  const cached = getCachedExternalAsset(externalUrl);
+  if (cached?.buffer) {
+    return cached;
+  }
+
+  if (cached?.promise) {
+    return cached.promise;
+  }
+
+  const pendingFetch = (async () => {
+    const response = await fetch(externalUrl, {
+      redirect: 'follow',
+      cache: 'force-cache',
+    });
+
+    if (!response.ok) {
+      throw new Error(`External asset fetch failed: ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const assetRecord = {
+      buffer: Buffer.from(arrayBuffer),
+      contentType: response.headers.get('content-type') || 'application/octet-stream',
+    };
+
+    setCachedExternalAsset(externalUrl, assetRecord);
+    return assetRecord;
+  })();
+
+  setCachedExternalAsset(externalUrl, { promise: pendingFetch });
+
+  try {
+    return await pendingFetch;
+  } catch (error) {
+    externalAssetCache.delete(externalUrl);
+    throw error;
+  }
 }
 
 async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadName = '', options = {}) {
@@ -280,23 +334,15 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
     return false;
   }
 
-  let response;
+  let assetRecord;
   try {
-    response = await fetch(externalUrl, {
-      redirect: 'follow',
-      cache: 'no-store',
-    });
+    assetRecord = await fetchExternalAssetBuffer(externalUrl);
   } catch {
     return false;
   }
 
-  if (!response.ok) {
-    return false;
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  const contentType = response.headers.get('content-type') || 'application/octet-stream';
+  const buffer = assetRecord.buffer;
+  const contentType = assetRecord.contentType;
 
   if (options.protectedResponse) {
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
