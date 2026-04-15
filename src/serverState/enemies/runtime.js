@@ -8,7 +8,13 @@ const {
 } = require('../state/constants');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
 const { dropSoulsForEnemyDeath, dropSoulsForPlayerDeath } = require('../state/souls/soulSystem');
-const { gainPlayerXp, getPlayerRunStats } = require('../state/progression/system');
+const {
+  consumeAggroUnlockNotification,
+  gainPlayerXp,
+  getPlayerLevel,
+  getPlayerRunStats,
+  recordProgressionMetric,
+} = require('../state/progression/system');
 const { emitProgressionNotification } = require('../state/progression/notifications');
 
 function secondsFromMs(ms) {
@@ -25,12 +31,47 @@ const BAT_REQUIRED_HEADROOM = 220;
 const SLIME_WALL_STICK_SECONDS = 0.6;
 const SLIME_ATTACH_OFFSET_Y = -4;
 const SLIME_SPLAT_RADIUS = 30;
-const GARGOYLE_PERCH_OPACITY = 0;
+const GARGOYLE_PERCH_OPACITY = 0.3;
 const GARGOYLE_ACTIVE_OPACITY = 1;
 const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
 const STRIKER_ASCEND_DURATION_SECONDS = 0.7;
 const STRIKER_SLAM_IMPACT_WINDOW_SECONDS = 0.18;
 const STRIKER_TOUCH_DAMAGE_COOLDOWN_SECONDS = 0.65;
+const ENEMY_DIRECTOR_SYNC_MS = 1200;
+const ENEMY_LEVEL_SOFT_CAP = 10;
+const ENEMY_LEVEL_HARD_CAP = 100;
+const SAFE_PLAYER_LEVEL_CAP = 5;
+
+const ENEMY_SUMMON_MILESTONES = Object.freeze([
+  {
+    unlockLevel: 3,
+    type: 'summon',
+    title: 'Bat Swarm Alerted',
+    caption: 'Danger Rising',
+    message: 'The sky stirs. A bat swarm has been summoned nearby.',
+  },
+  {
+    unlockLevel: 6,
+    type: 'danger',
+    title: 'Spider Brood Stirring',
+    caption: 'Danger Rising',
+    message: 'A fast spider brood is crawling into the world.',
+  },
+  {
+    unlockLevel: 9,
+    type: 'danger',
+    title: 'Gargoyle Hunters Awaken',
+    caption: 'Danger Rising',
+    message: 'Stone wings crack open. Gargoyles are now joining the hunt.',
+  },
+  {
+    unlockLevel: 12,
+    type: 'danger',
+    title: 'Striker Descends',
+    caption: 'Danger Rising',
+    message: 'A striker has entered the world. Stay moving.',
+  },
+]);
 
 function isFlyingEnemy(definition) {
   return definition?.behavior?.movementMode === 'flying';
@@ -141,7 +182,7 @@ function getEnemyHitboxForPosition(definition, x, y) {
 }
 
 function getEnemyHitbox(state, enemy) {
-  const definition = getEnemyDefinition(state, enemy.type);
+  const definition = enemy.runtime_definition || getEnemyDefinition(state, enemy.type);
   if (!definition) {
     return null;
   }
@@ -318,6 +359,145 @@ function willEnemyCollideHorizontally(state, definition, enemy, deltaX) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function getEnemyTypeUnlockLevel(enemyType) {
+  if (enemyType === 'bat') return 3;
+  if (enemyType === 'gargoyle') return 9;
+  if (enemyType === 'striker') return 12;
+  return 1;
+}
+
+function getEnemyLevelScale(level) {
+  const safeLevel = clamp(Math.max(1, Math.round(Number(level) || 1)), 1, ENEMY_LEVEL_HARD_CAP);
+  if (safeLevel <= ENEMY_LEVEL_SOFT_CAP) {
+    const normalized = (safeLevel - 1) / Math.max(1, ENEMY_LEVEL_SOFT_CAP - 1);
+    return 0.46 + normalized * 0.54;
+  }
+
+  const overCapNormalized = (safeLevel - ENEMY_LEVEL_SOFT_CAP) / Math.max(1, ENEMY_LEVEL_HARD_CAP - ENEMY_LEVEL_SOFT_CAP);
+  return 1 + Math.pow(overCapNormalized, 0.82) * 1.9;
+}
+
+function buildScaledEnemyDefinition(definition, level) {
+  const scale = getEnemyLevelScale(level);
+  const speedScale = 0.82 + (scale - 0.46) * 0.26;
+  const detectionScale = 0.74 + (scale - 0.46) * 0.2;
+  const cooldownScale = clamp(1.18 - (scale - 0.46) * 0.16, 0.72, 1.18);
+
+  return {
+    ...definition,
+    stats: {
+      ...definition.stats,
+      maxHealth: Math.max(1, Math.round(definition.stats.maxHealth * scale)),
+      contactDamage: Math.max(1, Math.round(definition.stats.contactDamage * (0.6 + (scale - 0.46) * 0.58))),
+    },
+    behavior: {
+      ...definition.behavior,
+      detectionRadius: Math.max(120, Math.round(definition.behavior.detectionRadius * detectionScale)),
+      leashRadius: Math.max(180, Math.round(definition.behavior.leashRadius * detectionScale)),
+      wanderRadius: Math.max(90, Math.round(definition.behavior.wanderRadius * (0.9 + (scale - 0.46) * 0.08))),
+      moveSpeed: Math.max(70, definition.behavior.moveSpeed * speedScale),
+      verticalMoveSpeed: Math.max(70, definition.behavior.verticalMoveSpeed * speedScale),
+      telegraphDurationMs: Math.max(200, Math.round(definition.behavior.telegraphDurationMs * cooldownScale)),
+      lungeDurationMs: Math.max(220, Math.round(definition.behavior.lungeDurationMs * clamp(1.05 - (scale - 0.46) * 0.06, 0.74, 1.1))),
+      attackCooldownMs: Math.max(420, Math.round(definition.behavior.attackCooldownMs * cooldownScale)),
+      attackRange: Math.max(140, Math.round(definition.behavior.attackRange * (0.88 + (scale - 0.46) * 0.12))),
+      lungeSpeed: Math.max(240, definition.behavior.lungeSpeed * (0.86 + (scale - 0.46) * 0.2)),
+      lungeLift: Math.max(0, definition.behavior.lungeLift * (0.86 + (scale - 0.46) * 0.16)),
+      jumpForce: Math.max(340, definition.behavior.jumpForce * (0.9 + (scale - 0.46) * 0.12)),
+      hoverHeight: Math.max(64, definition.behavior.hoverHeight * (0.92 + (scale - 0.46) * 0.08)),
+      hoverVariance: Math.max(40, definition.behavior.hoverVariance * (0.9 + (scale - 0.46) * 0.08)),
+      projectileSpeed: Math.max(0, definition.behavior.projectileSpeed * (0.88 + (scale - 0.46) * 0.18)),
+      projectileDamage: Math.max(0, Math.round(definition.behavior.projectileDamage * (0.6 + (scale - 0.46) * 0.62))),
+      projectileScale: Math.max(0.45, definition.behavior.projectileScale * (0.9 + (scale - 0.46) * 0.08)),
+      projectileRadiusScale: Math.max(0.45, definition.behavior.projectileRadiusScale * (0.9 + (scale - 0.46) * 0.08)),
+    },
+    level,
+  };
+}
+
+function getWorldThreatLevel(state) {
+  let highestThreat = 1;
+  for (const player of state.players.values()) {
+    if (!player || player.is_dying) {
+      continue;
+    }
+    const level = getPlayerLevel(player);
+    const souls = Math.max(0, Math.round(Number(player.soul_count) || 0));
+    const threat = level + Math.floor(souls / 14);
+    if (threat > highestThreat) {
+      highestThreat = threat;
+    }
+  }
+  return clamp(highestThreat, 1, ENEMY_LEVEL_HARD_CAP);
+}
+
+function getEnemyLevelForType(worldThreatLevel, enemyType) {
+  const unlockLevel = getEnemyTypeUnlockLevel(enemyType);
+  if (worldThreatLevel < unlockLevel) {
+    return 0;
+  }
+
+  const typeBias = enemyType === 'striker'
+    ? 2
+    : enemyType === 'gargoyle'
+      ? 1
+      : enemyType === 'bat'
+        ? -1
+        : 0;
+  return clamp(Math.max(1, worldThreatLevel + typeBias), 1, ENEMY_LEVEL_HARD_CAP);
+}
+
+function rollEnemySpawnLevel(worldThreatLevel, enemyType) {
+  const maxLevel = getEnemyLevelForType(worldThreatLevel, enemyType);
+  if (maxLevel <= 0) {
+    return 0;
+  }
+
+  if (maxLevel <= 2) {
+    return maxLevel;
+  }
+
+  const weightedRoll = Math.min(Math.random(), Math.random(), Math.random());
+  return clamp(1 + Math.round((maxLevel - 1) * (1 - weightedRoll)), 1, maxLevel);
+}
+
+function ensureEnemyDirector(state) {
+  if (!state.enemyDirector || typeof state.enemyDirector !== 'object') {
+    state.enemyDirector = {
+      lastSyncAtMs: 0,
+      lastThreatLevel: 1,
+      announcedMilestones: {},
+    };
+  }
+  if (!state.enemyDirector.announcedMilestones || typeof state.enemyDirector.announcedMilestones !== 'object') {
+    state.enemyDirector.announcedMilestones = {};
+  }
+  return state.enemyDirector;
+}
+
+function broadcastEnemySummonMilestones(state, io, worldThreatLevel) {
+  const director = ensureEnemyDirector(state);
+  if (!io) {
+    return;
+  }
+
+  for (const milestone of ENEMY_SUMMON_MILESTONES) {
+    if (worldThreatLevel < milestone.unlockLevel || director.announcedMilestones[milestone.unlockLevel]) {
+      continue;
+    }
+
+    director.announcedMilestones[milestone.unlockLevel] = true;
+    io.emit('progression_notification', {
+      type: milestone.type,
+      title: milestone.title,
+      caption: milestone.caption,
+      message: milestone.message,
+      xp: 0,
+      timestamp: Date.now(),
+    });
+  }
 }
 
 function getPlayerHitbox(player) {
@@ -1290,6 +1470,8 @@ function setBrainState(enemy, nextState, nowSec) {
 
 function buildEnemyInstance(spawn, definition) {
   const nowSec = Date.now() / 1000;
+  const level = Math.max(1, Math.round(Number(spawn.level) || 1));
+  const runtimeDefinition = buildScaledEnemyDefinition(definition, level);
   const startsFlying = isFlyingEnemy(definition);
   const startsAsPerchedGargoyle = isGargoyleEnemy(definition) && Math.random() < 0.55;
   return {
@@ -1328,12 +1510,15 @@ function buildEnemyInstance(spawn, definition) {
     attack_release_at: 0,
     attack_shot_fired: false,
     attack_hit_victims: [],
-    health: definition.stats.maxHealth,
-    max_health: definition.stats.maxHealth,
+    level,
+    runtime_definition: runtimeDefinition,
+    health: runtimeDefinition.stats.maxHealth,
+    max_health: runtimeDefinition.stats.maxHealth,
     alive: true,
     death_time: 0,
     despawn_at: 0,
     respawn_at: 0,
+    spawn_time_ms: Date.now(),
     nav_cache_key: '',
     nav_cache_until: 0,
     nav_cache_plan: null,
@@ -1350,6 +1535,7 @@ function buildEnemyInstance(spawn, definition) {
     gargoyle_mode_until: nowSec + 2.4 + Math.random() * 2.6,
     gargoyle_perch_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
     render_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
+    stealth_broken: false,
     attack_repeat_next_at: 0,
   };
 }
@@ -1538,41 +1724,81 @@ function isEnemySpawnPlacementValid(state, definition, position, occupiedSpawns,
   return true;
 }
 
-function getEnemyTargetCount(state, enemyType) {
+function getEnemyTargetCount(state, enemyType, worldThreatLevel = 1) {
+  if (worldThreatLevel < getEnemyTypeUnlockLevel(enemyType)) {
+    return 0;
+  }
+
   const tileArea = getMapTileArea(state);
   const platformCount = Array.isArray(state.platforms) ? state.platforms.length : 0;
   const widePlatforms = Array.isArray(state.platforms)
     ? state.platforms.filter((platform) => platform.w >= BAT_MIN_PLATFORM_WIDTH).length
     : 0;
+  const progressionBonus = Math.max(0, worldThreatLevel - 1);
 
   if (enemyType === 'bat') {
-    return clamp(Math.round(tileArea / 260) + Math.floor(widePlatforms / 10), 1, 4);
+    return clamp(Math.round(tileArea / 260) + Math.floor(widePlatforms / 10) + Math.floor(Math.max(0, progressionBonus - 2) / 5), 1, 8);
   }
 
   if (enemyType === 'spider') {
-    return clamp(Math.round(tileArea / 180) + Math.floor(platformCount / 16), 2, 7);
+    return clamp(Math.round(tileArea / 180) + Math.floor(platformCount / 16) + Math.floor(progressionBonus / 4), 2, 12);
   }
 
   if (enemyType === 'slime') {
-    return clamp(Math.round(tileArea / 240) + Math.floor(platformCount / 18), 1, 5);
+    return clamp(Math.round(tileArea / 240) + Math.floor(platformCount / 18) + Math.floor(progressionBonus / 5), 1, 9);
   }
 
   if (enemyType === 'gargoyle') {
-    return clamp(Math.round(tileArea / 420) + Math.floor(platformCount / 28), 1, 3);
+    return clamp(Math.round(tileArea / 420) + Math.floor(platformCount / 28) + Math.floor(Math.max(0, progressionBonus - 7) / 8), 1, 5);
   }
 
   if (enemyType === 'striker') {
-    return clamp(Math.round(tileArea / 620) + Math.floor(widePlatforms / 18), 1, 2);
+    return clamp(Math.round(tileArea / 620) + Math.floor(widePlatforms / 18) + Math.floor(Math.max(0, progressionBonus - 11) / 12), 1, 3);
   }
 
-  return clamp(Math.round(tileArea / 150), 1, 8);
+  return clamp(Math.round(tileArea / 150) + Math.floor(progressionBonus / 4), 1, 12);
 }
 
-function pickGroundEnemySpawn(state, definition, occupiedSpawns) {
+function getDynamicSpawnAnchorPlayer(state) {
+  let anchorPlayer = null;
+  let anchorThreat = -1;
+  for (const player of state.players.values()) {
+    if (!player || player.is_dying || !player.is_ready) {
+      continue;
+    }
+    const threat = getPlayerLevel(player) + Math.floor(Math.max(0, Number(player.soul_count) || 0) / 14);
+    if (threat > anchorThreat) {
+      anchorThreat = threat;
+      anchorPlayer = player;
+    }
+  }
+  return anchorPlayer;
+}
+
+function sortPlatformsForSpawn(platforms, anchorPlayer) {
+  if (!anchorPlayer) {
+    return platforms;
+  }
+
+  return platforms.slice().sort((a, b) => {
+    const aCenterX = a.x + a.w / 2;
+    const bCenterX = b.x + b.w / 2;
+    const aForward = anchorPlayer.direction === 'left' ? aCenterX < anchorPlayer.x : aCenterX > anchorPlayer.x;
+    const bForward = anchorPlayer.direction === 'left' ? bCenterX < anchorPlayer.x : bCenterX > anchorPlayer.x;
+    if (aForward !== bForward) {
+      return aForward ? -1 : 1;
+    }
+    const aDistance = Math.abs(aCenterX - anchorPlayer.x) + Math.abs(a.y - anchorPlayer.y) * 0.6;
+    const bDistance = Math.abs(bCenterX - anchorPlayer.x) + Math.abs(b.y - anchorPlayer.y) * 0.6;
+    return aDistance - bDistance;
+  });
+}
+
+function pickGroundEnemySpawn(state, definition, occupiedSpawns, options = {}) {
   const shape = getEnemyShape(definition);
-  const platforms = shuffleArray(Array.isArray(state.platforms) ? state.platforms : []).filter((platform) => (
+  const platforms = sortPlatformsForSpawn(shuffleArray(Array.isArray(state.platforms) ? state.platforms : []).filter((platform) => (
     platform.w >= shape.width + ENEMY_PLATFORM_INSET * 2
-  ));
+  )), options.anchorPlayer);
 
   for (const platform of platforms) {
     const minHitboxX = platform.x + ENEMY_PLATFORM_INSET;
@@ -1594,11 +1820,11 @@ function pickGroundEnemySpawn(state, definition, occupiedSpawns) {
   return null;
 }
 
-function pickFlyingEnemySpawn(state, definition, occupiedSpawns) {
+function pickFlyingEnemySpawn(state, definition, occupiedSpawns, options = {}) {
   const shape = getEnemyShape(definition);
-  const platforms = shuffleArray(Array.isArray(state.platforms) ? state.platforms : []).filter((platform) => (
+  const platforms = sortPlatformsForSpawn(shuffleArray(Array.isArray(state.platforms) ? state.platforms : []).filter((platform) => (
     platform.w >= Math.max(BAT_MIN_PLATFORM_WIDTH, shape.width + ENEMY_PLATFORM_INSET * 2)
-  ));
+  )), options.anchorPlayer);
 
   for (const platform of platforms) {
     const minHitboxX = platform.x + ENEMY_PLATFORM_INSET;
@@ -1618,17 +1844,19 @@ function pickFlyingEnemySpawn(state, definition, occupiedSpawns) {
   return null;
 }
 
-function pickEnemySpawnPosition(state, definition, occupiedSpawns) {
+function pickEnemySpawnPosition(state, definition, occupiedSpawns, options = {}) {
   if (isFlyingEnemy(definition)) {
-    return pickFlyingEnemySpawn(state, definition, occupiedSpawns);
+    return pickFlyingEnemySpawn(state, definition, occupiedSpawns, options);
   }
-  return pickGroundEnemySpawn(state, definition, occupiedSpawns);
+  return pickGroundEnemySpawn(state, definition, occupiedSpawns, options);
 }
 
 function createProceduralEnemySpawns(state) {
   const enemyTypes = Object.keys(state.enemyDefinitions ?? {});
   const nextSpawns = [];
   const occupiedSpawns = [];
+  const worldThreatLevel = getWorldThreatLevel(state);
+  const anchorPlayer = getDynamicSpawnAnchorPlayer(state);
 
   for (const enemyType of enemyTypes) {
     const definition = getEnemyDefinition(state, enemyType);
@@ -1636,9 +1864,13 @@ function createProceduralEnemySpawns(state) {
       continue;
     }
 
-    const targetCount = getEnemyTargetCount(state, enemyType);
+    const targetCount = getEnemyTargetCount(state, enemyType, worldThreatLevel);
+    const enemyLevel = rollEnemySpawnLevel(worldThreatLevel, enemyType);
+    if (targetCount <= 0 || enemyLevel <= 0) {
+      continue;
+    }
     for (let index = 0; index < targetCount; index += 1) {
-      const position = pickEnemySpawnPosition(state, definition, occupiedSpawns);
+      const position = pickEnemySpawnPosition(state, definition, occupiedSpawns, { anchorPlayer });
       if (!position) {
         break;
       }
@@ -1646,6 +1878,7 @@ function createProceduralEnemySpawns(state) {
       const spawn = {
         id: `${enemyType}_${index}_${Math.random().toString(16).slice(2, 8)}`,
         type: enemyType,
+        level: enemyLevel,
         x: position.x,
         y: position.y,
       };
@@ -1658,6 +1891,7 @@ function createProceduralEnemySpawns(state) {
 }
 
 function resetEnemiesForState(input) {
+  ensureEnemyDirector(input.state);
   const nextEnemies = new Map();
   const enemySpawns = createProceduralEnemySpawns(input.state);
   input.state.enemySpawns = enemySpawns;
@@ -1672,6 +1906,61 @@ function resetEnemiesForState(input) {
   }
 
   input.state.enemies = nextEnemies;
+}
+
+function syncEnemyDirector(state, io) {
+  const director = ensureEnemyDirector(state);
+  const nowMs = Date.now();
+  if (nowMs - director.lastSyncAtMs < ENEMY_DIRECTOR_SYNC_MS) {
+    return;
+  }
+
+  director.lastSyncAtMs = nowMs;
+  const worldThreatLevel = getWorldThreatLevel(state);
+  director.lastThreatLevel = worldThreatLevel;
+  broadcastEnemySummonMilestones(state, io, worldThreatLevel);
+
+  const occupiedSpawns = [];
+  for (const enemy of state.enemies.values()) {
+    if (!enemy || !enemy.alive) {
+      continue;
+    }
+    const definition = enemy.runtime_definition || getEnemyDefinition(state, enemy.type);
+    if (!definition) {
+      continue;
+    }
+    occupiedSpawns.push({ x: enemy.x, y: enemy.y, definition });
+  }
+
+  const anchorPlayer = getDynamicSpawnAnchorPlayer(state);
+  for (const enemyType of Object.keys(state.enemyDefinitions ?? {})) {
+    const definition = getEnemyDefinition(state, enemyType);
+    const targetCount = getEnemyTargetCount(state, enemyType, worldThreatLevel);
+    const desiredLevel = getEnemyLevelForType(worldThreatLevel, enemyType);
+    if (!definition || targetCount <= 0 || desiredLevel <= 0) {
+      continue;
+    }
+
+    const existingCount = Array.from(state.enemies.values()).filter((enemy) => enemy?.type === enemyType).length;
+    for (let index = existingCount; index < targetCount; index += 1) {
+      const position = pickEnemySpawnPosition(state, definition, occupiedSpawns, { anchorPlayer });
+      if (!position) {
+        break;
+      }
+
+      const spawn = {
+        id: `${enemyType}_${Date.now().toString(16)}_${Math.random().toString(16).slice(2, 7)}`,
+        type: enemyType,
+        level: rollEnemySpawnLevel(worldThreatLevel, enemyType),
+        x: position.x,
+        y: position.y,
+      };
+      const enemy = buildEnemyInstance(spawn, definition);
+      state.enemies.set(enemy.id, enemy);
+      state.enemySpawns.push(spawn);
+      occupiedSpawns.push({ x: position.x, y: position.y, definition: enemy.runtime_definition || definition });
+    }
+  }
 }
 
 function chooseTargetPlayer(state, enemy, definition, nowSec) {
@@ -1690,6 +1979,9 @@ function chooseTargetPlayer(state, enemy, definition, nowSec) {
   let bestDistance = Number.POSITIVE_INFINITY;
   for (const [sid, player] of state.players.entries()) {
     if (player.is_dying) {
+      continue;
+    }
+    if (getPlayerLevel(player) <= SAFE_PLAYER_LEVEL_CAP) {
       continue;
     }
 
@@ -1733,6 +2025,10 @@ function pickWanderTarget(enemy, definition, nowSec) {
 function beginPrepare(enemy, targetPlayer, nowSec, definition) {
   setBrainState(enemy, 'prepare', nowSec);
   enemy.action = 'prepare';
+  if (isGargoyleEnemy(definition)) {
+    enemy.stealth_broken = true;
+    enemy.render_opacity = GARGOYLE_ACTIVE_OPACITY;
+  }
   enemy.prepare_until = nowSec + secondsFromMs(definition.behavior.telegraphDurationMs);
   enemy.attack_release_at = nowSec + secondsFromMs(definition.behavior.telegraphDurationMs * 0.68);
   enemy.attack_shot_fired = false;
@@ -1875,7 +2171,7 @@ function updateGargoyleMode(state, enemy, definition, targetPlayer, nowSec) {
     enemy.brain_state === 'lunge' ||
     enemy.brain_state === 'recover' ||
     ambushDistance <= GARGOYLE_AMBUSH_TRIGGER_RADIUS;
-  enemy.render_opacity = enemy.gargoyle_mode === 'perch' && !isActivelyAttacking
+  enemy.render_opacity = !enemy.stealth_broken && enemy.gargoyle_mode === 'perch' && !isActivelyAttacking
     ? GARGOYLE_PERCH_OPACITY
     : GARGOYLE_ACTIVE_OPACITY;
 }
@@ -2604,6 +2900,7 @@ function stageEnemyRespawn(enemy, definition, nowSec) {
   enemy.gargoyle_mode_until = nowSec + 2.4 + Math.random() * 2.6;
   enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.stealth_broken = false;
   enemy.attack_repeat_next_at = 0;
   enemy.striker_slam_started_at = 0;
   enemy.striker_slam_impacted_at = 0;
@@ -2617,7 +2914,7 @@ function damageEnemy(input) {
     return false;
   }
 
-  const definition = getEnemyDefinition(input.state, enemy.type);
+  const definition = enemy.runtime_definition || getEnemyDefinition(input.state, enemy.type);
   if (!definition) {
     return false;
   }
@@ -2627,6 +2924,10 @@ function damageEnemy(input) {
   if (wasAttachedSlime) {
     emitSlimeSplatter(input.io, enemy.x, enemy.y, enemy.attached_sid, SLIME_SPLAT_RADIUS);
     detachSlime(enemy, nowSec);
+  }
+  if (isGargoyleEnemy(definition)) {
+    enemy.stealth_broken = true;
+    enemy.render_opacity = GARGOYLE_ACTIVE_OPACITY;
   }
   enemy.target_sid = typeof input.sourceSid === 'string' ? input.sourceSid : enemy.target_sid;
   enemy.aggro_until = nowSec + 6;
@@ -2645,16 +2946,26 @@ function damageEnemy(input) {
     if (input.sourceSid) {
       const player = input.state.players.get(input.sourceSid);
       if (player) {
-        const xpGain = 20;
+        const xpGain = Math.max(10, 8 + Math.round((enemy.level || 1) * 2.8));
         const xpResult = gainPlayerXp(player, xpGain);
+        const unlockedAggroWarning = consumeAggroUnlockNotification(player);
+        const unlockedAchievements = recordProgressionMetric(player, 'enemyKills', 1);
         emitProgressionNotification(input.io, input.sourceSid, {
           type: 'enemy_kill',
+          title: `${definition.displayName || enemy.type || 'Enemy'} Down`,
           xp: xpResult.gainedXp,
           message: `${enemy.type || 'Enemy'} killed by ${player.name || `P${input.sourceSid.slice(0, 4)}`} with fireball`,
+          caption: `Enemy level ${enemy.level || 1}`,
           victimName: enemy.type || 'Enemy',
           killerName: player.name || `P${input.sourceSid.slice(0, 4)}`,
           weapon: 'fireball',
         });
+        if (unlockedAggroWarning) {
+          emitProgressionNotification(input.io, input.sourceSid, unlockedAggroWarning);
+        }
+        for (const achievement of unlockedAchievements) {
+          emitProgressionNotification(input.io, input.sourceSid, achievement);
+        }
       }
     }
     return true;
@@ -2682,7 +2993,17 @@ function respawnEnemy(state, enemy, definition) {
     });
   }
 
-  const nextSpawn = pickEnemySpawnPosition(state, definition, occupiedSpawns);
+  const baseDefinition = getEnemyDefinition(state, enemy.type) || definition;
+  const nextLevel = rollEnemySpawnLevel(getWorldThreatLevel(state), enemy.type);
+  if (nextLevel > 0 && baseDefinition) {
+    enemy.level = nextLevel;
+    enemy.runtime_definition = buildScaledEnemyDefinition(baseDefinition, nextLevel);
+    definition = enemy.runtime_definition;
+  }
+
+  const nextSpawn = pickEnemySpawnPosition(state, definition, occupiedSpawns, {
+    anchorPlayer: getDynamicSpawnAnchorPlayer(state),
+  });
   if (nextSpawn) {
     enemy.spawn_x = nextSpawn.x;
     enemy.spawn_y = nextSpawn.y;
@@ -2724,6 +3045,7 @@ function respawnEnemy(state, enemy, definition) {
   enemy.death_time = 0;
   enemy.despawn_at = 0;
   enemy.respawn_at = 0;
+  enemy.spawn_time_ms = Date.now();
   enemy.nav_cache_key = '';
   enemy.nav_cache_until = 0;
   enemy.nav_cache_plan = null;
@@ -2738,6 +3060,7 @@ function respawnEnemy(state, enemy, definition) {
   enemy.gargoyle_mode_until = enemy.state_started_at + 2.4 + Math.random() * 2.6;
   enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.stealth_broken = false;
   enemy.attack_repeat_next_at = 0;
   enemy.striker_slam_started_at = 0;
   enemy.striker_slam_impacted_at = 0;
@@ -3098,7 +3421,7 @@ function updateEnemies(input) {
 
   const nowSec = Date.now() / 1000;
   for (const enemy of input.state.enemies.values()) {
-    const definition = getEnemyDefinition(input.state, enemy.type);
+    const definition = enemy.runtime_definition || getEnemyDefinition(input.state, enemy.type);
     if (!definition) {
       continue;
     }
@@ -3134,7 +3457,7 @@ function serializeEnemiesForState(state, options = {}) {
   const useViewportFilter = Number.isFinite(centerX) && Number.isFinite(centerY) && radiusX > 0 && radiusY > 0;
 
   for (const enemy of state.enemies.values()) {
-    const definition = getEnemyDefinition(state, enemy.type);
+    const definition = enemy.runtime_definition || getEnemyDefinition(state, enemy.type);
     if (!definition) {
       continue;
     }
@@ -3150,7 +3473,7 @@ function serializeEnemiesForState(state, options = {}) {
       id: enemy.id,
       type: enemy.type,
       displayName: definition.displayName,
-      level: Math.max(1, Math.round(Number(enemy.max_health) || Number(definition.stats.maxHealth) || 1)),
+      level: Math.max(1, Math.round(Number(enemy.level) || 1)),
       x: Math.round(enemy.x * 10) / 10,
       y: Math.round(enemy.y * 10) / 10,
       vx: Math.round(enemy.vx * 10) / 10,
@@ -3166,6 +3489,7 @@ function serializeEnemiesForState(state, options = {}) {
       death_time_ms: enemy.death_time ? Math.round(enemy.death_time * 1000) : 0,
       despawn_at_ms: enemy.despawn_at ? Math.round(enemy.despawn_at * 1000) : 0,
       respawn_at_ms: enemy.respawn_at ? Math.round(enemy.respawn_at * 1000) : 0,
+      spawn_time_ms: typeof enemy.spawn_time_ms === 'number' ? enemy.spawn_time_ms : Date.now(),
       target_sid: enemy.target_sid || null,
       attached_sid: enemy.attached_sid || null,
       gargoyle_mode: enemy.gargoyle_mode || null,
@@ -3185,5 +3509,6 @@ module.exports = {
   getEnemyHitbox,
   resetEnemiesForState,
   serializeEnemiesForState,
+  syncEnemyDirector,
   updateEnemies,
 };

@@ -19,6 +19,7 @@ const {
   checkFireballEnemyCollision,
   damageEnemy,
   serializeEnemiesForState,
+  syncEnemyDirector,
   updateEnemies,
 } = require('../enemies/runtime');
 const { updateFairies } = require('../state/fairies/fairySystem');
@@ -29,10 +30,13 @@ const {
 } = require('../state/souls/soulSystem');
 const { pickSpawnPoint } = require('../sockets/spawn/pickSpawnPoint');
 const {
+  consumeAggroUnlockNotification,
   gainPlayerXp,
+  getPlayerLevel,
   getPlayerProgressionPayload,
   getPlayerRunStats,
   isPlayerDrafting,
+  recordProgressionMetric,
   resetPlayerProgression,
 } = require('../state/progression/system');
 const { emitProgressionNotification } = require('../state/progression/notifications');
@@ -42,6 +46,13 @@ const ENEMY_WAKE_RADIUS_X = 1200;
 const ENEMY_WAKE_RADIUS_Y = 850;
 const ENEMY_SEND_RADIUS_X = 1500;
 const ENEMY_SEND_RADIUS_Y = 1000;
+
+function getPlayerKillXp(victim, killer = null) {
+  const victimLevel = Math.max(1, getPlayerLevel(victim));
+  const killerLevel = killer ? Math.max(1, getPlayerLevel(killer)) : 1;
+  const levelGapBonus = Math.max(0, victimLevel - killerLevel) * 3;
+  return Math.max(24, 20 + victimLevel * 4 + levelGapBonus);
+}
 
 /** @type {NodeJS.Timeout | null} */
 let gameLoopInterval = null;
@@ -181,6 +192,7 @@ function startGameLoop(input) {
         spawnFireball,
         shouldUpdateEnemy: (enemy) => isEnemyNearAnyPlayer(enemy, activePlayers),
       });
+      syncEnemyDirector(input.state, input.io);
       updateFairies({ fairies: input.state.fairies, dt });
       updateSouls({ state: input.state, dt, io: input.io });
       updateFireballs({ state: input.state, dt, io: input.io });
@@ -984,7 +996,9 @@ function applyExplosionDamage(input) {
       if (input.ownerType === 'player' && input.ownerSid && input.ownerSid !== sid) {
         const killer = input.state.players.get(input.ownerSid);
         if (killer) {
-          const xpResult = gainPlayerXp(killer, 36);
+          const xpResult = gainPlayerXp(killer, getPlayerKillXp(player, killer));
+          const unlockedAggroWarning = consumeAggroUnlockNotification(killer);
+          const unlockedAchievements = recordProgressionMetric(killer, 'playerKills', 1);
           const victimName = player.name || `P${sid.slice(0, 4)}`;
           const killerName = killer.name || `P${input.ownerSid.slice(0, 4)}`;
           // Broadcast player kill to everyone
@@ -1005,6 +1019,12 @@ function applyExplosionDamage(input) {
             killerName,
             weapon: 'fireball',
           });
+          if (unlockedAggroWarning) {
+            emitProgressionNotification(input.io, input.ownerSid, unlockedAggroWarning);
+          }
+          for (const achievement of unlockedAchievements) {
+            emitProgressionNotification(input.io, input.ownerSid, achievement);
+          }
         }
       }
       input.io.emit('player_dying', {

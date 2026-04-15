@@ -136,7 +136,8 @@
         }
         #souls-leaderboard {
             position: fixed;
-            top: var(--adaptive-leaderboard-top);
+            top: 140px;
+            bottom: auto;
             right: var(--adaptive-chat-edge);
             min-width: 220px;
             width: min(var(--adaptive-leaderboard-width), 42vw);
@@ -286,16 +287,141 @@
         }
         #progression-feed {
             position: fixed;
-            left: 50%;
-            top: 18px;
-            transform: translateX(-50%);
+            left: 14px;
+            top: 112px;
             z-index: 230;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            align-items: flex-start;
             gap: var(--adaptive-feed-gap);
-            width: min(var(--adaptive-feed-width), calc(100vw - 28px));
+            width: min(420px, var(--adaptive-feed-width), calc(100vw - 28px));
             pointer-events: none;
+        }
+        #achievement-toggle {
+            position: fixed;
+            right: 18px;
+            top: 84px;
+            z-index: 230;
+            min-width: 138px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border: none;
+            background:
+                linear-gradient(180deg, rgba(42, 27, 18, 0.96), rgba(16, 10, 7, 0.96));
+            color: #f8ead2;
+            cursor: pointer;
+            pointer-events: auto;
+            font: 700 0.9rem/1 "Cinzel", "Times New Roman", serif;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        #achievement-toggle.is-active {
+            box-shadow:
+                inset 0 0 0 2px rgba(115, 88, 48, 0.95),
+                inset 0 0 0 4px rgba(255, 217, 142, 0.16),
+                0 10px 30px rgba(0, 0, 0, 0.28);
+        }
+        .achievement-toggle-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            background: #ff5d5d;
+            box-shadow: 0 0 14px rgba(255, 93, 93, 0.72);
+            opacity: 0;
+            transform: scale(0.5);
+            transition: opacity 160ms ease, transform 160ms ease;
+        }
+        .achievement-toggle-dot.has-unread {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .achievement-toggle-count {
+            min-width: 1.6em;
+            color: #ffcabf;
+            font-variant-numeric: tabular-nums;
+            text-align: center;
+        }
+        #achievement-panel {
+            position: fixed;
+            right: 18px;
+            top: 140px;
+            z-index: 230;
+            width: min(360px, calc(100vw - 28px));
+            max-height: min(60vh, 520px);
+            display: flex;
+            flex-direction: column;
+            padding: 14px;
+            background:
+                linear-gradient(180deg, rgba(26, 17, 12, 0.96), rgba(12, 8, 6, 0.96));
+            color: #f5ebdb;
+            box-shadow:
+                inset 0 0 0 2px rgba(84, 61, 30, 0.96),
+                inset 0 0 0 4px rgba(243, 213, 157, 0.14),
+                0 18px 46px rgba(0, 0, 0, 0.38);
+            opacity: 0;
+            transform: translateX(18px);
+            pointer-events: none;
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+        #achievement-panel.is-open {
+            opacity: 1;
+            transform: translateX(0);
+            pointer-events: auto;
+        }
+        .achievement-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .achievement-panel-title {
+            font: 700 1rem/1.1 "Cinzel", "Times New Roman", serif;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #f8e2b5;
+        }
+        .achievement-panel-meta {
+            font: 700 0.78rem/1 "Cinzel", "Times New Roman", serif;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #d9bea2;
+        }
+        #achievement-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .achievement-card {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 12px;
+            background: rgba(255, 243, 225, 0.04);
+            border: 1px solid rgba(244, 216, 171, 0.14);
+        }
+        .achievement-card.is-unread {
+            border-color: rgba(255, 102, 102, 0.38);
+            box-shadow: inset 0 0 0 1px rgba(255, 102, 102, 0.18);
+        }
+        .achievement-card-title {
+            font: 700 0.95rem/1.2 "EB Garamond", Georgia, serif;
+            color: #fff1cf;
+        }
+        .achievement-card-message {
+            font: 0.92rem/1.42 "EB Garamond", Georgia, serif;
+            color: rgba(247, 235, 220, 0.92);
+        }
+        .achievement-card-status {
+            font: 700 0.76rem/1 "Cinzel", "Times New Roman", serif;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #efc988;
         }
         .progression-toast {
             width: min(100%, var(--adaptive-toast-width));
@@ -303,9 +429,12 @@
             border-radius: 0;
             color: #f7efdb;
             opacity: 0;
-            transform: translateY(-10px) scale(0.96);
-            animation: progression-toast-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-            text-align: center;
+            transform: translateX(-26px) scale(0.98);
+            animation: progression-toast-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
         .progression-toast.player_kill {
             box-shadow:
@@ -327,38 +456,73 @@
                 0 16px 48px rgba(0, 0, 0, 0.36),
                 0 0 34px rgba(82, 138, 255, 0.12);
         }
+        .progression-toast.achievement {
+            box-shadow:
+                inset 0 0 0 2px rgba(78, 54, 18, 0.96),
+                inset 0 0 0 4px rgba(255, 228, 145, 0.34),
+                inset 0 0 34px rgba(29, 18, 2, 0.8),
+                inset 0 0 72px rgba(255, 201, 84, 0.16),
+                0 16px 48px rgba(0, 0, 0, 0.36),
+                0 0 40px rgba(255, 201, 84, 0.18);
+        }
+        .progression-toast.summon,
+        .progression-toast.danger {
+            box-shadow:
+                inset 0 0 0 2px rgba(78, 18, 18, 0.98),
+                inset 0 0 0 4px rgba(255, 134, 134, 0.3),
+                inset 0 0 34px rgba(23, 4, 4, 0.86),
+                inset 0 0 72px rgba(255, 74, 74, 0.16),
+                0 16px 48px rgba(0, 0, 0, 0.4),
+                0 0 40px rgba(255, 74, 74, 0.18);
+        }
+        .progression-toast.summon .progression-toast-title,
+        .progression-toast.danger .progression-toast-title,
+        .progression-toast.summon .progression-toast-xp,
+        .progression-toast.danger .progression-toast-xp {
+            color: #ffb3a8;
+            text-shadow: 0 0 12px rgba(255, 93, 93, 0.24);
+        }
         .progression-toast-title {
-            font-size: 1.02rem;
-            line-height: 1.3;
+            font-family: "EB Garamond", Georgia, serif;
+            font-size: clamp(1.02rem, 1.8vw, 1.22rem);
+            font-weight: 700;
+            line-height: 1.38;
+            letter-spacing: 0.02em;
             color: #f6e2b4;
             text-shadow: 0 0 12px rgba(212, 179, 114, 0.22);
+            white-space: normal;
+            overflow-wrap: anywhere;
+            text-wrap: balance;
         }
         .progression-toast-xp {
-            margin-top: 6px;
-            font-size: 0.82rem;
+            font-family: "Cinzel", "Times New Roman", serif;
+            font-size: clamp(0.84rem, 1.4vw, 0.96rem);
+            font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
             color: #f3d896;
             text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
         @keyframes progression-toast-in {
             from {
                 opacity: 0;
-                transform: translateY(-10px) scale(0.96);
+                transform: translateX(-26px) scale(0.98);
             }
             to {
                 opacity: 1;
-                transform: translateY(0) scale(1);
+                transform: translateX(0) scale(1);
             }
         }
         @keyframes progression-toast-out {
             from {
                 opacity: 1;
-                transform: translateY(0) scale(1);
+                transform: translateX(0) scale(1);
             }
             to {
                 opacity: 0;
-                transform: translateY(-10px) scale(0.96);
+                transform: translateX(-26px) scale(0.98);
             }
         }
         .progression-toast.fading-out {
@@ -1730,18 +1894,64 @@
             }
         }
 
-        .menu-settings-btn.in-game span:last-child {
-            display: none;
-        }
-
         .menu-settings-btn.in-game {
             position: fixed;
             top: 18px;
             right: 18px;
-            z-index: 4000;
+            z-index: 231;
             min-width: 56px;
             width: 56px;
+            height: 56px;
             padding: 0;
+            gap: 0;
+            justify-content: center;
+            background:
+                radial-gradient(circle at 50% 46%, rgba(73, 119, 212, 0.14), transparent 30%),
+                linear-gradient(180deg, rgba(18, 25, 37, 0.92), rgba(10, 13, 21, 0.96));
+            border: 3px solid rgba(205, 169, 104, 0.9);
+            color: #f7efdb;
+            letter-spacing: 0;
+            box-shadow:
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
+                inset 0 0 30px rgba(10, 7, 4, 0.8),
+                inset 0 0 42px rgba(96, 156, 255, 0.08),
+                inset 0 0 72px rgba(91, 149, 255, 0.12),
+                0 16px 48px rgba(0, 0, 0, 0.36),
+                0 0 34px rgba(82, 138, 255, 0.12);
+        }
+
+        .menu-settings-btn.in-game::before {
+            content: "";
+            position: absolute;
+            inset: 10px;
+            border: 2px solid rgba(237, 213, 161, 0.88);
+            border-radius: 10px;
+            pointer-events: none;
+            opacity: 0.9;
+        }
+
+        .menu-settings-btn.in-game span:last-child {
+            display: none;
+        }
+
+        .menu-settings-btn.in-game .menu-settings-icon {
+            width: 20px;
+            height: 20px;
+            filter: drop-shadow(0 0 10px rgba(91, 149, 255, 0.35));
+        }
+
+        .menu-settings-btn.in-game:hover {
+            transform: translateY(-2px);
+            color: #fffaf0;
+            box-shadow:
+                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
+                inset 0 0 0 4px rgba(247, 223, 171, 0.4),
+                inset 0 0 30px rgba(10, 7, 4, 0.84),
+                inset 0 0 52px rgba(96, 156, 255, 0.14),
+                inset 0 0 84px rgba(91, 149, 255, 0.16),
+                0 18px 54px rgba(0, 0, 0, 0.38),
+                0 0 38px rgba(82, 138, 255, 0.16);
         }
 
         @media (hover: none) and (pointer: coarse) {
@@ -1753,6 +1963,16 @@
                 height: 48px;
             }
 
+            #achievement-toggle {
+                top: 66px;
+                right: 10px;
+            }
+
+            #achievement-panel {
+                top: 122px;
+                right: 10px;
+            }
+
             #run-hud {
                 top: 10px;
                 left: 10px;
@@ -1760,8 +1980,17 @@
             }
 
             #progression-feed {
-                top: 10px;
-                width: min(var(--adaptive-feed-width), calc(100vw - 20px));
+                left: 10px;
+                top: 122px;
+                width: min(340px, var(--adaptive-feed-width), calc(100vw - 20px));
+            }
+
+            #souls-leaderboard {
+                right: 10px;
+                top: 122px;
+                bottom: auto;
+                width: min(300px, calc(100vw - 20px));
+                max-width: min(300px, calc(100vw - 20px));
             }
         }
 
@@ -2336,6 +2565,18 @@
         </div>
     </div>
     <div id="progression-feed" aria-live="polite"></div>
+    <button id="achievement-toggle" class="in-game-frame in-game-frame-blue" type="button" aria-expanded="false" aria-controls="achievement-panel">
+        <span>Achievements</span>
+        <span id="achievement-toggle-count" class="achievement-toggle-count">0</span>
+        <span id="achievement-toggle-dot" class="achievement-toggle-dot" aria-hidden="true"></span>
+    </button>
+    <aside id="achievement-panel" class="in-game-frame in-game-frame-blue" aria-live="polite" aria-hidden="true">
+        <div class="achievement-panel-header">
+            <div class="achievement-panel-title">Achievements</div>
+            <div id="achievement-panel-meta" class="achievement-panel-meta">No unlocks yet</div>
+        </div>
+        <div id="achievement-list"></div>
+    </aside>
     <div id="souls-leaderboard" class="in-game-frame in-game-frame-blue" aria-live="polite">
         <div class="souls-leaderboard-header" data-custom-alphabet="title">Soul Leaderboard</div>
         <div id="souls-leaderboard-body" class="souls-leaderboard-body"></div>
@@ -3206,6 +3447,7 @@
                 paddingX = 2,
                 paddingY = 2,
                 background = 'transparent',
+                resolutionMultiplier = 1,
             } = options;
 
             const value = String(text ?? '');
@@ -3251,20 +3493,35 @@
             }
 
             const canvas = document.createElement('canvas');
-            canvas.width = Math.max(1, Math.ceil(width));
-            canvas.height = Math.max(1, Math.ceil(height));
+            const cssWidth = Math.max(1, Math.ceil(width));
+            const cssHeight = Math.max(1, Math.ceil(height));
+            const backingScale = Math.max(1, Number(resolutionMultiplier) || 1);
+            canvas.width = Math.max(1, Math.ceil(cssWidth * backingScale));
+            canvas.height = Math.max(1, Math.ceil(cssHeight * backingScale));
+            if (backingScale > 1) {
+                canvas.style.width = `${cssWidth}px`;
+                canvas.style.height = `${cssHeight}px`;
+            }
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 return null;
             }
 
+            if (backingScale > 1) {
+                ctx.setTransform(backingScale, 0, 0, backingScale, 0, 0);
+                ctx.imageSmoothingEnabled = true;
+                if ('imageSmoothingQuality' in ctx) {
+                    ctx.imageSmoothingQuality = 'high';
+                }
+            }
+
             if (background !== 'transparent') {
                 ctx.fillStyle = background;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillRect(0, 0, backingScale > 1 ? cssWidth : canvas.width, backingScale > 1 ? cssHeight : canvas.height);
             }
 
             let cursorX = paddingX;
-            const baselineY = canvas.height / 2;
+            const baselineY = (backingScale > 1 ? cssHeight : canvas.height) / 2;
             for (let index = 0; index < measurements.length; index++) {
                 const entry = measurements[index];
                 const nextEntry = measurements[index + 1] || null;
@@ -3374,7 +3631,7 @@
             });
 
             root.querySelectorAll('.upgrade-card-art').forEach((element) => {
-                applyCustomAlphabetToElement(element, { scale: 0.8, letterSpacing: -1, wordSpacing: 4 });
+                applyCustomAlphabetToElement(element, { scale: 0.8, letterSpacing: -1, wordSpacing: 4, resolutionMultiplier: 2 });
             });
         }
 
@@ -8075,6 +8332,12 @@
         const runXpValueElement = document.getElementById('run-xp-value');
         const runLevelBadgeElement = document.getElementById('run-level-badge');
         const progressionFeedElement = document.getElementById('progression-feed');
+        const achievementToggleElement = document.getElementById('achievement-toggle');
+        const achievementToggleCountElement = document.getElementById('achievement-toggle-count');
+        const achievementToggleDotElement = document.getElementById('achievement-toggle-dot');
+        const achievementPanelElement = document.getElementById('achievement-panel');
+        const achievementPanelMetaElement = document.getElementById('achievement-panel-meta');
+        const achievementListElement = document.getElementById('achievement-list');
         const upgradeDraftOverlay = document.getElementById('upgrade-draft-overlay');
         const upgradeDraftCardsElement = document.getElementById('upgrade-draft-cards');
         const upgradeDraftSubtitleElement = document.getElementById('upgrade-draft-subtitle');
@@ -8147,8 +8410,11 @@
             pendingChoices: null,
             selectedCards: [],
             totalCards: 0,
+            achievements: [],
+            unreadAchievementCount: 0,
             runStats: null
         };
+        let achievementPanelOpen = false;
         let upgradeSelectionPending = false;
         let lastRenderedUpgradeDraftKey = '';
         let lastRenderedUpgradeDraftPending = false;
@@ -8495,6 +8761,63 @@
             setCustomAlphabetText(runLevelBadgeElement, `Lvl. ${level}`);
         }
 
+        function renderAchievementPanel() {
+            if (!achievementPanelElement || !achievementListElement || !achievementToggleCountElement || !achievementToggleDotElement) {
+                return;
+            }
+
+            const achievements = Array.isArray(localProgressionState?.achievements)
+                ? localProgressionState.achievements.slice().reverse()
+                : [];
+            const unreadCount = Math.max(0, Number(localProgressionState?.unreadAchievementCount) || 0);
+
+            achievementToggleCountElement.textContent = String(unreadCount);
+            achievementToggleDotElement.classList.toggle('has-unread', unreadCount > 0);
+            achievementToggleElement?.classList.toggle('is-active', achievementPanelOpen);
+            achievementToggleElement?.setAttribute('aria-expanded', achievementPanelOpen ? 'true' : 'false');
+            achievementPanelElement.classList.toggle('is-open', achievementPanelOpen);
+            achievementPanelElement.setAttribute('aria-hidden', achievementPanelOpen ? 'false' : 'true');
+
+            if (!achievements.length) {
+                achievementPanelMetaElement.textContent = 'No unlocks yet';
+                achievementListElement.innerHTML = '<div class="achievement-card"><div class="achievement-card-message">Your future glory will show up here.</div></div>';
+                return;
+            }
+
+            achievementPanelMetaElement.textContent = unreadCount > 0
+                ? `${unreadCount} unread`
+                : `${achievements.length} unlocked`;
+            achievementListElement.innerHTML = achievements.map((achievement) => `
+                <div class="achievement-card ${achievement.unread ? 'is-unread' : ''}">
+                    <div class="achievement-card-status">${achievement.unread ? 'New Achievement' : 'Unlocked'}</div>
+                    <div class="achievement-card-title">${escapeHtml(achievement.title || 'Achievement')}</div>
+                    <div class="achievement-card-message">${escapeHtml(achievement.message || '')}</div>
+                </div>
+            `).join('');
+        }
+
+        function setAchievementPanelOpen(nextOpen) {
+            const normalized = Boolean(nextOpen);
+            if (achievementPanelOpen === normalized) {
+                renderAchievementPanel();
+                return;
+            }
+
+            achievementPanelOpen = normalized;
+            renderAchievementPanel();
+            if (achievementPanelOpen && (Number(localProgressionState?.unreadAchievementCount) || 0) > 0) {
+                socket.emit('mark_achievements_seen');
+                localProgressionState.unreadAchievementCount = 0;
+                if (Array.isArray(localProgressionState.achievements)) {
+                    localProgressionState.achievements = localProgressionState.achievements.map((achievement) => ({
+                        ...achievement,
+                        unread: false,
+                    }));
+                }
+                renderAchievementPanel();
+            }
+        }
+
         function escapeHtml(value) {
             return String(value ?? '')
                 .replace(/&/g, '&amp;')
@@ -8578,14 +8901,29 @@
             }
 
             const toastType = String(payload?.type || 'info');
+            if (toastType === 'achievement') {
+                return;
+            }
             const toastMessage = String(payload?.message || '');
             const toastXp = Math.max(0, Math.round(Number(payload?.xp) || 0));
+            const toastTitle = String(payload?.title || '');
+            const toastCaption = String(payload?.caption || '');
+            const defaultLabel = toastType === 'player_kill'
+                ? 'Player Slain'
+                : toastType === 'enemy_kill'
+                    ? 'Enemy Slain'
+                    : toastType === 'achievement'
+                        ? 'Achievement'
+                        : (toastType === 'danger' || toastType === 'summon'
+                            ? 'Danger Rising'
+                            : 'Soul Event');
             progressionToasts.unshift({
                 id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
                 message: toastMessage,
                 type: toastType,
                 xp: toastXp,
-                label: toastType === 'player_kill' ? 'Player Slain' : toastType === 'enemy_kill' ? 'Enemy Slain' : 'Soul Event',
+                title: toastTitle,
+                label: toastCaption || defaultLabel,
                 createdAt: Date.now(),
                 duration: 5000,
                 victimName: payload?.victimName || null,
@@ -8642,17 +8980,24 @@
                 const timeLeft = toast.duration - (now - toast.createdAt);
                 const isFadingOut = timeLeft < 500;
 
-                // Format message with colored names if structured data is available
-                let formattedMessage = toast.message;
+                let formattedMessage = escapeHtml(toast.message);
                 if (toast.victimName && toast.killerName && toast.weapon) {
-                    formattedMessage = `<span style="color: #ff6b6b;">${escapeHtml(toast.victimName)}</span> killed by <span style="color: #6bb6ff;">${escapeHtml(toast.killerName)}</span> with ${escapeHtml(toast.weapon)}`;
+                    formattedMessage = `${escapeHtml(toast.victimName)} KILLED BY ${escapeHtml(toast.killerName)} WITH ${escapeHtml(toast.weapon)}`;
+                } else if (toast.title) {
+                    formattedMessage = `${escapeHtml(toast.title)}${toast.message ? ` - ${escapeHtml(toast.message)}` : ''}`;
                 }
+
+                const footerText = toast.xp > 0
+                    ? `XP GAINED: +${toast.xp}`
+                    : (toast.type === 'achievement'
+                        ? 'ACHIEVEMENT UNLOCKED'
+                        : toast.label);
 
                 return `
                 <div class="progression-toast in-game-frame in-game-frame-blue ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''}">
                     <div class="progression-toast-xp">${escapeHtml(toast.label)}</div>
                     <div class="progression-toast-title">${formattedMessage}</div>
-                    <div class="progression-toast-xp">${toast.xp > 0 ? `XP Gained: +${toast.xp}` : 'Soul Event'}</div>
+                    <div class="progression-toast-xp">${escapeHtml(footerText)}</div>
                 </div>
             `;
             }).join('');
@@ -8685,6 +9030,10 @@
             upgradeSelectionPending = true;
             renderUpgradeDraft();
             socket.emit('select_upgrade', { cardId });
+        });
+
+        achievementToggleElement?.addEventListener('click', () => {
+            setAchievementPanelOpen(!achievementPanelOpen);
         });
 
 
@@ -8845,6 +9194,7 @@
                     ...localProgressionState,
                     ...selfState.progression
                 };
+                renderAchievementPanel();
                 if (isUpgradeDraftActive()) {
                     clearMovementInputsForDraft();
                 }
@@ -8861,6 +9211,7 @@
                         id: enemyId,
                         type: enemyPos.type,
                         displayName: enemyPos.displayName,
+                        level: typeof enemyPos.level === 'number' ? enemyPos.level : 1,
                         x: enemyPos.x,
                         y: enemyPos.y,
                         vx: enemyPos.vx,
@@ -8873,10 +9224,12 @@
                         alive: enemyPos.alive,
                         brain_state: enemyPos.brain_state,
                         state_started_at_ms: enemyPos.state_started_at_ms,
+                        spawn_time_ms: typeof enemyPos.spawn_time_ms === 'number' ? enemyPos.spawn_time_ms : Date.now(),
                         death_time_ms: enemyPos.death_time_ms,
                         despawn_at_ms: enemyPos.despawn_at_ms,
                         respawn_at_ms: enemyPos.respawn_at_ms,
-                        target_sid: enemyPos.target_sid ?? null
+                        target_sid: enemyPos.target_sid ?? null,
+                        render_opacity: typeof enemyPos.render_opacity === 'number' ? enemyPos.render_opacity : 1
                     };
 
                     if (
@@ -8901,15 +9254,18 @@
                         direction: enemyPos.direction,
                         on_ground: enemyPos.on_ground,
                         displayName: enemyPos.displayName,
+                        level: typeof enemyPos.level === 'number' ? enemyPos.level : 1,
                         health: enemyPos.health,
                         max_health: enemyPos.max_health,
                         alive: enemyPos.alive,
                         brain_state: enemyPos.brain_state,
                         state_started_at_ms: enemyPos.state_started_at_ms,
+                        spawn_time_ms: typeof enemyPos.spawn_time_ms === 'number' ? enemyPos.spawn_time_ms : Date.now(),
                         death_time_ms: enemyPos.death_time_ms,
                         despawn_at_ms: enemyPos.despawn_at_ms,
                         respawn_at_ms: enemyPos.respawn_at_ms,
-                        target_sid: enemyPos.target_sid ?? null
+                        target_sid: enemyPos.target_sid ?? null,
+                        render_opacity: typeof enemyPos.render_opacity === 'number' ? enemyPos.render_opacity : 1
                     });
                     enemyState[enemyId] = {
                         ...(enemyState[enemyId] || {}),
@@ -12846,6 +13202,14 @@
                         }
                         const flashAlpha = getHitFlashAlpha(enemyHitFlashUntilMs[enemyId], nowMs);
                         if (enemyOpacity > 0) {
+                            const spawnStartedAtMs = typeof state.spawn_time_ms === 'number' ? state.spawn_time_ms : 0;
+                            const spawnElapsedMs = spawnStartedAtMs > 0 ? Math.max(0, nowMs - spawnStartedAtMs) : 9999;
+                            const spawnProgress = Math.max(0, Math.min(1, spawnElapsedMs / 340));
+                            const easedSpawnScale = 0.18 + (1 - Math.pow(1 - spawnProgress, 3)) * 0.82;
+                            const drawWidth = frameInfo.renderDims.width * easedSpawnScale;
+                            const drawHeight = frameInfo.renderDims.height * easedSpawnScale;
+                            const scaledDrawX = state.x - cameraX - drawWidth / 2;
+                            const scaledDrawY = state.y - cameraY - drawHeight / 2;
                             drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraX, cameraY);
                             drawSpriteFrameWithHitFlash({
                                 image: frameInfo.image,
@@ -12853,10 +13217,10 @@
                                 frameY: frameInfo.frameY,
                                 frameW: frameInfo.frameW,
                                 frameH: frameInfo.frameH,
-                                drawX: enemyDrawX,
-                                drawY: enemyDrawY,
-                                drawW: frameInfo.renderDims.width,
-                                drawH: frameInfo.renderDims.height,
+                                drawX: scaledDrawX,
+                                drawY: scaledDrawY,
+                                drawW: drawWidth,
+                                drawH: drawHeight,
                                 direction: state.direction,
                                 opacity: enemyOpacity,
                                 flashAlpha,

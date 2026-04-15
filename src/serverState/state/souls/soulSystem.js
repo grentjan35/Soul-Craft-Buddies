@@ -1,6 +1,7 @@
 const { getNearbyPlatforms } = require('../platformGrid/buildPlatformGrid');
 const { TILE_SIZE, PLAYER_MAX_HEALTH } = require('../constants');
-const { getPlayerRunStats } = require('../progression/system');
+const { getPlayerRunStats, recordProgressionMetric } = require('../progression/system');
+const { emitProgressionNotification } = require('../progression/notifications');
 
 const SOUL_GRAVITY = 920;
 const SOUL_FRICTION = 0.9;
@@ -269,9 +270,13 @@ function updateSouls(input) {
       const collectRadius = (SOUL_COLLECT_RADIUS + Math.max(0, soulValue - 1) * 8 + Math.max(0, (soul.size || 1) - 1) * 8) * Math.min(1.65, magnetMultiplier);
       if (nearestDistance <= collectRadius) {
         nearestPlayer.soul_count = Math.max(0, Math.round(nearestPlayer.soul_count || 0)) + soulValue;
+        const unlockedAchievements = recordProgressionMetric(nearestPlayer, 'soulsCollected', soulValue);
         if (Number.isFinite(nearestPlayer.health)) {
           const maxHealth = Math.max(1, Number(nearestStats?.maxHealth) || Number(input.state.maxHealth) || PLAYER_MAX_HEALTH);
           nearestPlayer.health = Math.min(maxHealth, nearestPlayer.health + soulValue * SOUL_HEAL_PER_VALUE * healMultiplier);
+        }
+        for (const achievement of unlockedAchievements) {
+          emitProgressionNotification(input.io, nearestSid, achievement);
         }
         removals.push(soul.id);
         input.io.emit('soul_collected', {

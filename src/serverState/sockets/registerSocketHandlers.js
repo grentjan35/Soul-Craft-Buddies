@@ -16,8 +16,11 @@ const {
   createPlayerProgression,
   getPlayerRunStats,
   isPlayerDrafting,
+  markAchievementsRead,
+  recordProgressionMetric,
   resetPlayerProgression,
 } = require('../state/progression/system');
+const { emitProgressionNotification } = require('../state/progression/notifications');
 
 /**
  * Registers all Socket.IO event handlers for a connected client.
@@ -72,6 +75,10 @@ function registerSocketHandlers(input) {
       player.vy = Number.isFinite(runStats.jumpVelocity) ? runStats.jumpVelocity : -12 * 60;
       player.on_ground = false;
       player.jumps_remaining -= 1;
+      const unlockedAchievements = recordProgressionMetric(player, 'jumps', 1);
+      for (const achievement of unlockedAchievements) {
+        emitProgressionNotification(io, socket.id, achievement);
+      }
     }
   });
 
@@ -176,6 +183,12 @@ function registerSocketHandlers(input) {
     if (!result.ok) {
       socket.emit('upgrade_selection_error', { message: result.reason });
     }
+  });
+
+  socket.on('mark_achievements_seen', () => {
+    const player = state.players.get(socket.id);
+    if (!player) return;
+    markAchievementsRead(player);
   });
 
   socket.on('load_map', (data) => {

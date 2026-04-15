@@ -34,6 +34,58 @@ const BASE_PLAYER_RUN_STATS = Object.freeze({
   attackDuration: 0.92,
 });
 
+const ACHIEVEMENT_RULES = Object.freeze([
+  {
+    id: 'jump_25',
+    metric: 'jumps',
+    threshold: 25,
+    title: 'Restless Feet',
+    message: 'You have leapt 25 times. The world is starting to notice.',
+  },
+  {
+    id: 'jump_100',
+    metric: 'jumps',
+    threshold: 100,
+    title: 'Sky Drifter',
+    message: 'You have leapt 100 times. Even gravity is offended.',
+  },
+  {
+    id: 'enemy_kills_10',
+    metric: 'enemyKills',
+    threshold: 10,
+    title: 'Soul Reaper',
+    message: 'You have slain 10 enemies.',
+  },
+  {
+    id: 'enemy_kills_40',
+    metric: 'enemyKills',
+    threshold: 40,
+    title: 'Crowd Cleaver',
+    message: 'You have slain 40 enemies.',
+  },
+  {
+    id: 'souls_25',
+    metric: 'soulsCollected',
+    threshold: 25,
+    title: 'Soul Tender',
+    message: 'You have gathered 25 souls.',
+  },
+  {
+    id: 'souls_100',
+    metric: 'soulsCollected',
+    threshold: 100,
+    title: 'Soul Hoarder',
+    message: 'You have gathered 100 souls.',
+  },
+  {
+    id: 'player_kills_3',
+    metric: 'playerKills',
+    threshold: 3,
+    title: 'Duel Hunger',
+    message: 'You have felled 3 rival soul crafters.',
+  },
+]);
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -293,6 +345,23 @@ function cloneBaseStats() {
   return JSON.parse(JSON.stringify(BASE_PLAYER_RUN_STATS));
 }
 
+function createProgressionMeta() {
+  return {
+    metrics: {
+      jumps: 0,
+      enemyKills: 0,
+      playerKills: 0,
+      soulsCollected: 0,
+    },
+    achievements: {},
+    achievementOrder: [],
+    unreadAchievementIds: [],
+    flags: {
+      enemyAggroUnlocked: false,
+    },
+  };
+}
+
 function createPlayerProgression() {
   return {
     level: 1,
@@ -303,6 +372,7 @@ function createPlayerProgression() {
     selectedCards: [],
     upgradeLevels: {},
     runStats: cloneBaseStats(),
+    meta: createProgressionMeta(),
   };
 }
 
@@ -326,6 +396,24 @@ function ensurePlayerProgression(player) {
   }
   if (!Number.isFinite(player.progression.xpToNext)) {
     player.progression.xpToNext = getXpRequiredForLevel(player.progression.level || 1);
+  }
+  if (!player.progression.meta || typeof player.progression.meta !== 'object') {
+    player.progression.meta = createProgressionMeta();
+  }
+  if (!player.progression.meta.metrics || typeof player.progression.meta.metrics !== 'object') {
+    player.progression.meta.metrics = createProgressionMeta().metrics;
+  }
+  if (!player.progression.meta.achievements || typeof player.progression.meta.achievements !== 'object') {
+    player.progression.meta.achievements = {};
+  }
+  if (!Array.isArray(player.progression.meta.achievementOrder)) {
+    player.progression.meta.achievementOrder = [];
+  }
+  if (!Array.isArray(player.progression.meta.unreadAchievementIds)) {
+    player.progression.meta.unreadAchievementIds = [];
+  }
+  if (!player.progression.meta.flags || typeof player.progression.meta.flags !== 'object') {
+    player.progression.meta.flags = createProgressionMeta().flags;
   }
   return player.progression;
 }
@@ -449,6 +537,71 @@ function gainPlayerXp(player, amount) {
   return { gainedXp: scaledAmount, leveled };
 }
 
+function recordProgressionMetric(player, metric, amount = 1) {
+  const progression = ensurePlayerProgression(player);
+  const metrics = progression.meta.metrics;
+  const nextAmount = Math.max(0, Number(amount) || 0);
+  if (!Object.prototype.hasOwnProperty.call(metrics, metric) || nextAmount <= 0) {
+    return [];
+  }
+
+  metrics[metric] = Math.max(0, Math.round(Number(metrics[metric]) || 0)) + nextAmount;
+  const unlocked = [];
+
+  for (const rule of ACHIEVEMENT_RULES) {
+    if (rule.metric !== metric) {
+      continue;
+    }
+    if (progression.meta.achievements[rule.id]) {
+      continue;
+    }
+    if (metrics[metric] < rule.threshold) {
+      continue;
+    }
+
+    progression.meta.achievements[rule.id] = true;
+    progression.meta.achievementOrder.push(rule.id);
+    if (!progression.meta.unreadAchievementIds.includes(rule.id)) {
+      progression.meta.unreadAchievementIds.push(rule.id);
+    }
+    unlocked.push({
+      id: rule.id,
+      title: rule.title,
+      message: rule.message,
+      type: 'achievement',
+      xp: 0,
+      caption: 'Achievement Unlocked',
+    });
+  }
+
+  return unlocked;
+}
+
+function markAchievementsRead(player) {
+  const progression = ensurePlayerProgression(player);
+  progression.meta.unreadAchievementIds = [];
+}
+
+function consumeAggroUnlockNotification(player) {
+  const progression = ensurePlayerProgression(player);
+  if (progression.level <= 5 || progression.meta.flags.enemyAggroUnlocked) {
+    return null;
+  }
+
+  progression.meta.flags.enemyAggroUnlocked = true;
+  return {
+    type: 'danger',
+    title: 'The World Turns Hostile',
+    message: 'Enemies will now attack you on sight.',
+    xp: 0,
+    caption: 'Danger Rising',
+  };
+}
+
+function getPlayerLevel(player) {
+  return Math.max(1, Math.round(Number(ensurePlayerProgression(player).level) || 1));
+}
+
 function findCardById(cardId) {
   return UPGRADE_CATALOG.allCards.find((card) => card.id === cardId) || null;
 }
@@ -508,6 +661,22 @@ function applyUpgradeSelection(player, cardId) {
 
 function getPlayerProgressionPayload(player) {
   const progression = ensurePlayerProgression(player);
+  const achievements = progression.meta.achievementOrder
+    .map((achievementId) => {
+      const rule = ACHIEVEMENT_RULES.find((entry) => entry.id === achievementId);
+      if (!rule) {
+        return null;
+      }
+      return {
+        id: rule.id,
+        title: rule.title,
+        message: rule.message,
+        metric: rule.metric,
+        threshold: rule.threshold,
+        unread: progression.meta.unreadAchievementIds.includes(rule.id),
+      };
+    })
+    .filter(Boolean);
   return {
     level: progression.level,
     xp: progression.xp,
@@ -516,6 +685,8 @@ function getPlayerProgressionPayload(player) {
     pendingChoices: progression.pendingChoices,
     selectedCards: progression.selectedCards.slice(-12),
     totalCards: progression.selectedCards.length,
+    achievements: achievements.slice(-20),
+    unreadAchievementCount: progression.meta.unreadAchievementIds.length,
     runStats: {
       ...progression.runStats,
     },
@@ -528,17 +699,22 @@ function isPlayerDrafting(player) {
 }
 
 module.exports = {
+  ACHIEVEMENT_RULES,
   BASE_PLAYER_RUN_STATS,
   CARD_RARITY_META,
   UPGRADE_CATALOG,
   applyUpgradeSelection,
   clampPlayerHealthToMax,
+  consumeAggroUnlockNotification,
   createPlayerProgression,
   gainPlayerXp,
+  getPlayerLevel,
   getPlayerProgressionPayload,
   getPlayerRunStats,
   getXpRequiredForLevel,
   isPlayerDrafting,
+  markAchievementsRead,
   maybeQueueLevelUpChoices,
+  recordProgressionMetric,
   resetPlayerProgression,
 };
