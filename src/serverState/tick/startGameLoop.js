@@ -18,6 +18,7 @@ const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid'
 const {
   checkFireballEnemyCollision,
   damageEnemy,
+  despawnEnemiesSpawnedForPlayer,
   serializeEnemiesForState,
   syncEnemyDirector,
   updateEnemies,
@@ -288,6 +289,9 @@ function broadcastState(input) {
       radius: e.radius,
       age: round3(nowSec - e.spawn_time),
       spawn_time_ms: e.spawn_time_ms ?? Math.round((e.spawn_time ?? 0) * 1000),
+      owner_type: e.owner_type ?? 'player',
+      owner_enemy_id: e.owner_enemy_id ?? null,
+      owner_enemy_type: e.owner_enemy_type ?? null,
     };
   }
 
@@ -992,6 +996,7 @@ function applyExplosionDamage(input) {
       player.health = 0;
       player.is_dying = true;
       player.death_time = nowSec;
+      despawnEnemiesSpawnedForPlayer(input.state, sid);
       dropSoulsForPlayerDeath(input.state, input.io, player);
       if (input.ownerType === 'player' && input.ownerSid && input.ownerSid !== sid) {
         const killer = input.state.players.get(input.ownerSid);
@@ -1005,7 +1010,7 @@ function applyExplosionDamage(input) {
           input.io.emit('progression_notification', {
             type: 'player_kill',
             xp: 0, // No XP shown to everyone
-            message: `${victimName} killed by ${killerName} with fireball`,
+            message: `${killerName} killed ${victimName} with fireball`,
             victimName,
             killerName,
             weapon: 'fireball',
@@ -1014,7 +1019,8 @@ function applyExplosionDamage(input) {
           emitProgressionNotification(input.io, input.ownerSid, {
             type: 'player_kill',
             xp: xpResult.gainedXp,
-            message: `${victimName} killed by ${killerName} with fireball`,
+            message: `you killed ${victimName} with fireball`,
+            caption: `+${xpResult.gainedXp} xp`,
             victimName,
             killerName,
             weapon: 'fireball',
@@ -1099,8 +1105,32 @@ function createExplosion(input) {
   const nowSec = nowMs / 1000;
 
   const radius = Math.max(12, Number(input.radius) || EXPLOSION_RADIUS);
-  input.state.explosions.set(id, { id, x: input.x, y: input.y, radius, spawn_time: nowSec, spawn_time_ms: nowMs, active: true });
-  input.io.emit('explosion_created', { id, x: input.x, y: input.y, radius, spawn_time_ms: nowMs });
+  const ownerEnemy = input.ownerEnemyId ? input.state.enemies.get(input.ownerEnemyId) : null;
+  const ownerEnemyType = input.ownerType === 'enemy'
+    ? (ownerEnemy?.type || (String(input.ownerEnemyId || '').startsWith('gargoyle_') ? 'gargoyle' : null))
+    : null;
+  input.state.explosions.set(id, {
+    id,
+    x: input.x,
+    y: input.y,
+    radius,
+    spawn_time: nowSec,
+    spawn_time_ms: nowMs,
+    active: true,
+    owner_type: input.ownerType ?? 'player',
+    owner_enemy_id: input.ownerEnemyId ?? null,
+    owner_enemy_type: ownerEnemyType,
+  });
+  input.io.emit('explosion_created', {
+    id,
+    x: input.x,
+    y: input.y,
+    radius,
+    spawn_time_ms: nowMs,
+    owner_type: input.ownerType ?? 'player',
+    owner_enemy_id: input.ownerEnemyId ?? null,
+    owner_enemy_type: ownerEnemyType,
+  });
   applyExplosionDamage(input);
 }
 

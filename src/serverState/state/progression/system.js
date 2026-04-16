@@ -356,6 +356,7 @@ function createProgressionMeta() {
     achievements: {},
     achievementOrder: [],
     unreadAchievementIds: [],
+    claimedAchievementIds: [],
     flags: {
       enemyAggroUnlocked: false,
     },
@@ -377,7 +378,21 @@ function createPlayerProgression() {
 }
 
 function resetPlayerProgression(player) {
+  // Preserve achievements when resetting progression on death
+  const existingMeta = player.progression?.meta;
+  const preservedAchievements = existingMeta?.achievements || {};
+  const preservedAchievementOrder = existingMeta?.achievementOrder || [];
+  const preservedUnreadAchievementIds = existingMeta?.unreadAchievementIds || [];
+
   player.progression = createPlayerProgression();
+
+  // Restore achievements
+  if (player.progression.meta) {
+    player.progression.meta.achievements = preservedAchievements;
+    player.progression.meta.achievementOrder = preservedAchievementOrder;
+    player.progression.meta.unreadAchievementIds = preservedUnreadAchievementIds;
+  }
+
   player.health = Math.min(player.health ?? player.progression.runStats.maxHealth, player.progression.runStats.maxHealth);
 }
 
@@ -411,6 +426,9 @@ function ensurePlayerProgression(player) {
   }
   if (!Array.isArray(player.progression.meta.unreadAchievementIds)) {
     player.progression.meta.unreadAchievementIds = [];
+  }
+  if (!Array.isArray(player.progression.meta.claimedAchievementIds)) {
+    player.progression.meta.claimedAchievementIds = [];
   }
   if (!player.progression.meta.flags || typeof player.progression.meta.flags !== 'object') {
     player.progression.meta.flags = createProgressionMeta().flags;
@@ -582,6 +600,39 @@ function markAchievementsRead(player) {
   progression.meta.unreadAchievementIds = [];
 }
 
+function getAchievementRewardXp(rule) {
+  return Math.max(12, Math.round((Number(rule?.threshold) || 0) * 0.7));
+}
+
+function collectAchievementReward(player, achievementId) {
+  const progression = ensurePlayerProgression(player);
+  const rule = ACHIEVEMENT_RULES.find((entry) => entry.id === achievementId);
+  if (!rule) {
+    return { ok: false, reason: 'Achievement missing' };
+  }
+  if (!progression.meta.achievements[achievementId]) {
+    return { ok: false, reason: 'Achievement not unlocked' };
+  }
+  if (progression.meta.claimedAchievementIds.includes(achievementId)) {
+    return { ok: false, reason: 'Reward already claimed' };
+  }
+
+  progression.meta.claimedAchievementIds.push(achievementId);
+  const rewardXp = getAchievementRewardXp(rule);
+  const xpResult = gainPlayerXp(player, rewardXp);
+  return {
+    ok: true,
+    rewardXp,
+    gainedXp: xpResult.gainedXp,
+    leveled: xpResult.leveled,
+    achievement: {
+      id: rule.id,
+      title: rule.title,
+      message: rule.message,
+    },
+  };
+}
+
 function consumeAggroUnlockNotification(player) {
   const progression = ensurePlayerProgression(player);
   if (progression.level <= 5 || progression.meta.flags.enemyAggroUnlocked) {
@@ -591,8 +642,8 @@ function consumeAggroUnlockNotification(player) {
   progression.meta.flags.enemyAggroUnlocked = true;
   return {
     type: 'danger',
-    title: 'The World Turns Hostile',
-    message: 'Enemies will now attack you on sight.',
+    title: '',
+    message: 'Enemies will now attack you.',
     xp: 0,
     caption: 'Danger Rising',
   };
@@ -674,6 +725,8 @@ function getPlayerProgressionPayload(player) {
         metric: rule.metric,
         threshold: rule.threshold,
         unread: progression.meta.unreadAchievementIds.includes(rule.id),
+        claimed: progression.meta.claimedAchievementIds.includes(rule.id),
+        rewardXp: getAchievementRewardXp(rule),
       };
     })
     .filter(Boolean);
@@ -705,6 +758,7 @@ module.exports = {
   UPGRADE_CATALOG,
   applyUpgradeSelection,
   clampPlayerHealthToMax,
+  collectAchievementReward,
   consumeAggroUnlockNotification,
   createPlayerProgression,
   gainPlayerXp,

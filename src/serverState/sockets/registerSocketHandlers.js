@@ -9,10 +9,11 @@ const {
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
 const { dropSoulsForPlayerDeath, serializeSoulsForState } = require('../state/souls/soulSystem');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
-const { resetEnemiesForState } = require('../enemies/runtime');
+const { despawnEnemiesSpawnedForPlayer, resetEnemiesForState } = require('../enemies/runtime');
 const {
   applyUpgradeSelection,
   clampPlayerHealthToMax,
+  collectAchievementReward,
   createPlayerProgression,
   getPlayerRunStats,
   isPlayerDrafting,
@@ -191,6 +192,27 @@ function registerSocketHandlers(input) {
     markAchievementsRead(player);
   });
 
+  socket.on('collect_achievement_reward', (data) => {
+    const player = state.players.get(socket.id);
+    if (!player || !player.is_ready) return;
+
+    const achievementId = String(data?.achievementId ?? '').trim();
+    if (!achievementId) return;
+
+    const result = collectAchievementReward(player, achievementId);
+    if (!result.ok) {
+      socket.emit('achievement_collect_error', { message: result.reason });
+      return;
+    }
+
+    socket.emit('achievement_reward_collected', {
+      achievementId,
+      gainedXp: result.gainedXp,
+      rewardXp: result.rewardXp,
+      achievement: result.achievement,
+    });
+  });
+
   socket.on('load_map', (data) => {
     handleLoadMap({ socket, io, state, data });
   });
@@ -299,6 +321,7 @@ function handleDisconnect(input) {
   };
 
   dropSoulsForPlayerDeath(input.state, input.io, player);
+  despawnEnemiesSpawnedForPlayer(input.state, input.socket.id);
   input.state.deadBodies.set(input.socket.id, deathData);
   input.io.emit('player_dying', deathData);
   input.state.players.delete(input.socket.id);

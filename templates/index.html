@@ -288,7 +288,7 @@
         #progression-feed {
             position: fixed;
             left: 14px;
-            top: 112px;
+            top: 200px;
             z-index: 230;
             display: flex;
             flex-direction: column;
@@ -303,7 +303,7 @@
             top: 84px;
             z-index: 230;
             min-width: 138px;
-            display: inline-flex;
+            display: none;
             align-items: center;
             justify-content: center;
             gap: 10px;
@@ -317,6 +317,9 @@
             font: 700 0.9rem/1 "Cinzel", "Times New Roman", serif;
             letter-spacing: 0.08em;
             text-transform: uppercase;
+        }
+        #achievement-toggle.in-game {
+            display: inline-flex;
         }
         #achievement-toggle.is-active {
             box-shadow:
@@ -423,6 +426,38 @@
             text-transform: uppercase;
             color: #efc988;
         }
+        .achievement-card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 4px;
+        }
+        .achievement-card-reward {
+            font: 700 0.78rem/1 "Cinzel", "Times New Roman", serif;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #cfe4ff;
+        }
+        .achievement-collect-btn {
+            pointer-events: auto;
+            min-height: 40px;
+            min-width: 108px;
+            padding: 10px 14px;
+            border: 1px solid rgba(243, 213, 157, 0.26);
+            background: linear-gradient(180deg, rgba(50, 82, 140, 0.92), rgba(20, 35, 68, 0.96));
+            color: #f7efdb;
+            font: 700 0.76rem/1 "Cinzel", "Times New Roman", serif;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .achievement-collect-btn:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
         .progression-toast {
             width: min(100%, var(--adaptive-toast-width));
             padding: var(--adaptive-toast-padding-y) var(--adaptive-toast-padding-x);
@@ -468,19 +503,19 @@
         .progression-toast.summon,
         .progression-toast.danger {
             box-shadow:
-                inset 0 0 0 2px rgba(78, 18, 18, 0.98),
-                inset 0 0 0 4px rgba(255, 134, 134, 0.3),
-                inset 0 0 34px rgba(23, 4, 4, 0.86),
-                inset 0 0 72px rgba(255, 74, 74, 0.16),
+                inset 0 0 0 2px rgba(86, 11, 11, 0.99),
+                inset 0 0 0 4px rgba(182, 30, 24, 0.34),
+                inset 0 0 34px rgba(27, 3, 3, 0.9),
+                inset 0 0 72px rgba(142, 17, 17, 0.2),
                 0 16px 48px rgba(0, 0, 0, 0.4),
-                0 0 40px rgba(255, 74, 74, 0.18);
+                0 0 40px rgba(124, 12, 12, 0.22);
         }
         .progression-toast.summon .progression-toast-title,
         .progression-toast.danger .progression-toast-title,
         .progression-toast.summon .progression-toast-xp,
         .progression-toast.danger .progression-toast-xp {
-            color: #ffb3a8;
-            text-shadow: 0 0 12px rgba(255, 93, 93, 0.24);
+            color: #db5245;
+            text-shadow: 0 0 12px rgba(120, 14, 14, 0.28);
         }
         .progression-toast-title {
             font-family: "EB Garamond", Georgia, serif;
@@ -2550,7 +2585,7 @@
     <canvas id="gameCanvas"></canvas>
     <canvas id="glCanvas" style="display: none;"></canvas>
     <div id="run-hud" aria-live="polite">
-        <div class="run-hud-badge in-game-frame in-game-frame-blue"><span data-custom-alphabet="label">Soul Draft</span><strong id="run-level-badge" class="run-hud-level" data-custom-alphabet="dynamic">Lvl. 1</strong></div>
+        <div class="run-hud-badge in-game-frame in-game-frame-blue"><span id="run-player-badge" data-custom-alphabet="label">Player</span><strong id="run-level-badge" class="run-hud-level" data-custom-alphabet="dynamic">Lvl. 1</strong></div>
         <div class="run-bar-shell in-game-frame in-game-frame-blue">
             <div class="run-bar-track">
                 <div id="run-hp-fill" class="run-bar-fill hp"></div>
@@ -6051,7 +6086,7 @@
 
             function generateGuestSoulName() {
                 const guestNumber = Math.floor(1000 + Math.random() * 9000);
-                return `guestsoul#${guestNumber}`;
+                return `soul#${guestNumber}`;
             }
 
             function updateFocusedCardTransforms() {
@@ -6412,6 +6447,10 @@
                 if (openSettingsBtn) {
                     openSettingsBtn.classList.add('in-game');
                 }
+                // Add in-game class to achievement toggle button to show it
+                if (achievementToggleElement) {
+                    achievementToggleElement.classList.add('in-game');
+                }
                 setTimeout(() => {
                     stopMenuRendering();
                     startScreen.style.display = 'none';
@@ -6436,7 +6475,7 @@
                 if (!nameInput.value.trim()) {
                     if (selectedCharacter) {
                         updateSelectionCopy(`SELECTED: ${formatCharacterName(selectedCharacter)}`);
-                        setFootnote('No name is fine. Play will forge a GuestSoul tag.');
+                        setFootnote('No name is fine. Play will forge a soul tag.');
                     } else {
                         updateSelectionCopy('Choose a soul');
                         setFootnote('Choose a soul.');
@@ -8326,6 +8365,7 @@
         const leaderboardElement = document.getElementById('souls-leaderboard');
         const leaderboardBody = document.getElementById('souls-leaderboard-body');
         const runHudElement = document.getElementById('run-hud');
+        const runPlayerBadgeElement = document.getElementById('run-player-badge');
         const runHpFillElement = document.getElementById('run-hp-fill');
         const runHpValueElement = document.getElementById('run-hp-value');
         const runXpFillElement = document.getElementById('run-xp-fill');
@@ -8416,6 +8456,7 @@
         };
         let achievementPanelOpen = false;
         let upgradeSelectionPending = false;
+        let achievementCollectPendingId = '';
         let lastRenderedUpgradeDraftKey = '';
         let lastRenderedUpgradeDraftPending = false;
         let lastRenderedUpgradeDraftLocked = false;
@@ -8753,7 +8794,9 @@
             const xp = Math.max(0, Number(localProgressionState?.xp) || 0);
             const xpToNext = Math.max(1, Number(localProgressionState?.xpToNext) || 1);
             const level = Math.max(1, Number(localProgressionState?.level) || 1);
+            const playerName = String(me.name || 'Player').trim() || 'Player';
 
+            setCustomAlphabetText(runPlayerBadgeElement, playerName);
             runHpFillElement.style.width = `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%`;
             setCustomAlphabetText(runHpValueElement, formatRunBarValue(health, maxHealth));
             runXpFillElement.style.width = `${Math.max(0, Math.min(100, (xp / xpToNext) * 100))}%`;
@@ -8792,6 +8835,16 @@
                     <div class="achievement-card-status">${achievement.unread ? 'New Achievement' : 'Unlocked'}</div>
                     <div class="achievement-card-title">${escapeHtml(achievement.title || 'Achievement')}</div>
                     <div class="achievement-card-message">${escapeHtml(achievement.message || '')}</div>
+                    <div class="achievement-card-footer">
+                        <div class="achievement-card-reward">Reward: +${Math.max(0, Math.round(Number(achievement.rewardXp) || 0))} XP</div>
+                        <button
+                            type="button"
+                            class="achievement-collect-btn"
+                            data-achievement-id="${escapeHtml(achievement.id || '')}"
+                            ${achievement.claimed ? 'disabled' : ''}
+                            ${achievementCollectPendingId === achievement.id ? 'disabled' : ''}
+                        >${achievement.claimed ? 'Collected' : (achievementCollectPendingId === achievement.id ? 'Collecting' : 'Collect')}</button>
+                    </div>
                 </div>
             `).join('');
         }
@@ -8856,7 +8909,7 @@
                 upgradeDraftShownAt = Date.now();
                 upgradeDraftInteractionUnlockAt = upgradeDraftShownAt + UPGRADE_DRAFT_REVEAL_LOCK_MS;
             }
-            setCustomAlphabetText(upgradeDraftSubtitleElement, `Level ${Math.max(1, Number(localProgressionState.level) || 1)} soul draft${localProgressionState.pendingLevelUps > 1 ? ` - ${localProgressionState.pendingLevelUps} picks waiting` : ''}`);
+            setCustomAlphabetText(upgradeDraftSubtitleElement, `Level ${Math.max(1, Number(localProgressionState.level) || 1)} Soul${localProgressionState.pendingLevelUps > 1 ? ` - ${localProgressionState.pendingLevelUps} picks waiting` : ''}`);
             const cardsLocked = Date.now() < upgradeDraftInteractionUnlockAt;
             if (
                 draftKey === lastRenderedUpgradeDraftKey &&
@@ -8864,6 +8917,9 @@
                 cardsLocked === lastRenderedUpgradeDraftLocked
             ) {
                 return;
+            }
+            if (draftKey !== lastRenderedUpgradeDraftKey) {
+                upgradeSelectionPending = false;
             }
             upgradeDraftCardsElement.innerHTML = choices.map((card, index) => {
                 const accent = escapeHtml(card.accent || '#ffd298');
@@ -8995,9 +9051,8 @@
 
                 return `
                 <div class="progression-toast in-game-frame in-game-frame-blue ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''}">
-                    <div class="progression-toast-xp">${escapeHtml(toast.label)}</div>
                     <div class="progression-toast-title">${formattedMessage}</div>
-                    <div class="progression-toast-xp">${escapeHtml(footerText)}</div>
+                    <div class="progression-toast-xp">${toast.xp > 0 ? `+${toast.xp} xp` : ''}</div>
                 </div>
             `;
             }).join('');
@@ -9032,8 +9087,51 @@
             socket.emit('select_upgrade', { cardId });
         });
 
-        achievementToggleElement?.addEventListener('click', () => {
+        achievementToggleElement?.addEventListener('click', (event) => {
+            event.stopPropagation();
             setAchievementPanelOpen(!achievementPanelOpen);
+        });
+
+        function handleAchievementCollectInteraction(event) {
+            event.stopPropagation();
+            const target = event.target instanceof Element ? event.target : null;
+            const button = target?.closest('.achievement-collect-btn[data-achievement-id]');
+            if (!button || button.disabled) {
+                return;
+            }
+            if (event.type === 'click' && button.dataset.pointerCollected === 'true') {
+                delete button.dataset.pointerCollected;
+                return;
+            }
+            if (event.type === 'pointerdown') {
+                button.dataset.pointerCollected = 'true';
+                event.preventDefault();
+            }
+            const achievementId = button.getAttribute('data-achievement-id');
+            if (!achievementId) {
+                return;
+            }
+            achievementCollectPendingId = achievementId;
+            renderAchievementPanel();
+            socket.emit('collect_achievement_reward', { achievementId });
+        }
+
+        achievementListElement?.addEventListener('pointerdown', handleAchievementCollectInteraction);
+        achievementListElement?.addEventListener('click', handleAchievementCollectInteraction);
+
+        achievementPanelElement?.addEventListener('click', (event) => {
+            event.stopPropagation();
+        });
+
+        // Close achievement panel when clicking outside
+        document.addEventListener('click', (event) => {
+            if (achievementPanelOpen &&
+                achievementToggleElement &&
+                achievementPanelElement &&
+                !achievementToggleElement.contains(event.target) &&
+                !achievementPanelElement.contains(event.target)) {
+                setAchievementPanelOpen(false);
+            }
         });
 
 
@@ -9194,6 +9292,7 @@
                     ...localProgressionState,
                     ...selfState.progression
                 };
+                achievementCollectPendingId = '';
                 renderAchievementPanel();
                 if (isUpgradeDraftActive()) {
                     clearMovementInputsForDraft();
@@ -9229,6 +9328,7 @@
                         despawn_at_ms: enemyPos.despawn_at_ms,
                         respawn_at_ms: enemyPos.respawn_at_ms,
                         target_sid: enemyPos.target_sid ?? null,
+                        stealth_broken: Boolean(enemyPos.stealth_broken),
                         render_opacity: typeof enemyPos.render_opacity === 'number' ? enemyPos.render_opacity : 1
                     };
 
@@ -9265,6 +9365,7 @@
                         despawn_at_ms: enemyPos.despawn_at_ms,
                         respawn_at_ms: enemyPos.respawn_at_ms,
                         target_sid: enemyPos.target_sid ?? null,
+                        stealth_broken: Boolean(enemyPos.stealth_broken),
                         render_opacity: typeof enemyPos.render_opacity === 'number' ? enemyPos.render_opacity : 1
                     });
                     enemyState[enemyId] = {
@@ -9426,8 +9527,15 @@
                             y: ex.y,
                             radius: typeof ex.radius === 'number' ? ex.radius : EXPLOSION_RADIUS,
                             spawnTime: Date.now() - (ex.age * 1000),
-                            spawn_time_ms: typeof ex.spawn_time_ms === 'number' ? ex.spawn_time_ms : null
+                            spawn_time_ms: typeof ex.spawn_time_ms === 'number' ? ex.spawn_time_ms : null,
+                            owner_type: ex.owner_type || 'player',
+                            owner_enemy_id: ex.owner_enemy_id || null,
+                            owner_enemy_type: ex.owner_enemy_type || null
                         };
+                    } else {
+                        explosions[id].owner_type = ex.owner_type || explosions[id].owner_type || 'player';
+                        explosions[id].owner_enemy_id = ex.owner_enemy_id || explosions[id].owner_enemy_id || null;
+                        explosions[id].owner_enemy_type = ex.owner_enemy_type || explosions[id].owner_enemy_type || null;
                     }
                 }
                 
@@ -9650,7 +9758,7 @@
 
         // Handle explosion created event from server
         socket.on('explosion_created', (data) => {
-            const { id, x, y, radius, spawn_time_ms } = data;
+            const { id, x, y, radius, spawn_time_ms, owner_type, owner_enemy_id, owner_enemy_type } = data;
             explosions[id] = {
                 id: id,
                 x: x,
@@ -9658,6 +9766,9 @@
                 radius: typeof radius === 'number' ? radius : EXPLOSION_RADIUS,
                 spawnTime: Date.now(),
                 spawn_time_ms: typeof spawn_time_ms === 'number' ? spawn_time_ms : null,
+                owner_type: owner_type || 'player',
+                owner_enemy_id: owner_enemy_id || null,
+                owner_enemy_type: owner_enemy_type || null,
                 destroy_time_ms: null
             };
             addDistanceShake(x, y, 90, 900, 0.6);
@@ -9805,6 +9916,24 @@
         socket.on('upgrade_selection_error', () => {
             upgradeSelectionPending = false;
             renderUpgradeDraft();
+        });
+
+        socket.on('achievement_collect_error', () => {
+            achievementCollectPendingId = '';
+            renderAchievementPanel();
+        });
+
+        socket.on('achievement_reward_collected', (data) => {
+            const achievementId = String(data?.achievementId || '');
+            achievementCollectPendingId = '';
+            if (achievementId && Array.isArray(localProgressionState.achievements)) {
+                localProgressionState.achievements = localProgressionState.achievements.map((achievement) => (
+                    achievement.id === achievementId
+                        ? { ...achievement, claimed: true }
+                        : achievement
+                ));
+            }
+            renderAchievementPanel();
         });
 
         socket.on('progression_notification', (data) => {
@@ -10069,7 +10198,10 @@
                     death_time_ms: sampled.death_time_ms ?? authoritativeEnemyState[enemyId].death_time_ms,
                     despawn_at_ms: sampled.despawn_at_ms ?? authoritativeEnemyState[enemyId].despawn_at_ms,
                     respawn_at_ms: sampled.respawn_at_ms ?? authoritativeEnemyState[enemyId].respawn_at_ms,
-                    target_sid: sampled.target_sid ?? authoritativeEnemyState[enemyId].target_sid ?? null
+                    target_sid: sampled.target_sid ?? authoritativeEnemyState[enemyId].target_sid ?? null,
+                    stealth_broken: typeof sampled.stealth_broken === 'boolean'
+                        ? sampled.stealth_broken
+                        : Boolean(authoritativeEnemyState[enemyId].stealth_broken)
                 };
             }
         }
@@ -10660,6 +10792,9 @@
                                 audibleViewport,
                                 0.92
                             );
+                            if (currentState.brain_state !== 'lunge') {
+                                addDistanceShake(currentState.x, currentState.y, 90, 980, 0.86);
+                            }
                         }
                         ambientState.nextAt = nowMs + 2200 + Math.random() * 1000;
                     }
@@ -10988,10 +11123,18 @@
 
             const rawAction = state.action || 'idle';
             const isAirborneStriker = state.type === 'striker' && !state.on_ground;
+            const strikerCombatAction =
+                isAirborneStriker &&
+                (
+                    rawAction === 'prepare' ||
+                    rawAction === 'attack' ||
+                    state.brain_state === 'prepare' ||
+                    state.brain_state === 'lunge'
+                );
             const action =
                 state.type === 'gargoyle' && state.gargoyle_mode === 'swoop' && (rawAction === 'attack' || rawAction === 'prepare')
                     ? 'run'
-                    : (isAirborneStriker && state.brain_state !== 'lunge' ? 'run' : rawAction);
+                    : (strikerCombatAction ? (rawAction === 'prepare' ? 'prepare' : 'attack') : (isAirborneStriker ? 'run' : rawAction));
             const animationMeta = metadata.animations?.[action] || metadata.animations?.idle;
             if (!animationMeta) {
                 return null;
@@ -12885,6 +13028,12 @@
                     const progress = age / EXPLOSION_DURATION;
                     const blastRadius = explosionRadius * (0.9 + progress * 2.35);
                     const smokeRadius = explosionRadius * (1.35 + progress * 3.15);
+                    const isGargoyleExplosion =
+                        explosion.owner_type === 'enemy' &&
+                        (
+                            explosion.owner_enemy_type === 'gargoyle' ||
+                            (typeof explosion.owner_enemy_id === 'string' && explosion.owner_enemy_id.startsWith('gargoyle_'))
+                        );
                     if (
                         visibleBounds &&
                         !isWorldRectVisible(explosion.x - smokeRadius * 1.8, explosion.y - smokeRadius * 1.8, smokeRadius * 3.6, smokeRadius * 3.6, 120, visibleBounds)
@@ -12896,9 +13045,19 @@
                     const flashAlpha = alpha * (progress < 0.22 ? 1.2 : 0.72);
                     const shockwaveRadius = explosionRadius * (0.55 + progress * 3.4);
 
-                    drawFireballGlow(explosion.x, explosion.y, smokeRadius * 1.5, 'rgba(255, 245, 210, __A__)', 'rgba(255, 92, 20, __A__)', alpha * 0.7);
-                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 1.2, 'rgba(255, 255, 240, __A__)', 'rgba(255, 186, 70, __A__)', flashAlpha);
-                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 0.6, 'rgba(255, 255, 250, __A__)', 'rgba(255, 228, 145, __A__)', flashAlpha * 1.15);
+                    const glowOuter = isGargoyleExplosion
+                        ? ['rgba(241, 226, 255, __A__)', 'rgba(117, 34, 194, __A__)', alpha * 0.7]
+                        : ['rgba(255, 245, 210, __A__)', 'rgba(255, 92, 20, __A__)', alpha * 0.7];
+                    const glowMid = isGargoyleExplosion
+                        ? ['rgba(250, 242, 255, __A__)', 'rgba(170, 92, 255, __A__)', flashAlpha]
+                        : ['rgba(255, 255, 240, __A__)', 'rgba(255, 186, 70, __A__)', flashAlpha];
+                    const glowCore = isGargoyleExplosion
+                        ? ['rgba(255, 249, 255, __A__)', 'rgba(216, 175, 255, __A__)', flashAlpha * 1.15]
+                        : ['rgba(255, 255, 250, __A__)', 'rgba(255, 228, 145, __A__)', flashAlpha * 1.15];
+
+                    drawFireballGlow(explosion.x, explosion.y, smokeRadius * 1.5, glowOuter[0], glowOuter[1], glowOuter[2]);
+                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 1.2, glowMid[0], glowMid[1], glowMid[2]);
+                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 0.6, glowCore[0], glowCore[1], glowCore[2]);
 
                     for (let i = 0; i < profile.explosionSmokeBursts; i++) {
                         const puffAngle = blastSeed + i * 0.91 + Math.sin(progress * 8 + i * 1.7) * 0.55;
@@ -12915,7 +13074,14 @@
                     drawSmokePuff(explosion.x - smokeRadius * 0.12, explosion.y - smokeRadius * 0.04, smokeRadius * 0.28, alpha * 1.05);
                     drawSmokePuff(explosion.x + smokeRadius * 0.1, explosion.y + smokeRadius * 0.02, smokeRadius * 0.24, alpha * 0.94);
 
-                    drawFireballGlow(explosion.x, explosion.y, blastRadius * 0.98, 'rgba(255, 250, 236, __A__)', 'rgba(255, 170, 48, __A__)', alpha * 0.86);
+                    drawFireballGlow(
+                        explosion.x,
+                        explosion.y,
+                        blastRadius * 0.98,
+                        isGargoyleExplosion ? 'rgba(252, 244, 255, __A__)' : 'rgba(255, 250, 236, __A__)',
+                        isGargoyleExplosion ? 'rgba(153, 62, 238, __A__)' : 'rgba(255, 170, 48, __A__)',
+                        alpha * 0.86
+                    );
                     drawPixelFlameBody(explosion.x, explosion.y, blastSeed * 0.35, blastRadius * (0.82 + (1 - progress) * 0.08), alpha * 1.1, blastSeed, {
                         cellScale: 0.14,
                         tailLength: 0.78,
@@ -12924,7 +13090,9 @@
                         alpha: 0.95,
                         emberChance: 0.12,
                         extraCellSize: 1,
-                        palette: ['#2f0a00', '#651800', '#b83400', '#ff6818', '#ffc353', '#fff5d4']
+                        palette: isGargoyleExplosion
+                            ? ['#170018', '#32094f', '#5b1693', '#8d33dc', '#c885ff', '#f4e4ff']
+                            : ['#2f0a00', '#651800', '#b83400', '#ff6818', '#ffc353', '#fff5d4']
                     });
 
                     drawExplosionLobe(
@@ -12957,7 +13125,7 @@
 
                     if (profile.drawExplosionShockwave && progress < 0.35) {
                         ctx.globalAlpha = alpha * 0.44;
-                        ctx.strokeStyle = 'rgba(255, 210, 118, 0.85)';
+                        ctx.strokeStyle = isGargoyleExplosion ? 'rgba(194, 138, 255, 0.85)' : 'rgba(255, 210, 118, 0.85)';
                         ctx.lineWidth = Math.max(3, Math.round(6 - progress * 8));
                         ctx.beginPath();
                         ctx.arc(explosion.x - cameraX, explosion.y - cameraY, shockwaveRadius, 0, Math.PI * 2);
@@ -12965,7 +13133,7 @@
                     }
 
                     ctx.globalAlpha = alpha * 0.92;
-                    ctx.fillStyle = '#fff7de';
+                    ctx.fillStyle = isGargoyleExplosion ? '#faf1ff' : '#fff7de';
                     const coreSize = Math.max(6, Math.round(blastRadius * (0.16 + (1 - progress) * 0.08)));
                     ctx.fillRect(
                         Math.round(explosion.x - cameraX - coreSize / 2),
@@ -12980,7 +13148,9 @@
                         const sparkX = explosion.x + Math.cos(sparkAngle) * sparkDistance;
                         const sparkY = explosion.y + Math.sin(sparkAngle) * sparkDistance;
                         ctx.globalAlpha = alpha * 0.7;
-                        ctx.fillStyle = i % 2 === 0 ? '#ffcf7d' : '#ff8f3d';
+                        ctx.fillStyle = isGargoyleExplosion
+                            ? (i % 2 === 0 ? '#d7a1ff' : '#8e39e2')
+                            : (i % 2 === 0 ? '#ffcf7d' : '#ff8f3d');
                         ctx.fillRect(sparkX - cameraX - 2, sparkY - cameraY - 2, 4, 4);
                     }
                 } else if (age >= EXPLOSION_DURATION && !explosion.destroy_time_ms) {
@@ -13226,16 +13396,19 @@
                                 flashAlpha,
                                 cacheKey: `enemy|${frameInfo.cacheKey}`
                             });
-                            drawEntityNameplate(
-                                ctx,
-                                state.x,
-                                state.y,
-                                state.displayName || state.type || 'Enemy',
-                                state.level,
-                                cameraX,
-                                cameraY,
-                                frameInfo.renderDims.height / 2 + 16
-                            );
+                            const shouldShowEnemyNameplate = state.type !== 'gargoyle' || Boolean(state.stealth_broken);
+                            if (shouldShowEnemyNameplate) {
+                                drawEntityNameplate(
+                                    ctx,
+                                    state.x,
+                                    state.y,
+                                    state.displayName || state.type || 'Enemy',
+                                    state.level,
+                                    cameraX,
+                                    cameraY,
+                                    frameInfo.renderDims.height / 2 + 16
+                                );
+                            }
                         }
                     } else if (failedEnemyTypes.has(state.type)) {
                         ctx.fillStyle = '#c24747';

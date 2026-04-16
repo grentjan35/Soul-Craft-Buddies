@@ -37,10 +37,14 @@ const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
 const STRIKER_ASCEND_DURATION_SECONDS = 0.7;
 const STRIKER_SLAM_IMPACT_WINDOW_SECONDS = 0.18;
 const STRIKER_TOUCH_DAMAGE_COOLDOWN_SECONDS = 0.65;
+const STRIKER_ENVIRONMENT_ATTACK_COOLDOWN_SECONDS = 0.72;
+const STRIKER_SQUEEZE_STEP_X = 22;
+const STRIKER_SQUEEZE_STEP_Y = 16;
 const ENEMY_DIRECTOR_SYNC_MS = 1200;
 const ENEMY_LEVEL_SOFT_CAP = 10;
 const ENEMY_LEVEL_HARD_CAP = 100;
 const SAFE_PLAYER_LEVEL_CAP = 5;
+const ENEMY_SPAWN_GRACE_MS = 700;
 
 const ENEMY_SUMMON_MILESTONES = Object.freeze([
   {
@@ -381,38 +385,70 @@ function getEnemyLevelScale(level) {
 
 function buildScaledEnemyDefinition(definition, level) {
   const scale = getEnemyLevelScale(level);
-  const speedScale = 0.82 + (scale - 0.46) * 0.26;
-  const detectionScale = 0.74 + (scale - 0.46) * 0.2;
-  const cooldownScale = clamp(1.18 - (scale - 0.46) * 0.16, 0.72, 1.18);
+  const growth = Math.max(0, scale - 0.46);
+  const enemyType = definition.type || definition.id || '';
+  const speedScale = 0.84 + growth * 0.34;
+  const detectionScale = 0.78 + growth * 0.24;
+  const cooldownScale = clamp(1.16 - growth * 0.2, 0.62, 1.16);
+  const levelBoost = Math.max(0, level - 1);
+
+  const scaledBehavior = {
+    ...definition.behavior,
+    detectionRadius: Math.max(120, Math.round(definition.behavior.detectionRadius * detectionScale)),
+    leashRadius: Math.max(180, Math.round(definition.behavior.leashRadius * detectionScale)),
+    wanderRadius: Math.max(90, Math.round(definition.behavior.wanderRadius * (0.92 + growth * 0.1))),
+    moveSpeed: Math.max(70, definition.behavior.moveSpeed * speedScale),
+    verticalMoveSpeed: Math.max(70, definition.behavior.verticalMoveSpeed * speedScale),
+    telegraphDurationMs: Math.max(200, Math.round(definition.behavior.telegraphDurationMs * cooldownScale)),
+    lungeDurationMs: Math.max(220, Math.round(definition.behavior.lungeDurationMs * clamp(1.03 - growth * 0.08, 0.66, 1.08))),
+    attackCooldownMs: Math.max(420, Math.round(definition.behavior.attackCooldownMs * cooldownScale)),
+    attackRange: Math.max(140, Math.round(definition.behavior.attackRange * (0.9 + growth * 0.16))),
+    lungeSpeed: Math.max(240, definition.behavior.lungeSpeed * (0.9 + growth * 0.28)),
+    lungeLift: Math.max(0, definition.behavior.lungeLift * (0.9 + growth * 0.2)),
+    jumpForce: Math.max(340, definition.behavior.jumpForce * (0.92 + growth * 0.16)),
+    hoverHeight: Math.max(64, definition.behavior.hoverHeight * (0.94 + growth * 0.1)),
+    hoverVariance: Math.max(40, definition.behavior.hoverVariance * (0.92 + growth * 0.1)),
+    projectileSpeed: Math.max(0, definition.behavior.projectileSpeed * (0.9 + growth * 0.24)),
+    projectileDamage: Math.max(0, Math.round(definition.behavior.projectileDamage * (0.72 + growth * 0.86))),
+    projectileScale: Math.max(0.45, definition.behavior.projectileScale * (0.92 + growth * 0.1)),
+    projectileRadiusScale: Math.max(0.45, definition.behavior.projectileRadiusScale * (0.92 + growth * 0.1)),
+    projectileAimJitterRadians: enemyType === 'bat'
+      ? clamp(0.26 - growth * 0.1 - levelBoost * 0.011, 0.035, 0.26)
+      : 0,
+  };
+
+  if (enemyType === 'gargoyle') {
+    scaledBehavior.telegraphDurationMs = Math.max(150, Math.round(scaledBehavior.telegraphDurationMs * 0.76));
+    scaledBehavior.attackCooldownMs = Math.max(320, Math.round(scaledBehavior.attackCooldownMs * clamp(0.82 - levelBoost * 0.02, 0.5, 0.82)));
+    scaledBehavior.projectileSpeed = Math.max(0, scaledBehavior.projectileSpeed * (1 + Math.min(0.24, levelBoost * 0.018)));
+    scaledBehavior.projectileRadiusScale = Math.max(0.52, scaledBehavior.projectileRadiusScale * (1 + Math.min(0.18, levelBoost * 0.012)));
+  } else if (enemyType === 'bat') {
+    scaledBehavior.detectionRadius = Math.max(140, Math.round(scaledBehavior.detectionRadius * (1 + Math.min(0.18, levelBoost * 0.016))));
+    scaledBehavior.leashRadius = Math.max(220, Math.round(scaledBehavior.leashRadius * (1 + Math.min(0.18, levelBoost * 0.014))));
+    scaledBehavior.moveSpeed = Math.max(88, scaledBehavior.moveSpeed * (1 + Math.min(0.32, levelBoost * 0.024)));
+    scaledBehavior.verticalMoveSpeed = Math.max(88, scaledBehavior.verticalMoveSpeed * (1 + Math.min(0.36, levelBoost * 0.028)));
+    scaledBehavior.telegraphDurationMs = Math.max(140, Math.round(scaledBehavior.telegraphDurationMs * 0.72));
+    scaledBehavior.attackCooldownMs = Math.max(300, Math.round(scaledBehavior.attackCooldownMs * clamp(0.74 - levelBoost * 0.015, 0.42, 0.74)));
+    scaledBehavior.projectileSpeed = Math.max(0, scaledBehavior.projectileSpeed * (1 + Math.min(0.34, levelBoost * 0.026)));
+    scaledBehavior.attackRange = Math.max(180, Math.round(scaledBehavior.attackRange * (1 + Math.min(0.12, levelBoost * 0.01))));
+  } else if (enemyType === 'spider') {
+    scaledBehavior.detectionRadius = Math.max(140, Math.round(scaledBehavior.detectionRadius * (1 + Math.min(0.2, levelBoost * 0.018))));
+    scaledBehavior.moveSpeed = Math.max(88, scaledBehavior.moveSpeed * (1 + Math.min(0.28, levelBoost * 0.022)));
+    scaledBehavior.telegraphDurationMs = Math.max(150, Math.round(scaledBehavior.telegraphDurationMs * 0.76));
+    scaledBehavior.attackCooldownMs = Math.max(320, Math.round(scaledBehavior.attackCooldownMs * clamp(0.78 - levelBoost * 0.014, 0.46, 0.78)));
+    scaledBehavior.attackRange = Math.max(160, Math.round(scaledBehavior.attackRange * (1 + Math.min(0.14, levelBoost * 0.012))));
+    scaledBehavior.lungeSpeed = Math.max(280, scaledBehavior.lungeSpeed * (1 + Math.min(0.3, levelBoost * 0.024)));
+    scaledBehavior.jumpForce = Math.max(420, scaledBehavior.jumpForce * (1 + Math.min(0.22, levelBoost * 0.016)));
+  }
 
   return {
     ...definition,
     stats: {
       ...definition.stats,
       maxHealth: Math.max(1, Math.round(definition.stats.maxHealth * scale)),
-      contactDamage: Math.max(1, Math.round(definition.stats.contactDamage * (0.6 + (scale - 0.46) * 0.58))),
+      contactDamage: Math.max(1, Math.round(definition.stats.contactDamage * (0.7 + growth * 0.78))),
     },
-    behavior: {
-      ...definition.behavior,
-      detectionRadius: Math.max(120, Math.round(definition.behavior.detectionRadius * detectionScale)),
-      leashRadius: Math.max(180, Math.round(definition.behavior.leashRadius * detectionScale)),
-      wanderRadius: Math.max(90, Math.round(definition.behavior.wanderRadius * (0.9 + (scale - 0.46) * 0.08))),
-      moveSpeed: Math.max(70, definition.behavior.moveSpeed * speedScale),
-      verticalMoveSpeed: Math.max(70, definition.behavior.verticalMoveSpeed * speedScale),
-      telegraphDurationMs: Math.max(200, Math.round(definition.behavior.telegraphDurationMs * cooldownScale)),
-      lungeDurationMs: Math.max(220, Math.round(definition.behavior.lungeDurationMs * clamp(1.05 - (scale - 0.46) * 0.06, 0.74, 1.1))),
-      attackCooldownMs: Math.max(420, Math.round(definition.behavior.attackCooldownMs * cooldownScale)),
-      attackRange: Math.max(140, Math.round(definition.behavior.attackRange * (0.88 + (scale - 0.46) * 0.12))),
-      lungeSpeed: Math.max(240, definition.behavior.lungeSpeed * (0.86 + (scale - 0.46) * 0.2)),
-      lungeLift: Math.max(0, definition.behavior.lungeLift * (0.86 + (scale - 0.46) * 0.16)),
-      jumpForce: Math.max(340, definition.behavior.jumpForce * (0.9 + (scale - 0.46) * 0.12)),
-      hoverHeight: Math.max(64, definition.behavior.hoverHeight * (0.92 + (scale - 0.46) * 0.08)),
-      hoverVariance: Math.max(40, definition.behavior.hoverVariance * (0.9 + (scale - 0.46) * 0.08)),
-      projectileSpeed: Math.max(0, definition.behavior.projectileSpeed * (0.88 + (scale - 0.46) * 0.18)),
-      projectileDamage: Math.max(0, Math.round(definition.behavior.projectileDamage * (0.6 + (scale - 0.46) * 0.62))),
-      projectileScale: Math.max(0.45, definition.behavior.projectileScale * (0.9 + (scale - 0.46) * 0.08)),
-      projectileRadiusScale: Math.max(0.45, definition.behavior.projectileRadiusScale * (0.9 + (scale - 0.46) * 0.08)),
-    },
+    behavior: scaledBehavior,
     level,
   };
 }
@@ -469,12 +505,24 @@ function ensureEnemyDirector(state) {
       lastSyncAtMs: 0,
       lastThreatLevel: 1,
       announcedMilestones: {},
+      summonedEnemyTypes: {},
     };
   }
   if (!state.enemyDirector.announcedMilestones || typeof state.enemyDirector.announcedMilestones !== 'object') {
     state.enemyDirector.announcedMilestones = {};
   }
+  if (!state.enemyDirector.summonedEnemyTypes || typeof state.enemyDirector.summonedEnemyTypes !== 'object') {
+    state.enemyDirector.summonedEnemyTypes = {};
+  }
   return state.enemyDirector;
+}
+
+function isEnemyTypeSummoned(state, enemyType) {
+  if (enemyType !== 'striker') {
+    return true;
+  }
+  const director = ensureEnemyDirector(state);
+  return Boolean(director.summonedEnemyTypes?.[enemyType]);
 }
 
 function broadcastEnemySummonMilestones(state, io, worldThreatLevel) {
@@ -489,6 +537,9 @@ function broadcastEnemySummonMilestones(state, io, worldThreatLevel) {
     }
 
     director.announcedMilestones[milestone.unlockLevel] = true;
+    if (milestone.unlockLevel === getEnemyTypeUnlockLevel('striker')) {
+      director.summonedEnemyTypes.striker = true;
+    }
     io.emit('progression_notification', {
       type: milestone.type,
       title: milestone.title,
@@ -897,9 +948,21 @@ function getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec) {
     const bobAmplitude = definition.behavior.hoverBobAmplitude * 0.45;
     const bobSpeed = definition.behavior.hoverBobSpeed * 0.85;
     const bobOffset = Math.sin(nowSec * bobSpeed + stableEnemyPhase(enemy)) * bobAmplitude;
-    const rawY = targetPlayer.y - Math.max(definition.behavior.hoverHeight, definition.behavior.attackRange * 0.28) + bobOffset;
-    const minY = targetPlayer.y - definition.behavior.hoverHeight - definition.behavior.hoverVariance * 0.42;
-    const maxY = targetPlayer.y - Math.max(48, definition.behavior.hoverHeight * 0.38);
+    const directChargeWindow =
+      hasLineOfSightToPlayer(state, enemy, targetPlayer) &&
+      (
+        Math.abs(targetPlayer.x - enemy.x) <= Math.max(170, definition.behavior.attackRange * 0.42) ||
+        Math.abs(targetPlayer.y - enemy.y) <= Math.max(110, definition.behavior.hoverVariance * 1.05)
+      );
+    const rawY = directChargeWindow
+      ? targetPlayer.y - Math.max(38, definition.behavior.hoverHeight * 0.34) + bobOffset * 0.48
+      : targetPlayer.y - Math.max(definition.behavior.hoverHeight, definition.behavior.attackRange * 0.28) + bobOffset;
+    const minY = directChargeWindow
+      ? targetPlayer.y - Math.max(120, definition.behavior.hoverHeight * 0.72)
+      : targetPlayer.y - definition.behavior.hoverHeight - definition.behavior.hoverVariance * 0.42;
+    const maxY = directChargeWindow
+      ? targetPlayer.y + Math.max(12, definition.behavior.hoverVariance * 0.08)
+      : targetPlayer.y - Math.max(48, definition.behavior.hoverHeight * 0.38);
     return {
       x: targetPlayer.x,
       y: clampFlyingCenterYToSafeBand(state, definition, clamp(rawY, minY, maxY)),
@@ -1519,6 +1582,7 @@ function buildEnemyInstance(spawn, definition) {
     despawn_at: 0,
     respawn_at: 0,
     spawn_time_ms: Date.now(),
+    spawn_protected_until_ms: Date.now() + ENEMY_SPAWN_GRACE_MS,
     nav_cache_key: '',
     nav_cache_until: 0,
     nav_cache_plan: null,
@@ -1536,8 +1600,38 @@ function buildEnemyInstance(spawn, definition) {
     gargoyle_perch_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
     render_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
     stealth_broken: false,
+    spawned_for_sid: typeof spawn.spawned_for_sid === 'string' ? spawn.spawned_for_sid : null,
     attack_repeat_next_at: 0,
+    environment_attack_cooldown_until: 0,
   };
+}
+
+function triggerStrikerEnvironmentAttack(state, enemy, targetPlayer, nowSec) {
+  if (!targetPlayer || nowSec < (enemy.environment_attack_cooldown_until || 0)) {
+    return false;
+  }
+
+  const prevDistance = Math.hypot(targetPlayer.x - enemy.x, targetPlayer.y - enemy.y);
+  const stepX = clamp(targetPlayer.x - enemy.x, -STRIKER_SQUEEZE_STEP_X, STRIKER_SQUEEZE_STEP_X);
+  const stepY = clamp(targetPlayer.y - enemy.y, -STRIKER_SQUEEZE_STEP_Y, STRIKER_SQUEEZE_STEP_Y);
+  const nextX = clamp(enemy.x + stepX, state.mapBounds.min_x + 24, state.mapBounds.max_x - 24);
+  const nextY = clamp(enemy.y + stepY, state.mapBounds.min_y + 24, state.mapBounds.max_y - 24);
+  const nextDistance = Math.hypot(targetPlayer.x - nextX, targetPlayer.y - nextY);
+
+  enemy.environment_attack_cooldown_until = nowSec + STRIKER_ENVIRONMENT_ATTACK_COOLDOWN_SECONDS;
+  enemy.action = 'attack';
+  enemy.attack_repeat_next_at = nowSec + 0.16;
+
+  if (nextDistance + 6 >= prevDistance) {
+    return false;
+  }
+
+  enemy.x = nextX;
+  enemy.y = nextY;
+  enemy.last_progress_x = enemy.x;
+  enemy.last_progress_y = enemy.y;
+  enemy.last_progress_at = nowSec;
+  return true;
 }
 
 function emitSlimeSplatter(io, x, y, targetSid = null, radius = SLIME_SPLAT_RADIUS) {
@@ -1728,6 +1822,9 @@ function getEnemyTargetCount(state, enemyType, worldThreatLevel = 1) {
   if (worldThreatLevel < getEnemyTypeUnlockLevel(enemyType)) {
     return 0;
   }
+  if (!isEnemyTypeSummoned(state, enemyType)) {
+    return 0;
+  }
 
   const tileArea = getMapTileArea(state);
   const platformCount = Array.isArray(state.platforms) ? state.platforms.length : 0;
@@ -1741,7 +1838,7 @@ function getEnemyTargetCount(state, enemyType, worldThreatLevel = 1) {
   }
 
   if (enemyType === 'spider') {
-    return clamp(Math.round(tileArea / 180) + Math.floor(platformCount / 16) + Math.floor(progressionBonus / 4), 2, 12);
+    return clamp(Math.round(tileArea / 148) + Math.floor(platformCount / 12) + Math.floor(progressionBonus / 3), 3, 16);
   }
 
   if (enemyType === 'slime') {
@@ -1954,6 +2051,7 @@ function syncEnemyDirector(state, io) {
         level: rollEnemySpawnLevel(worldThreatLevel, enemyType),
         x: position.x,
         y: position.y,
+        spawned_for_sid: anchorPlayer?.id ?? null,
       };
       const enemy = buildEnemyInstance(spawn, definition);
       state.enemies.set(enemy.id, enemy);
@@ -2102,7 +2200,7 @@ function beginLunge(enemy, targetPlayer, nowSec, definition) {
   enemy.lunge_until = nowSec + secondsFromMs(definition.behavior.lungeDurationMs);
   enemy.attack_cooldown_until = nowSec + secondsFromMs(
     isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'swoop'
-      ? definition.behavior.attackCooldownMs * 2.8
+      ? definition.behavior.attackCooldownMs * clamp(2.35 - Math.max(0, (Number(enemy.level) || 1) - 1) * 0.08, 1.35, 2.35)
       : definition.behavior.attackCooldownMs
   );
   enemy.attack_hit_victims = [];
@@ -2112,13 +2210,15 @@ function randomizeGargoyleMode(enemy, nowSec, options = {}) {
   const preferredMode = options.preferredMode === 'perch' || options.preferredMode === 'swoop'
     ? options.preferredMode
     : null;
-  const nextMode = preferredMode || (Math.random() < 0.92 ? 'perch' : 'swoop');
+  const levelBoost = Math.max(0, (Number(enemy?.level) || 1) - 1);
+  const perchChance = clamp(0.94 - levelBoost * 0.03, 0.56, 0.94);
+  const nextMode = preferredMode || (Math.random() < perchChance ? 'perch' : 'swoop');
   enemy.gargoyle_mode = nextMode;
   enemy.gargoyle_perch_opacity = nextMode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.gargoyle_mode_until = nowSec + (
     nextMode === 'perch'
-      ? 6.2 + Math.random() * 4.6
-      : 2 + Math.random() * 1.6
+      ? Math.max(2.4, 6 - levelBoost * 0.28) + Math.random() * Math.max(1.3, 4.1 - levelBoost * 0.14)
+      : Math.max(1.4, 1.9 - levelBoost * 0.04) + Math.random() * Math.max(0.8, 1.55 - levelBoost * 0.03)
   );
   if (nextMode === 'perch') {
     enemy.preferred_hover_offset_x = 0;
@@ -2565,6 +2665,7 @@ function damagePlayerFromEnemyHit(input) {
     player.health = 0;
     player.is_dying = true;
     player.death_time = nowSec;
+    despawnEnemiesSpawnedForPlayer(input.state, input.sid);
     dropSoulsForPlayerDeath(input.state, input.io, player);
     input.io.emit('player_dying', {
       sid: input.sid,
@@ -2806,10 +2907,12 @@ function maybeFireEnemyProjectile(input) {
   const targetY = targetPlayer.y - PLAYER_HITBOX_HEIGHT * 0.2;
   const dx = targetX - origin.x;
   const dy = targetY - origin.y;
-  const distance = Math.max(1, Math.hypot(dx, dy));
   const speed = definition.behavior.projectileSpeed;
-  const vx = dx / distance * speed;
-  const vy = dy / distance * speed;
+  const aimAngle = Math.atan2(dy, dx);
+  const aimJitterRadians = Math.max(0, Number(definition.behavior.projectileAimJitterRadians) || 0);
+  const firedAngle = aimAngle + (aimJitterRadians > 0 ? (Math.random() * 2 - 1) * aimJitterRadians : 0);
+  const vx = Math.cos(firedAngle) * speed;
+  const vy = Math.sin(firedAngle) * speed;
 
   if (Math.abs(vx) > 8) {
     enemy.direction = vx < 0 ? 'left' : 'right';
@@ -2902,6 +3005,7 @@ function stageEnemyRespawn(enemy, definition, nowSec) {
   enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.stealth_broken = false;
   enemy.attack_repeat_next_at = 0;
+  enemy.environment_attack_cooldown_until = 0;
   enemy.striker_slam_started_at = 0;
   enemy.striker_slam_impacted_at = 0;
   enemy.striker_recover_until = 0;
@@ -2952,13 +3056,9 @@ function damageEnemy(input) {
         const unlockedAchievements = recordProgressionMetric(player, 'enemyKills', 1);
         emitProgressionNotification(input.io, input.sourceSid, {
           type: 'enemy_kill',
-          title: `${definition.displayName || enemy.type || 'Enemy'} Down`,
           xp: xpResult.gainedXp,
-          message: `${enemy.type || 'Enemy'} killed by ${player.name || `P${input.sourceSid.slice(0, 4)}`} with fireball`,
-          caption: `Enemy level ${enemy.level || 1}`,
-          victimName: enemy.type || 'Enemy',
-          killerName: player.name || `P${input.sourceSid.slice(0, 4)}`,
-          weapon: 'fireball',
+          message: `you killed ${(enemy.type || 'enemy').toLowerCase()} lvl. ${enemy.level || 1}`,
+          caption: `+${xpResult.gainedXp} xp`,
         });
         if (unlockedAggroWarning) {
           emitProgressionNotification(input.io, input.sourceSid, unlockedAggroWarning);
@@ -2974,6 +3074,27 @@ function damageEnemy(input) {
   enemy.knockback_vx = Math.sign(input.sourceVx || (enemy.direction === 'left' ? -1 : 1)) * 140;
   enemy.vy = Math.min(enemy.vy, -180);
   return true;
+}
+
+function despawnEnemiesSpawnedForPlayer(state, sid) {
+  if (!state?.enemies || !sid) {
+    return;
+  }
+
+  for (const [enemyId, enemy] of state.enemies.entries()) {
+    const belongsToPlayer =
+      enemy?.spawned_for_sid === sid ||
+      enemy?.target_sid === sid ||
+      enemy?.attached_sid === sid;
+    if (!belongsToPlayer) {
+      continue;
+    }
+    state.enemies.delete(enemyId);
+  }
+
+  if (Array.isArray(state.enemySpawns)) {
+    state.enemySpawns = state.enemySpawns.filter((spawn) => spawn?.spawned_for_sid !== sid);
+  }
 }
 
 function respawnEnemy(state, enemy, definition) {
@@ -3046,6 +3167,7 @@ function respawnEnemy(state, enemy, definition) {
   enemy.despawn_at = 0;
   enemy.respawn_at = 0;
   enemy.spawn_time_ms = Date.now();
+  enemy.spawn_protected_until_ms = enemy.spawn_time_ms + ENEMY_SPAWN_GRACE_MS;
   enemy.nav_cache_key = '';
   enemy.nav_cache_until = 0;
   enemy.nav_cache_plan = null;
@@ -3062,6 +3184,7 @@ function respawnEnemy(state, enemy, definition) {
   enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
   enemy.stealth_broken = false;
   enemy.attack_repeat_next_at = 0;
+  enemy.environment_attack_cooldown_until = 0;
   enemy.striker_slam_started_at = 0;
   enemy.striker_slam_impacted_at = 0;
   enemy.striker_recover_until = 0;
@@ -3126,9 +3249,14 @@ function updateAliveEnemy(input) {
     if (nowSec >= enemy.prepare_until) {
       if (isStrikerEnemy(definition) && targetPlayer) {
         const slamDx = Math.abs(targetPlayer.x - enemy.x);
-        const slamDy = Math.abs((targetPlayer.y - Math.max(definition.behavior.hoverHeight * 0.92, 110)) - enemy.y);
-        const horizontallyAligned = slamDx <= Math.max(34, definition.behavior.attackRange * 0.08);
-        const verticallyAligned = slamDy <= Math.max(72, definition.behavior.hoverVariance * 0.72);
+        const slamTargetY = targetPlayer.y - Math.max(definition.behavior.hoverHeight * 0.34, 44);
+        const slamDy = Math.abs(slamTargetY - enemy.y);
+        const directDiveWindow =
+          hasLineOfSightToPlayer(state, enemy, targetPlayer) &&
+          slamDx <= Math.max(140, definition.behavior.attackRange * 0.34) &&
+          Math.abs(targetPlayer.y - enemy.y) <= Math.max(132, definition.behavior.hoverHeight * 0.9);
+        const horizontallyAligned = directDiveWindow || slamDx <= Math.max(82, definition.behavior.attackRange * 0.2);
+        const verticallyAligned = directDiveWindow || slamDy <= Math.max(108, definition.behavior.hoverVariance * 1.18);
         if (!horizontallyAligned || !verticallyAligned) {
           enemy.prepare_until = nowSec + 0.08;
           enemy.attack_release_at = enemy.prepare_until;
@@ -3204,8 +3332,27 @@ function updateAliveEnemy(input) {
     } else if (flying) {
       const attackDx = targetPlayer.x - enemy.x;
       const orbitTarget = getFlyingOrbitTarget(state, enemy, definition, targetPlayer, nowSec);
-      let detourPlan = buildFlyingDetourPlan(state, enemy, definition, orbitTarget);
-      let desiredPoint = orbitTarget;
+      const strikerDirectChargeWindow =
+        isStrikerEnemy(definition) &&
+        hasLineOfSightToPlayer(state, enemy, targetPlayer) &&
+        Math.abs(targetPlayer.y - enemy.y) <= Math.max(132, definition.behavior.hoverHeight * 0.86);
+      let detourPlan = strikerDirectChargeWindow
+        ? null
+        : buildFlyingDetourPlan(state, enemy, definition, orbitTarget);
+      let desiredPoint = strikerDirectChargeWindow
+        ? {
+            x: targetPlayer.x,
+            y: clampFlyingCenterYToSafeBand(
+              state,
+              definition,
+              clamp(
+                targetPlayer.y - Math.max(34, definition.behavior.hoverHeight * 0.3),
+                targetPlayer.y - Math.max(124, definition.behavior.hoverHeight * 0.82),
+                targetPlayer.y + Math.max(18, definition.behavior.hoverVariance * 0.1)
+              )
+            ),
+          }
+        : orbitTarget;
       if (detourPlan) {
         const distanceToNearPoint = Math.hypot(detourPlan.nearPoint.x - enemy.x, detourPlan.nearPoint.y - enemy.y);
         const hasReachedLane = distanceToNearPoint <= 28;
@@ -3238,6 +3385,7 @@ function updateAliveEnemy(input) {
 
       if (stuckDuration >= 0.58) {
         if (isStrikerEnemy(definition)) {
+          triggerStrikerEnvironmentAttack(state, enemy, targetPlayer, nowSec);
           desiredPoint = {
             x: targetPlayer.x,
             y: clamp(
@@ -3291,7 +3439,7 @@ function updateAliveEnemy(input) {
 
       if (
         nowSec >= enemy.attack_cooldown_until &&
-        Math.abs(targetPlayer.x - enemy.x) <= (isStrikerEnemy(definition) ? Math.max(34, definition.behavior.attackRange * 0.12) : definition.behavior.attackRange) &&
+        Math.abs(targetPlayer.x - enemy.x) <= (isStrikerEnemy(definition) ? Math.max(92, definition.behavior.attackRange * 0.26) : definition.behavior.attackRange) &&
         Math.abs(targetPlayer.y - enemy.y) <= definition.behavior.hoverHeight + definition.behavior.hoverVariance + 90 &&
         !detourPlan &&
         hasLineOfSightToPlayer(state, enemy, targetPlayer)
@@ -3326,6 +3474,22 @@ function updateAliveEnemy(input) {
     enemy.nav_cache_key = '';
     enemy.nav_cache_until = 0;
     enemy.nav_cache_plan = null;
+    if (isStrikerEnemy(definition) && !canFlyingEnemyFitAt(state, definition, enemy.x, enemy.y)) {
+      const ceilingEscape = getFlyingCeilingTrapEscape(state, enemy, definition);
+      const rescuePoint = ceilingEscape && canFlyingEnemyFitAt(state, definition, ceilingEscape.escapeX, ceilingEscape.escapeY)
+        ? { x: ceilingEscape.escapeX, y: ceilingEscape.escapeY }
+        : (canFlyingEnemyFitAt(state, definition, enemy.spawn_x, enemy.spawn_y)
+            ? { x: enemy.spawn_x, y: enemy.spawn_y }
+            : null);
+      if (rescuePoint) {
+        enemy.x = rescuePoint.x;
+        enemy.y = rescuePoint.y;
+        enemy.vx = 0;
+        enemy.vy = 0;
+        enemy.knockback_vx = 0;
+        enemy.jump_launch_vx = 0;
+      }
+    }
     if (isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch') {
       desiredVelocityX = 0;
       desiredVelocityY = 0;
@@ -3355,11 +3519,14 @@ function updateAliveEnemy(input) {
     }
   }
 
+  const strikerAttackPulseActive = isStrikerEnemy(definition) && (enemy.attack_repeat_next_at || 0) > nowSec;
   if (enemy.brain_state !== 'prepare' && enemy.brain_state !== 'lunge' && enemy.brain_state !== 'recover') {
     if (flying) {
-      enemy.action = isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch'
-        ? 'idle'
-        : (Math.abs(desiredVelocityX) > 0 || Math.abs(desiredVelocityY) > 0 ? 'run' : 'idle');
+      enemy.action = strikerAttackPulseActive
+        ? 'attack'
+        : (isGargoyleEnemy(definition) && enemy.gargoyle_mode === 'perch'
+            ? 'idle'
+            : (Math.abs(desiredVelocityX) > 0 || Math.abs(desiredVelocityY) > 0 ? 'run' : 'idle'));
     } else {
       updateEnemyProgressTracker(enemy, moveIntent, nowSec);
       maybeJumpTowardTarget(state, enemy, definition, moveIntent, targetPlayer, navigationPlan, nowSec);
@@ -3439,6 +3606,17 @@ function updateEnemies(input) {
       continue;
     }
 
+    if (Date.now() < (Number(enemy.spawn_protected_until_ms) || 0)) {
+      enemy.vx = 0;
+      enemy.vy = 0;
+      enemy.knockback_vx = 0;
+      enemy.knockback_vy = 0;
+      enemy.action = 'idle';
+      enemy.brain_state = 'idle';
+      enemy.target_sid = null;
+      continue;
+    }
+
     updateAliveEnemy({
       ...input,
       enemy,
@@ -3450,6 +3628,7 @@ function updateEnemies(input) {
 
 function serializeEnemiesForState(state, options = {}) {
   const payload = {};
+  const nowMs = Date.now();
   const centerX = Number(options.centerX);
   const centerY = Number(options.centerY);
   const radiusX = Math.max(0, Number(options.radiusX) || 0);
@@ -3459,6 +3638,11 @@ function serializeEnemiesForState(state, options = {}) {
   for (const enemy of state.enemies.values()) {
     const definition = enemy.runtime_definition || getEnemyDefinition(state, enemy.type);
     if (!definition) {
+      continue;
+    }
+
+    // Keep freshly respawned enemies fully hidden until their spawn state is finalized.
+    if (nowMs < (Number(enemy.spawn_protected_until_ms) || 0)) {
       continue;
     }
 
@@ -3490,9 +3674,11 @@ function serializeEnemiesForState(state, options = {}) {
       despawn_at_ms: enemy.despawn_at ? Math.round(enemy.despawn_at * 1000) : 0,
       respawn_at_ms: enemy.respawn_at ? Math.round(enemy.respawn_at * 1000) : 0,
       spawn_time_ms: typeof enemy.spawn_time_ms === 'number' ? enemy.spawn_time_ms : Date.now(),
+      spawn_protected_until_ms: typeof enemy.spawn_protected_until_ms === 'number' ? enemy.spawn_protected_until_ms : 0,
       target_sid: enemy.target_sid || null,
       attached_sid: enemy.attached_sid || null,
       gargoyle_mode: enemy.gargoyle_mode || null,
+      stealth_broken: Boolean(enemy.stealth_broken),
       render_opacity: Number.isFinite(enemy.render_opacity) ? enemy.render_opacity : 1,
       striker_slam_impacted_at_ms: enemy.striker_slam_impacted_at
         ? Math.round(enemy.striker_slam_impacted_at * 1000)
@@ -3506,6 +3692,7 @@ function serializeEnemiesForState(state, options = {}) {
 module.exports = {
   checkFireballEnemyCollision,
   damageEnemy,
+  despawnEnemiesSpawnedForPlayer,
   getEnemyHitbox,
   resetEnemiesForState,
   serializeEnemiesForState,
