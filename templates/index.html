@@ -6812,7 +6812,6 @@
                 playerReadySent = true;
             }
             
-            console.log('Game started - loading completed');
         }
 
         /**
@@ -6925,7 +6924,6 @@
         const requestQueue = [];
 
         socket.on('connect', () => {
-            console.log('Connected to server successfully!');
             lastRequestedMapName = null;
             syncCurrentMapToServer(true);
             // Never announce readiness here; only do that after the loading UI
@@ -6936,7 +6934,6 @@
         });
 
         socket.on('disconnect', (reason) => {
-            console.log('Disconnected from server:', reason);
             localProgressionState.pendingChoices = null;
             upgradeSelectionPending = false;
             renderUpgradeDraft();
@@ -6974,7 +6971,6 @@
 
         socket.on('character_assigned', (data) => {
             assignedCharacter = data.character;
-            console.log(`Assigned character: ${assignedCharacter}`);
             loadCharacterAssets();
         });
 
@@ -7180,7 +7176,6 @@
                 
                 // Mark character as loading
                 loadingCharacters.add(characterName);
-                console.log(`Loading assets for character: ${characterName}`);
                 
                 const metaRes = await fetch(`/api/character_metadata/${characterName}`);
                 if (!metaRes.ok) {
@@ -7209,7 +7204,6 @@
                 // Store assets in the multi-character cache
                 playerCharacterAssets[characterName] = assets;
                 loadingCharacters.delete(characterName);
-                console.log(`Assets loaded successfully for character: ${characterName}`);
             } catch (error) {
                 console.error(`Error loading assets for character ${characterName}:`, error);
                 loadingCharacters.delete(characterName);
@@ -7859,7 +7853,6 @@
 
             activeMapLoadPromise = (async () => {
             try {
-                console.log(`Loading map: ${mapName}`);
                 
                 const response = await fetch(`/api/current_map?map=${encodeURIComponent(mapName)}`);
                 const mapData = await response.json();
@@ -7881,7 +7874,6 @@
                 }
                 refreshCurrentMapDecorStats();
                 loadedMapName = mapName;
-                console.log('Map data loaded:', mapData);
 
                 // Load tileset image using tokenized endpoint for security
                 if (!tilesetImage) {
@@ -7895,12 +7887,10 @@
 
                 // Load spawn points from map
                 spawnPoints = mapData.spawnPoints || [];
-                console.log(`Loaded ${spawnPoints.length} spawn points:`, spawnPoints);
                 
                 // Convert tile map to platforms
                 convertMapToPlatforms();
                 
-                console.log(`Map "${mapData.name}" loaded successfully with ${spawnPoints.length} spawn points`);
                 return currentMap;
             } catch (error) {
                 console.error('Error loading map:', error);
@@ -8493,7 +8483,6 @@
         window.addEventListener('keydown', (e) => {
             // Disable movement keys when chat is active
             if (chatActive || isUpgradeDraftActive()) {
-                console.log('Movement blocked - chat is active');
                 return;
             }
             
@@ -8516,7 +8505,6 @@
                     // Check server state for is_dying status
                     if (dyingPlayers[socket.id]) {
                         socket.emit('respawn_request');
-                        console.log('Manual respawn requested');
                     }
                 }
             }
@@ -8610,21 +8598,17 @@
             if (e.key === 'Enter') {
                 e.preventDefault();
                 const message = chatInput.value.trim();
-                console.log('Enter pressed in chat, message length:', message.length);
                 if (message.length > 0) {
                     // Send chat message to server
                     socket.emit('chat_message', { message: message });
                     chatInput.value = '';
-                    console.log('Message sent, chat should close');
                 } else {
-                    console.log('Empty message, chat should stay visible');
                 }
                 // Always unfocus chat after Enter (whether message was sent or not)
                 chatInput.blur();
                 chatActive = false;
                 chatJustClosed = true; // Set flag to prevent immediate reopening
                 // Keep chat box visible - don't hide it
-                console.log('Chat unfocused, chatActive:', chatActive);
                 
                 // Clear the flag after a short delay
                 setTimeout(() => {
@@ -8663,7 +8647,6 @@
         chatInput.addEventListener('blur', () => {
             chatActive = false;
             // Keep chat box visible after blur - don't hide it automatically
-            console.log('Chat input blurred, keeping chat box visible');
         });
 
         // Global enter key to focus chat input
@@ -9562,7 +9545,6 @@
 
         // Handle map loaded event from server
         socket.on('map_loaded', async (mapData) => {
-            console.log('Map loaded from server:', mapData.name);
             currentMap = mapData;
             if (!Array.isArray(currentMap.decor)) {
                 currentMap.decor = [];
@@ -9585,7 +9567,6 @@
         // Handle player died event from server
         socket.on('player_died', (data) => {
             const { sid, killer_sid } = data;
-            console.log(`Player ${sid} killed by ${killer_sid}`);
             
             // Show death message
             const deathMessage = {
@@ -9616,7 +9597,6 @@
                 deathFrame: 0,
                 opacity: 1.0
             };
-            console.log(`Player ${sid} is dying at (${x}, ${y}), vy: ${vy}, on_ground: ${on_ground}`);
 
             // Load character assets for this dying player if not already loaded
             if (character && !playerCharacterAssets[character]) {
@@ -9630,13 +9610,11 @@
             // Remove player from dyingPlayers so they can be rendered immediately
             if (dyingPlayers[sid]) {
                 delete dyingPlayers[sid];
-                console.log(`Player ${sid} respawned, removed from dyingPlayers`);
             }
         });
 
         // Handle initial dead bodies for new players
         socket.on('initial_dead_bodies', (bodies) => {
-            console.log("Received initial dead bodies:", bodies);
             for (const sid in bodies) {
                 const body = bodies[sid];
                 const elapsedSinceDeath = (Date.now() / 1000) - body.timestamp;
@@ -9679,7 +9657,6 @@
             // Add to chat box
             addMessageToChatBox(sid, name, message);
             
-            console.log(`Received chat message from ${name} (${sid}): ${message}`);
         });
 
         // Handle projectile created event from server
@@ -13189,7 +13166,6 @@
                     isLowEnd = true;
                     fpsCap = 30; // Cap low-end to 30 FPS
                     frameInterval = 1000 / fpsCap;
-                    console.log("Low-end device detected. Capping to 30 FPS.");
                 } else if (actualFps > 58 && isLowEnd) {
                     // Optional: Recovery if performance improves
                     isLowEnd = false;
