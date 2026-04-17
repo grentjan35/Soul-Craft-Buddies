@@ -21,8 +21,8 @@
     "h": 0.602972
   },
   "stats": {
-    "maxHealth": 200,
-    "contactDamage": 50,
+    "maxHealth": 170,
+    "contactDamage": 40,
     "respawnDelayMs": 7000
   },
   "behavior": {
@@ -48,7 +48,7 @@
     "hoverBobAmplitude": 14,
     "hoverBobSpeed": 1.6,
     "projectileSpeed": 980,
-    "projectileDamage": 50,
+    "projectileDamage": 30,
     "projectileScale": 0.82,
     "projectileRadiusScale": 0.72,
     "projectileYOffset": -10,
