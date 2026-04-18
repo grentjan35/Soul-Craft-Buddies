@@ -95,6 +95,9 @@ function createInitialState(input) {
     maxHealth: PLAYER_MAX_HEALTH,
     dataDir,
     lastActivePlayerAtMs: Date.now(),
+    groups: new Map(),
+    pendingGroupInvites: new Map(),
+    activeHealings: new Map(),
   };
 
   ensureSoulState(state);

@@ -35,7 +35,7 @@
             --adaptive-toast-padding-x: 18px;
             --adaptive-leaderboard-width: 340px;
             --adaptive-leaderboard-top: 100px;
-            --adaptive-chat-edge: 12px;
+            --adaptive-chat-edge: 2px;
             --menu-display-width: 100vw;
             --menu-display-height: 100vh;
             --ui-panel-bg:
@@ -83,6 +83,50 @@
             opacity: 0;
         }
 
+        #gameCanvas-wrapper {
+            display: block;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: var(--game-display-width, 100vw);
+            height: var(--game-display-height, 100vh);
+            transform: translate(-50%, -50%);
+            z-index: 1;
+            overflow: hidden;
+        }
+
+
+        .dynamic-light-glow {
+            display: none;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 4;
+            mix-blend-mode: lighten;
+        }
+
+        .dynamic-light-glow.active {
+            display: block;
+        }
+
+        #dynamic-light-glows {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: var(--game-display-width, 100vw);
+            height: var(--game-display-height, 100vh);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 4;
+        }
+
+        #dynamic-light-glows.active {
+            display: block;
+        }
+
         #glCanvas {
             display: none;
             position: fixed;
@@ -94,6 +138,22 @@
             pointer-events: none;
             z-index: 2;
         }
+
+        body.game-ui-hidden #run-hud,
+        body.game-ui-hidden #progression-feed,
+        body.game-ui-hidden #achievement-toggle,
+        body.game-ui-hidden #achievement-panel,
+        body.game-ui-hidden #souls-leaderboard,
+        body.game-ui-hidden #chat-container,
+        body.game-ui-hidden #group-toggle,
+        body.game-ui-hidden #group-panel,
+        body.game-ui-hidden #upgrade-draft-overlay,
+        body.game-ui-hidden .menu-settings-btn.in-game {
+            opacity: 0 !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
         .in-game-frame {
             position: relative;
@@ -2170,7 +2230,7 @@
         /* Chat Input Styling */
         #chat-container {
             position: fixed;
-            bottom: 20px;
+            bottom: 10px;
             right: var(--adaptive-chat-edge);
             z-index: 100;
             font-family: 'EB Garamond', serif;
@@ -2178,43 +2238,57 @@
             max-width: calc(100vw - (var(--adaptive-chat-edge) * 2));
             display: none;
             touch-action: manipulation;
+            flex-direction: column;
+            align-items: flex-end;
         }
 
         #chat-box {
             border-radius: 0;
             margin-bottom: 8px;
             overflow: hidden;
-            display: none;
             transition: all 0.3s ease;
             display: flex;
             flex-direction: column;
+            width: 100%;
+            min-height: 220px;
+            max-height: min(46vh, 360px);
+            box-sizing: border-box;
+            background:
+                linear-gradient(180deg, rgba(24, 17, 10, 0.98), rgba(10, 7, 4, 0.98));
+            border: 2px solid rgba(205, 169, 104, 0.6);
+            box-shadow:
+                0 14px 28px rgba(0, 0, 0, 0.34),
+                inset 0 1px 0 rgba(255, 231, 178, 0.08),
+                inset 0 0 0 1px rgba(42, 25, 9, 0.9);
         }
 
-        #chat-box.collapsed {
-            height: auto;
+        #chat-box.is-minimized {
+            display: none;
         }
 
         #chat-box.expanded {
-            height: var(--adaptive-chat-expanded-height);
+            height: min(46vh, 360px);
         }
 
         #chat-header {
-            position: relative;
+            position: sticky;
+            top: 0;
             z-index: 1;
-            background: linear-gradient(180deg, rgba(108, 77, 30, 0.28), rgba(45, 28, 12, 0.06));
-            padding: 6px 8px;
+            background:
+                linear-gradient(180deg, rgba(94, 67, 28, 0.96), rgba(52, 34, 14, 0.94));
+            padding: 8px 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             color: #f6e2b4;
             font-family: 'EB Garamond', serif;
-            font-size: var(--adaptive-chat-font-size);
+            font-size: 13px;
             font-weight: bold;
             cursor: pointer;
             user-select: none;
             flex-shrink: 0;
-            border-bottom: 1px solid rgba(205, 169, 104, 0.35);
-            text-shadow: 0 0 18px rgba(212, 179, 114, 0.18);
+            border-bottom: 2px solid rgba(205, 169, 104, 0.24);
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.16);
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
@@ -2225,18 +2299,19 @@
 
         #chat-header:hover {
             background:
-                linear-gradient(180deg, rgba(132, 92, 36, 0.42), rgba(58, 35, 15, 0.22)),
-                linear-gradient(90deg, rgba(123, 186, 255, 0.14), transparent);
+                linear-gradient(180deg, rgba(122, 86, 35, 0.98), rgba(66, 42, 17, 0.95));
         }
 
         #chat-toggle {
-            background: none;
-            border: none;
+            background: rgba(255, 239, 198, 0.08);
+            border: 1px solid rgba(205, 169, 104, 0.18);
             color: #f3d896;
-            font-size: 12px;
+            font-size: 11px;
             cursor: pointer;
-            padding: 2px 4px;
-            border-radius: 2px;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            border-radius: 6px;
             transition: all 0.2s ease;
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
@@ -2247,7 +2322,7 @@
         }
 
         #chat-toggle:hover {
-            background: rgba(212, 179, 114, 0.16);
+            background: rgba(212, 179, 114, 0.18);
             color: #fff0c6;
         }
 
@@ -2260,10 +2335,12 @@
             min-height: 0;
             max-height: 100%;
             overflow-y: auto;
-            padding: 8px;
+            padding: 10px;
             display: block;
             flex: 1;
             overflow-y: auto;
+            background:
+                linear-gradient(180deg, rgba(14, 10, 7, 0.9), rgba(7, 5, 4, 0.92));
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
@@ -2277,19 +2354,21 @@
         }
 
         .chat-message {
-            margin-bottom: 4px;
-            padding: 4px 8px;
-            border-radius: 6px;
-            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
-            border: 1px solid rgba(205, 169, 104, 0.18);
+            margin-bottom: 8px;
+            padding: 8px 10px;
+            border-radius: 10px;
+            background: linear-gradient(180deg, rgba(30, 21, 13, 0.96), rgba(14, 10, 7, 0.98));
+            border: 1px solid rgba(205, 169, 104, 0.14);
             word-wrap: break-word;
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
-            font-size: var(--adaptive-chat-font-size);
+            font-size: 12px;
+            line-height: 1.35;
             text-rendering: optimizeSpeed;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            box-shadow: inset 0 1px 0 rgba(255, 231, 178, 0.04);
         }
 
         .chat-message .player-id {
@@ -2297,24 +2376,129 @@
             font-weight: bold;
             display: inline-block;
             margin-right: 6px;
-            text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
+            text-shadow: 0 0 8px rgba(212, 179, 114, 0.18);
         }
 
         .chat-message .message-text {
             color: #f8efd9;
         }
 
+        .chat-message.group {
+            border-color: rgba(104, 176, 255, 0.22);
+            background: linear-gradient(180deg, rgba(16, 28, 46, 0.96), rgba(9, 15, 28, 0.98));
+        }
+
+        .chat-message .channel-tag {
+            display: inline-block;
+            margin-right: 6px;
+            color: #91c8ff;
+            font-size: 0.82em;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .chat-channel-tabs {
+            display: flex;
+            flex-direction: row;
+            gap: 6px;
+            margin: 0;
+            padding: 8px 10px;
+            background: rgba(16, 11, 8, 0.94);
+            border-bottom: 2px solid rgba(205, 169, 104, 0.14);
+            position: sticky;
+            top: 40px;
+            z-index: 1;
+            flex-shrink: 0;
+            align-items: center;
+        }
+
+        .chat-channel-btn {
+            flex: 1;
+            min-height: 28px;
+            padding: 6px 8px;
+            border-radius: 0;
+            border: 2px solid rgba(205, 169, 104, 0.24);
+            background: rgba(255, 244, 214, 0.04);
+            color: rgba(248, 239, 217, 0.84);
+            cursor: pointer;
+            transition: all 0.18s ease;
+            font-size: 11px;
+            line-height: 1.1;
+            text-align: center;
+            overflow: hidden;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            font-family: 'EB Garamond', serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
+        .chat-channel-btn.is-active {
+            border-color: rgba(132, 188, 255, 0.3);
+            box-shadow: 0 0 14px rgba(91, 149, 255, 0.12);
+            background: linear-gradient(180deg, rgba(25, 46, 78, 0.94), rgba(14, 24, 43, 0.98));
+            color: #f4f9ff;
+        }
+
+        .group-browser {
+            display: grid;
+            gap: 8px;
+            margin-top: 12px;
+            text-align: left;
+        }
+
+        .group-browser-title {
+            color: #f3d896;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .group-browser-empty {
+            color: rgba(248, 239, 217, 0.72);
+            font-size: 12px;
+        }
+
+        .group-browser-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .group-browser-card {
+            display: grid;
+            gap: 6px;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(18, 12, 8, 0.5);
+            border: 1px solid rgba(205, 169, 104, 0.18);
+        }
+
+        .group-browser-name {
+            color: #f8efd9;
+            font-weight: bold;
+        }
+
+        .group-browser-meta {
+            color: rgba(243, 216, 150, 0.82);
+            font-size: 12px;
+        }
+
         #chat-input {
-            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
-            border: 2px solid rgba(205, 169, 104, 0.42);
+            background: linear-gradient(180deg, rgba(20, 14, 10, 0.98), rgba(10, 7, 5, 1));
+            border: 2px solid rgba(205, 169, 104, 0.3);
             border-radius: 0;
             color: #f8efd9;
-            padding: 8px 12px;
+            padding: 10px 12px;
             font-size: var(--adaptive-chat-input-font-size);
             font-family: 'EB Garamond', serif;
             width: 100%;
             box-sizing: border-box;
             transition: all 0.2s ease;
+            box-shadow:
+                0 10px 22px rgba(0, 0, 0, 0.24),
+                inset 0 1px 0 rgba(255, 231, 178, 0.04);
             image-rendering: pixelated;
             image-rendering: -moz-crisp-edges;
             image-rendering: crisp-edges;
@@ -2325,9 +2509,11 @@
 
         #chat-input:focus {
             outline: none;
-            border-color: rgba(237, 213, 161, 0.82);
-            background: linear-gradient(180deg, rgba(22, 15, 10, 0.98), rgba(10, 7, 4, 1));
-            box-shadow: 0 0 18px rgba(212, 179, 114, 0.28);
+            border-color: rgba(237, 213, 161, 0.45);
+            background: linear-gradient(180deg, rgba(24, 17, 12, 1), rgba(12, 8, 6, 1));
+            box-shadow:
+                0 0 0 1px rgba(212, 179, 114, 0.12),
+                0 10px 22px rgba(0, 0, 0, 0.26);
         }
 
         #chat-input::placeholder {
@@ -2335,23 +2521,481 @@
             font-style: italic;
         }
 
+        #chat-container.is-minimized #chat-input {
+            display: none;
+        }
+
+        #chat-minimized-button {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 84px;
+            min-height: 34px;
+            padding: 5px 10px;
+            cursor: pointer;
+            align-self: flex-end;
+        }
+
+        #chat-container.is-minimized #chat-minimized-button {
+            display: inline-flex;
+        }
+
+        .chat-notification-badge {
+            width: 10px;
+            height: 10px;
+            border-radius: 999px;
+            display: none;
+            box-shadow: 0 0 12px currentColor;
+        }
+
+        .chat-notification-badge.is-visible {
+            display: inline-block;
+        }
+
+        .chat-notification-badge.global {
+            color: #ff5b5b;
+            background: #ff5b5b;
+        }
+
+        .chat-notification-badge.group {
+            color: #62afff;
+            background: #62afff;
+        }
+
         /* Scrollbar styling for chat box */
-        #chat-box::-webkit-scrollbar {
+        #chat-messages::-webkit-scrollbar {
             width: 6px;
         }
 
-        #chat-box::-webkit-scrollbar-track {
+        #chat-messages::-webkit-scrollbar-track {
             background: rgba(12, 8, 9, 0.92);
             border-radius: 3px;
         }
 
-        #chat-box::-webkit-scrollbar-thumb {
+        #chat-messages::-webkit-scrollbar-thumb {
             background: rgba(205, 169, 104, 0.3);
             border-radius: 3px;
         }
 
-        #chat-box::-webkit-scrollbar-thumb:hover {
+        #chat-messages::-webkit-scrollbar-thumb:hover {
             background: rgba(205, 169, 104, 0.5);
+        }
+
+        /* Group System Styling */
+        .group-button {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            padding: 8px 16px;
+            font-family: 'EB Garamond', serif;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .group-button:hover {
+            background: rgba(212, 179, 114, 0.16);
+            color: #fff0c6;
+        }
+
+        .group-panel {
+            position: fixed;
+            bottom: 70px;
+            left: 20px;
+            width: 300px;
+            max-height: 400px;
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: 'EB Garamond', serif;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .group-panel[aria-hidden="false"] {
+            display: flex;
+        }
+
+        .group-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: linear-gradient(180deg, rgba(108, 77, 30, 0.28), rgba(45, 28, 12, 0.06));
+            border-bottom: 1px solid rgba(205, 169, 104, 0.35);
+            color: #f6e2b4;
+            font-weight: bold;
+            text-shadow: 0 0 18px rgba(212, 179, 114, 0.18);
+        }
+
+        .group-close {
+            background: none;
+            border: none;
+            color: #f3d896;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .group-close:hover {
+            background: rgba(212, 179, 114, 0.16);
+            color: #fff0c6;
+        }
+
+        .group-panel-title {
+            font-size: 16px;
+        }
+
+        #group-content {
+            padding: 12px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .group-no-group {
+            text-align: center;
+            color: #f8efd9;
+        }
+
+        .group-no-group p {
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .group-in-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .group-info {
+            color: #f8efd9;
+        }
+
+        .group-role {
+            font-size: 14px;
+            margin-bottom: 8px;
+            color: #f3d896;
+            font-weight: bold;
+        }
+
+        .group-members {
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .group-member {
+            width: 100%;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            background: rgba(18, 12, 8, 0.5);
+            border-radius: 4px;
+            border: 1px solid rgba(205, 169, 104, 0.18);
+            color: #f8efd9;
+            text-align: left;
+            transition: all 0.18s ease;
+        }
+
+        .group-member.is-leader {
+            border-color: rgba(255, 200, 100, 0.4);
+        }
+
+        button.group-member {
+            cursor: pointer;
+            font: inherit;
+        }
+
+        button.group-member:hover {
+            border-color: rgba(237, 213, 161, 0.62);
+            background: rgba(26, 17, 11, 0.72);
+        }
+
+        .group-member.is-selected {
+            border-color: rgba(255, 136, 112, 0.8);
+            box-shadow: 0 0 16px rgba(255, 100, 100, 0.2);
+            background: rgba(42, 18, 14, 0.82);
+        }
+
+        .group-member-name {
+            display: block;
+            font-weight: bold;
+        }
+
+        .group-member-meta {
+            display: block;
+            margin-top: 2px;
+            font-size: 11px;
+            color: rgba(243, 216, 150, 0.82);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .group-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .group-leader-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(205, 169, 104, 0.18);
+        }
+
+        .group-status {
+            min-height: 18px;
+            font-size: 12px;
+            line-height: 1.4;
+            letter-spacing: 0.04em;
+            color: rgba(243, 216, 150, 0.88);
+        }
+
+        .group-status.is-success {
+            color: #9ff0b8;
+        }
+
+        .group-status.is-error {
+            color: #ffb0b0;
+        }
+
+        .group-action-btn {
+            padding: 8px 12px;
+            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
+            border: 2px solid rgba(205, 169, 104, 0.42);
+            color: #f8efd9;
+            font-family: 'EB Garamond', serif;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-radius: 4px;
+        }
+
+        .group-action-btn:hover {
+            border-color: rgba(237, 213, 161, 0.82);
+            background: linear-gradient(180deg, rgba(22, 15, 10, 0.98), rgba(10, 7, 4, 1));
+            box-shadow: 0 0 18px rgba(212, 179, 114, 0.28);
+        }
+
+        .group-leave-btn {
+            border-color: rgba(255, 100, 100, 0.42);
+        }
+
+        .group-leave-btn:hover {
+            border-color: rgba(255, 150, 150, 0.82);
+            box-shadow: 0 0 18px rgba(255, 100, 100, 0.28);
+        }
+
+        .group-kick-section {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .group-kick-section label {
+            font-size: 12px;
+            color: #f3d896;
+        }
+
+        .group-kick-hint {
+            font-size: 12px;
+            color: rgba(248, 239, 217, 0.72);
+        }
+
+        .group-danger-action {
+            border-color: rgba(255, 120, 120, 0.42);
+        }
+
+        .group-danger-action:hover {
+            border-color: rgba(255, 170, 170, 0.82);
+            box-shadow: 0 0 18px rgba(255, 100, 100, 0.26);
+        }
+
+        .group-primary-leave {
+            width: 100%;
+            margin-top: 4px;
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+
+        /* Healing Visual Effects */
+        #healing-effects {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .healing-circle {
+            position: absolute;
+            border-radius: 50%;
+            border: 3px solid rgba(0, 255, 100, 0.6);
+            background: radial-gradient(circle, rgba(0, 255, 100, 0.15) 0%, rgba(0, 255, 100, 0.05) 70%, transparent 100%);
+            animation: healing-pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes healing-pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+            50% {
+                transform: scale(1.1);
+                opacity: 0.9;
+            }
+        }
+
+        /* In-Game Modal Dialog Styling */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 200;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'EB Garamond', serif;
+        }
+
+        .modal-dialog {
+            width: 350px;
+            max-width: 90vw;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            text-rendering: optimizeSpeed;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: linear-gradient(180deg, rgba(108, 77, 30, 0.28), rgba(45, 28, 12, 0.06));
+            border-bottom: 1px solid rgba(205, 169, 104, 0.35);
+            color: #f6e2b4;
+            font-weight: bold;
+            text-shadow: 0 0 18px rgba(212, 179, 114, 0.18);
+        }
+
+        .modal-title {
+            font-size: 16px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: #f3d896;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 2px;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            background: rgba(212, 179, 114, 0.16);
+            color: #fff0c6;
+        }
+
+        .modal-body {
+            padding: 16px 14px;
+            color: #f8efd9;
+            font-size: 14px;
+        }
+
+        .modal-body p {
+            margin: 0 0 12px 0;
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
+            border: 2px solid rgba(205, 169, 104, 0.42);
+            border-radius: 4px;
+            color: #f8efd9;
+            font-family: 'EB Garamond', serif;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .modal-input:focus {
+            outline: none;
+            border-color: rgba(237, 213, 161, 0.82);
+            background: linear-gradient(180deg, rgba(22, 15, 10, 0.98), rgba(10, 7, 4, 1));
+            box-shadow: 0 0 18px rgba(212, 179, 114, 0.28);
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 10px 14px;
+            border-top: 1px solid rgba(205, 169, 104, 0.18);
+        }
+
+        .modal-btn {
+            padding: 8px 16px;
+            background: linear-gradient(180deg, rgba(18, 12, 8, 0.96), rgba(8, 5, 3, 0.98));
+            border: 2px solid rgba(205, 169, 104, 0.42);
+            color: #f8efd9;
+            font-family: 'EB Garamond', serif;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-radius: 4px;
+        }
+
+        .modal-btn:hover {
+            border-color: rgba(237, 213, 161, 0.82);
+            background: linear-gradient(180deg, rgba(22, 15, 10, 0.98), rgba(10, 7, 4, 1));
+            box-shadow: 0 0 18px rgba(212, 179, 114, 0.28);
+        }
+
+        .modal-confirm-btn {
+            border-color: rgba(0, 200, 100, 0.42);
+        }
+
+        .modal-confirm-btn:hover {
+            border-color: rgba(0, 255, 150, 0.82);
+            box-shadow: 0 0 18px rgba(0, 200, 100, 0.28);
+        }
+
+        .modal-cancel-btn {
+            border-color: rgba(255, 100, 100, 0.42);
+        }
+
+        .modal-cancel-btn:hover {
+            border-color: rgba(255, 150, 150, 0.82);
+            box-shadow: 0 0 18px rgba(255, 100, 100, 0.28);
         }
 
         /* Mobile Controls Styling */
@@ -2535,7 +3179,7 @@
         </filter>
     </svg>
 </head>
-<body>
+<body class="game-ui-hidden">
     <button id="open-settings-btn" class="menu-settings-btn" type="button" aria-haspopup="dialog" aria-controls="settings-modal" aria-label="Open settings">
         <span class="menu-settings-icon" aria-hidden="true"></span>
         <span>Settings</span>
@@ -2582,8 +3226,12 @@
             </div>
         </div>
     </div>
-    <canvas id="gameCanvas"></canvas>
+    <div id="gameCanvas-wrapper">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+    <div id="healing-effects"></div>
     <canvas id="glCanvas" style="display: none;"></canvas>
+    <div id="dynamic-light-glows"></div>
     <div id="run-hud" aria-live="polite">
         <div class="run-hud-badge in-game-frame in-game-frame-blue"><span id="run-player-badge" data-custom-alphabet="label">Player</span><strong id="run-level-badge" class="run-hud-level" data-custom-alphabet="dynamic">Lvl. 1</strong></div>
         <div class="run-bar-shell in-game-frame in-game-frame-blue">
@@ -2633,9 +3281,80 @@
                 <span data-custom-alphabet="label">Chat</span>
                 <button id="chat-toggle" title="Toggle Chat" data-custom-alphabet="button">▼</button>
             </div>
+            <div class="chat-channel-tabs">
+                <button id="chat-channel-global" class="chat-channel-btn is-active" type="button" data-custom-alphabet="button">Global</button>
+                <button id="chat-channel-group" class="chat-channel-btn" type="button" data-custom-alphabet="button">Group</button>
+            </div>
             <div id="chat-messages"></div>
         </div>
         <input type="text" id="chat-input" placeholder="Press Enter to chat..." maxlength="50">
+        <button id="chat-minimized-button" class="in-game-frame in-game-frame-blue" type="button" data-custom-alphabet="button">
+            <span id="chat-minimized-label">CHAT</span>
+            <span id="chat-minimized-badge-global" class="chat-notification-badge global"></span>
+            <span id="chat-minimized-badge-group" class="chat-notification-badge group"></span>
+        </button>
+    </div>
+
+    <!-- Group System UI -->
+    <button id="group-toggle" class="in-game-frame in-game-frame-blue group-button" type="button" aria-expanded="false" aria-controls="group-panel">
+        <span data-custom-alphabet="button">Group</span>
+    </button>
+    <aside id="group-panel" class="in-game-frame in-game-frame-blue group-panel" aria-live="polite" aria-hidden="true">
+        <div class="group-panel-header">
+            <div class="group-panel-title" data-custom-alphabet="title">Group</div>
+            <button id="group-close" class="group-close" type="button" aria-label="Close group menu" data-custom-alphabet="button">X</button>
+        </div>
+        <div id="group-content">
+            <div id="group-no-group" class="group-no-group">
+                <p data-custom-alphabet="label">You are not in a group</p>
+                <button id="group-create-btn" class="group-action-btn" type="button" data-custom-alphabet="button">Create Group</button>
+                <div id="group-browser" class="group-browser">
+                    <div class="group-browser-title" data-custom-alphabet="label">Join Existing Group</div>
+                    <div id="group-browser-empty" class="group-browser-empty">No groups are open right now.</div>
+                    <div id="group-browser-list" class="group-browser-list"></div>
+                </div>
+            </div>
+            <div id="group-status" class="group-status" aria-live="polite"></div>
+            <div id="group-in-group" class="group-in-group" style="display: none;">
+                <div class="group-info">
+                    <div class="group-role" id="group-role-display"></div>
+                    <div class="group-members" id="group-members-list"></div>
+                </div>
+                <div id="group-leader-actions" class="group-leader-actions" style="display: none;">
+                    <div class="group-kick-section">
+                        <label data-custom-alphabet="label">Member Actions</label>
+                        <div id="group-kick-hint" class="group-kick-hint">Select a member from the list to manage them.</div>
+                        <button id="group-kick-btn" class="group-action-btn group-danger-action" type="button" style="display: none;" data-custom-alphabet="button">Kick</button>
+                        <button id="group-promote-btn" class="group-action-btn" type="button" style="display: none;" data-custom-alphabet="button">Promote To Leader</button>
+                    </div>
+                </div>
+                <div class="group-actions">
+                    <button id="group-add-member-btn" class="group-action-btn" type="button" data-custom-alphabet="button">Add Member</button>
+                    <button id="group-leave-btn" class="group-action-btn group-leave-btn group-primary-leave" type="button" data-custom-alphabet="button">Betray</button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- In-Game Modal Dialog -->
+    <div id="modal-overlay" class="modal-overlay" style="display: none;">
+        <div class="modal-dialog in-game-frame in-game-frame-blue" role="dialog" aria-modal="true">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-title" data-custom-alphabet="title">Confirm</div>
+                <button id="modal-close" class="modal-close" type="button" aria-label="Close" data-custom-alphabet="button">X</button>
+            </div>
+            <div class="modal-body">
+                <p id="modal-message"></p>
+                <div id="modal-input-container" style="display: none;">
+                    <input type="text" id="modal-input" class="modal-input" placeholder="Enter value..." list="modal-input-suggestions">
+                    <datalist id="modal-input-suggestions"></datalist>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="modal-cancel" class="modal-btn modal-cancel-btn" type="button" data-custom-alphabet="button">Cancel</button>
+                <button id="modal-confirm" class="modal-btn modal-confirm-btn" type="button" data-custom-alphabet="button">Confirm</button>
+            </div>
+        </div>
     </div>
 
     <!-- Mobile Controls -->
@@ -2673,6 +3392,20 @@
                     </div>
                     <p class="settings-row-copy">Lower or raise the combat music bed without muting effects.</p>
                     <input id="settings-music" type="range" min="0" max="100" step="1" value="100">
+                </div>
+                <div class="settings-row">
+                    <div class="settings-toggle">
+                        <div>
+                            <div class="settings-toggle-copy" data-custom-alphabet="label">Low Quality Graphics</div>
+                            <p class="settings-row-copy" data-custom-alphabet="dynamic">Lower quality settings for low end devices.</p>
+                        </div>
+                        <label class="settings-switch" aria-label="Toggle low quality graphics">
+                            <input id="settings-low-quality" type="checkbox">
+                            <span class="settings-switch-track">
+                                <span class="settings-switch-thumb"></span>
+                            </span>
+                        </label>
+                    </div>
                 </div>
                 <div class="settings-row">
                     <div class="settings-toggle">
@@ -2843,6 +3576,7 @@
         const defaultMenuSettings = {
             sfxVolume: 1,
             musicVolume: 1,
+            lowQualityMode: false,
             showMobileControls: isMobile
         };
         let menuSettings = loadMenuSettings();
@@ -2867,6 +3601,7 @@
                 return {
                     sfxVolume: clamp01(Number.isFinite(parsed?.sfxVolume) ? parsed.sfxVolume : defaultMenuSettings.sfxVolume),
                     musicVolume: clamp01(Number.isFinite(parsed?.musicVolume) ? parsed.musicVolume : defaultMenuSettings.musicVolume),
+                    lowQualityMode: parsed?.lowQualityMode === true,
                     showMobileControls: isMobile ? (parsed?.showMobileControls !== false) : false
                 };
             } catch (_error) {
@@ -2888,6 +3623,10 @@
 
         function getMusicSetting() {
             return clamp01(menuSettings.musicVolume);
+        }
+
+        function isLowQualityModeEnabled() {
+            return menuSettings.lowQualityMode === true;
         }
 
         function getInputSignature(nextInputs) {
@@ -4303,6 +5042,7 @@
             const closeSettingsBtn = document.getElementById('close-settings-btn');
             const settingsSfx = document.getElementById('settings-sfx');
             const settingsMusic = document.getElementById('settings-music');
+            const settingsLowQuality = document.getElementById('settings-low-quality');
             const settingsMobileControls = document.getElementById('settings-mobile-controls');
             const settingsMobileControlsToggle = settingsMobileControls?.closest('.settings-toggle');
             const settingsSfxValue = document.getElementById('settings-sfx-value');
@@ -4384,11 +5124,13 @@
             function syncSettingsForm() {
                 settingsSfx.value = String(Math.round(getSfxSetting() * 100));
                 settingsMusic.value = String(Math.round(getMusicSetting() * 100));
+                settingsLowQuality.checked = isLowQualityModeEnabled();
                 settingsMobileControls.checked = menuSettings.showMobileControls !== false;
                 settingsMobileControls.disabled = !isMobile;
                 settingsMobileControlsToggle?.classList.toggle('is-disabled', !isMobile);
                 updateSettingsValueLabels();
                 applyMobileControlsVisibility();
+                applyLowQualityMode();
             }
 
             function openSettingsModal() {
@@ -4413,6 +5155,7 @@
                 saveMenuSettings();
                 updateSettingsValueLabels();
                 applyMobileControlsVisibility();
+                applyLowQualityMode();
             }
 
             function createMenuAudioSystem() {
@@ -6376,6 +7119,15 @@
                 if (event.key === 'Escape' && !settingsModal.hidden) {
                     closeSettingsModal();
                 }
+
+                const isTypingIntoField = document.activeElement?.tagName === 'INPUT'
+                    || document.activeElement?.tagName === 'TEXTAREA';
+                if (event.shiftKey && (event.key === 'L' || event.key === 'l') && !isTypingIntoField) {
+                    event.preventDefault();
+                    menuSettings.lowQualityMode = !isLowQualityModeEnabled();
+                    settingsLowQuality.checked = menuSettings.lowQualityMode;
+                    commitSettings();
+                }
             });
 
             settingsSfx.addEventListener('input', () => {
@@ -6388,6 +7140,11 @@
                 commitSettings();
             });
 
+            settingsLowQuality.addEventListener('change', () => {
+                menuSettings.lowQualityMode = settingsLowQuality.checked;
+                commitSettings();
+            });
+
             settingsMobileControls.addEventListener('change', () => {
                 if (!isMobile) {
                     settingsMobileControls.checked = false;
@@ -6395,7 +7152,6 @@
                 }
                 menuSettings.showMobileControls = settingsMobileControls.checked;
                 commitSettings();
-                menuAudio.play('set', 0.55);
             });
 
             startScreen.addEventListener('pointerdown', () => {
@@ -6440,6 +7196,7 @@
                 loadingStage = 'Loading';
                 loadingProgress = 0;
                 updateLoadingScreen();
+                document.body.classList.add('game-ui-hidden');
                 
                 // Fade out start screen, show loading screen
                 startScreen.style.opacity = '0';
@@ -6495,6 +7252,7 @@
         const GAME_VIEWPORT_HEIGHT = 900;
         // WebGL Setup
         const glCanvas = document.getElementById('glCanvas');
+        const canvasWrapper = document.getElementById('gameCanvas-wrapper');
         const gl = glCanvas.getContext('webgl');
         let program;
         let positionBuffer, texCoordBuffer;
@@ -6505,6 +7263,251 @@
         let glDynamicLightsLocation;
         let glPositionLocation;
         let glTexCoordLocation;
+        const lowQualityCompositeCanvas = document.createElement('canvas');
+        const lowQualityCompositeCtx = lowQualityCompositeCanvas.getContext('2d');
+        const lowQualityLightingCanvas = document.createElement('canvas');
+        const lowQualityLightingCtx = lowQualityLightingCanvas.getContext('2d');
+
+        function shouldUseLowQualityPresentation() {
+            return isLowQualityModeEnabled() || !gl || !program;
+        }
+
+        function applyLowQualityMode() {
+            const lowQualityActive = shouldUseLowQualityPresentation();
+            if (canvas) {
+                canvas.style.opacity = lowQualityActive ? '1' : '0';
+                canvas.style.imageRendering = lowQualityActive ? 'pixelated' : 'auto';
+            }
+            if (glCanvas) {
+                glCanvas.style.display = lowQualityActive ? 'none' : 'block';
+            }
+        }
+
+        function getLowQualityPixelSize() {
+            const displayWidth = Number.parseFloat(canvas?.style.width) || canvas.width || GAME_VIEWPORT_WIDTH;
+            const displayHeight = Number.parseFloat(canvas?.style.height) || canvas.height || GAME_VIEWPORT_HEIGHT;
+            const referenceScale = clamp01(Math.min(displayWidth / GAME_VIEWPORT_WIDTH, displayHeight / GAME_VIEWPORT_HEIGHT));
+            return 1.2 + (3.1 - 1.2) * referenceScale;
+        }
+
+        function resizeLowQualityBuffers(pixelSize = getLowQualityPixelSize()) {
+            const sceneWidth = Math.max(1, canvas?.width || GAME_VIEWPORT_WIDTH);
+            const sceneHeight = Math.max(1, canvas?.height || GAME_VIEWPORT_HEIGHT);
+            const compositeWidth = Math.max(1, Math.round(sceneWidth / Math.max(1, pixelSize)));
+            const compositeHeight = Math.max(1, Math.round(sceneHeight / Math.max(1, pixelSize)));
+
+            if (lowQualityCompositeCanvas.width !== compositeWidth || lowQualityCompositeCanvas.height !== compositeHeight) {
+                lowQualityCompositeCanvas.width = compositeWidth;
+                lowQualityCompositeCanvas.height = compositeHeight;
+            }
+
+            if (lowQualityLightingCanvas.width !== sceneWidth || lowQualityLightingCanvas.height !== sceneHeight) {
+                lowQualityLightingCanvas.width = sceneWidth;
+                lowQualityLightingCanvas.height = sceneHeight;
+            }
+        }
+
+        function punchLowQualityLightHole(targetCtx, x, y, radius, strength = 1) {
+            if (!targetCtx || radius <= 0) {
+                return;
+            }
+
+            const alpha = clamp01(strength);
+            const gradient = targetCtx.createRadialGradient(
+                x,
+                y,
+                Math.max(10, radius * 0.12),
+                x,
+                y,
+                radius
+            );
+            gradient.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
+            gradient.addColorStop(0.45, `rgba(0, 0, 0, ${alpha * 0.86})`);
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            targetCtx.save();
+            targetCtx.globalCompositeOperation = 'destination-out';
+            targetCtx.fillStyle = gradient;
+            targetCtx.beginPath();
+            targetCtx.arc(x, y, radius, 0, Math.PI * 2);
+            targetCtx.fill();
+            targetCtx.restore();
+        }
+
+        function punchLowQualityEllipseHole(targetCtx, x, y, radiusX, radiusY, strength = 1) {
+            if (!targetCtx || radiusX <= 0 || radiusY <= 0) {
+                return;
+            }
+
+            const maxRadius = Math.max(radiusX, radiusY);
+            const alpha = clamp01(strength);
+
+            targetCtx.save();
+            targetCtx.translate(x, y);
+            targetCtx.scale(radiusX / maxRadius, radiusY / maxRadius);
+            targetCtx.globalCompositeOperation = 'destination-out';
+
+            const gradient = targetCtx.createRadialGradient(
+                0,
+                0,
+                Math.max(10, maxRadius * 0.12),
+                0,
+                0,
+                maxRadius
+            );
+            gradient.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
+            gradient.addColorStop(0.45, `rgba(0, 0, 0, ${alpha * 0.86})`);
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+            targetCtx.fillStyle = gradient;
+            targetCtx.beginPath();
+            targetCtx.arc(0, 0, maxRadius, 0, Math.PI * 2);
+            targetCtx.fill();
+            targetCtx.restore();
+        }
+
+        function drawLowQualityGlow(targetCtx, x, y, radius, innerRgb, outerRgb, alphaScale = 1) {
+            if (!targetCtx || radius <= 0) {
+                return;
+            }
+
+            const gradient = targetCtx.createRadialGradient(
+                x,
+                y,
+                Math.max(4, radius * 0.06),
+                x,
+                y,
+                radius
+            );
+            gradient.addColorStop(0, `rgba(${innerRgb[0]}, ${innerRgb[1]}, ${innerRgb[2]}, ${clamp01(alphaScale * 0.34)})`);
+            gradient.addColorStop(0.42, `rgba(${outerRgb[0]}, ${outerRgb[1]}, ${outerRgb[2]}, ${clamp01(alphaScale * 0.24)})`);
+            gradient.addColorStop(1, `rgba(${outerRgb[0]}, ${outerRgb[1]}, ${outerRgb[2]}, 0)`);
+
+            targetCtx.fillStyle = gradient;
+            targetCtx.beginPath();
+            targetCtx.arc(x, y, radius, 0, Math.PI * 2);
+            targetCtx.fill();
+        }
+
+        function drawLowQualityEllipseGlow(targetCtx, x, y, radiusX, radiusY, innerRgb, outerRgb, alphaScale = 1) {
+            if (!targetCtx || radiusX <= 0 || radiusY <= 0) {
+                return;
+            }
+
+            const maxRadius = Math.max(radiusX, radiusY);
+            targetCtx.save();
+            targetCtx.translate(x, y);
+            targetCtx.scale(radiusX / maxRadius, radiusY / maxRadius);
+
+            const gradient = targetCtx.createRadialGradient(
+                0,
+                0,
+                Math.max(4, maxRadius * 0.06),
+                0,
+                0,
+                maxRadius
+            );
+            gradient.addColorStop(0, `rgba(${innerRgb[0]}, ${innerRgb[1]}, ${innerRgb[2]}, ${clamp01(alphaScale * 0.34)})`);
+            gradient.addColorStop(0.42, `rgba(${outerRgb[0]}, ${outerRgb[1]}, ${outerRgb[2]}, ${clamp01(alphaScale * 0.24)})`);
+            gradient.addColorStop(1, `rgba(${outerRgb[0]}, ${outerRgb[1]}, ${outerRgb[2]}, 0)`);
+
+            targetCtx.fillStyle = gradient;
+            targetCtx.beginPath();
+            targetCtx.arc(0, 0, maxRadius, 0, Math.PI * 2);
+            targetCtx.fill();
+            targetCtx.restore();
+        }
+
+        function renderLowQualityPresentation(nowMs, renderServerTimeMs, effectVisibleBounds) {
+            if (!ctx || !canvas || !lowQualityCompositeCtx || !lowQualityLightingCtx) {
+                return;
+            }
+
+            const pixelSize = getLowQualityPixelSize();
+            resizeLowQualityBuffers(pixelSize);
+
+            const playerPos = getPlayerPosition(socket.id);
+            const playerLightX = playerPos ? (playerPos.x - cameraX) * cameraZoom : canvas.width / 2;
+            const playerLightY = playerPos ? (playerPos.y - cameraY) * cameraZoom : canvas.height / 2;
+            const dynamicLights = collectDynamicLights(nowMs, renderServerTimeMs, effectVisibleBounds);
+            const processedLights = isLowQualityModeEnabled()
+                ? dynamicLights.slice(0, Math.min(dynamicLights.length, 4))
+                : dynamicLights;
+
+            lowQualityLightingCtx.clearRect(0, 0, lowQualityLightingCanvas.width, lowQualityLightingCanvas.height);
+            lowQualityLightingCtx.fillStyle = 'rgba(0, 0, 0, 1)';
+            lowQualityLightingCtx.fillRect(0, 0, lowQualityLightingCanvas.width, lowQualityLightingCanvas.height);
+
+            const vignette = lowQualityLightingCtx.createRadialGradient(
+                canvas.width * 0.5,
+                canvas.height * 0.48,
+                Math.min(canvas.width, canvas.height) * 0.14,
+                canvas.width * 0.5,
+                canvas.height * 0.5,
+                Math.max(canvas.width, canvas.height) * 0.76
+            );
+            vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            vignette.addColorStop(0.34, 'rgba(0, 0, 0, 0.18)');
+            vignette.addColorStop(0.56, 'rgba(0, 0, 0, 0.44)');
+            vignette.addColorStop(0.78, 'rgba(0, 0, 0, 0.76)');
+            vignette.addColorStop(1, 'rgba(0, 0, 0, 0.96)');
+            lowQualityLightingCtx.fillStyle = vignette;
+            lowQualityLightingCtx.fillRect(0, 0, lowQualityLightingCanvas.width, lowQualityLightingCanvas.height);
+
+            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 270, 206, 0.46);
+            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 128, 94, 1);
+
+            processedLights.forEach((light) => {
+                const radius = Math.max(28, light.radius * 0.4);
+                const strength = clamp01(0.08 + light.strength * 0.42);
+                punchLowQualityLightHole(lowQualityLightingCtx, light.x, light.y, radius, strength);
+            });
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.drawImage(lowQualityLightingCanvas, 0, 0);
+
+            ctx.globalCompositeOperation = 'lighter';
+            drawLowQualityEllipseGlow(ctx, playerLightX, playerLightY, 118, 84, [255, 244, 228], [255, 154, 64], 0.62);
+            processedLights.forEach((light) => {
+                const glowRadius = Math.max(18, light.radius * 0.2);
+                drawLowQualityGlow(ctx, light.x, light.y, glowRadius, [255, 240, 220], [255, 126, 34], 0.18 + light.strength * 0.12);
+            });
+            ctx.restore();
+
+            lowQualityCompositeCtx.clearRect(0, 0, lowQualityCompositeCanvas.width, lowQualityCompositeCanvas.height);
+            lowQualityCompositeCtx.imageSmoothingEnabled = true;
+            lowQualityCompositeCtx.drawImage(
+                canvas,
+                0,
+                0,
+                canvas.width,
+                canvas.height,
+                0,
+                0,
+                lowQualityCompositeCanvas.width,
+                lowQualityCompositeCanvas.height
+            );
+
+            const previousSmoothing = ctx.imageSmoothingEnabled;
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(
+                lowQualityCompositeCanvas,
+                0,
+                0,
+                lowQualityCompositeCanvas.width,
+                lowQualityCompositeCanvas.height,
+                0,
+                0,
+                canvas.width,
+                canvas.height
+            );
+            ctx.restore();
+            ctx.imageSmoothingEnabled = previousSmoothing;
+        }
 
         function createShader(gl, type, source) {
             const shader = gl.createShader(type);
@@ -6551,6 +7554,14 @@
             glDynamicLightsLocation = gl.getUniformLocation(program, "u_dynamicLights");
             glPositionLocation = gl.getAttribLocation(program, "a_position");
             glTexCoordLocation = gl.getAttribLocation(program, "a_texCoord");
+
+            gl.enableVertexAttribArray(glPositionLocation);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(glPositionLocation, 2, gl.FLOAT, false, 0, 0);
+
+            gl.enableVertexAttribArray(glTexCoordLocation);
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.vertexAttribPointer(glTexCoordLocation, 2, gl.FLOAT, false, 0, 0);
         }
 
         function resizeCanvas() {
@@ -6576,14 +7587,14 @@
             document.documentElement.style.setProperty('--game-display-height', `${displayHeight}px`);
             const chatWidth = Math.round(
                 Math.min(
-                    isMobile ? 260 : 420,
-                    Math.max(isMobile ? 160 : 220, displayWidth * (isMobile ? 0.34 : 0.22)) * sharedViewZoom
+                    isMobile ? 230 : 320,
+                    Math.max(isMobile ? 150 : 200, displayWidth * (isMobile ? 0.28 : 0.18)) * sharedViewZoom
                 )
             );
             const chatExpandedHeight = Math.round(
                 Math.min(
-                    isMobile ? 160 : 220,
-                    Math.max(isMobile ? 92 : 120, displayHeight * (isMobile ? 0.26 : 0.2)) * sharedViewZoom
+                    isMobile ? 150 : 190,
+                    Math.max(isMobile ? 90 : 112, displayHeight * (isMobile ? 0.22 : 0.17)) * sharedViewZoom
                 )
             );
             const chatFontSize = Math.round(
@@ -6648,7 +7659,7 @@
                 Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
             );
             const chatEdge = Math.round(
-                Math.min(isMobile ? 12 : 20, Math.max(8, displayWidth * (isMobile ? 0.014 : 0.01)))
+                Math.min(isMobile ? 4 : 6, Math.max(2, displayWidth * (isMobile ? 0.004 : 0.0035)))
             );
             const mobileActionSize = Math.round(
                 Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)) * sharedViewZoom)
@@ -6704,6 +7715,8 @@
                 if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
             }
 
+            resizeLowQualityBuffers();
+            applyLowQualityMode();
             setAdaptiveCameraZoom();
         }
         const PLAYER_MAX_SIZE = 60;
@@ -6791,19 +7804,24 @@
                 await new Promise(resolve => setTimeout(resolve, 500));
                 loadingScreen.style.display = 'none';
             }
+            document.body.classList.remove('game-ui-hidden');
             
             // Keep the 2D canvas alive as an offscreen render/input surface and
             // show the WebGL canvas as the final visible image.
+            if (canvasWrapper) {
+                canvasWrapper.style.display = 'block';
+            }
             if (canvas) {
                 canvas.style.display = 'block';
             }
             if (glCanvas) {
                 glCanvas.style.display = 'block';
             }
-            
+            applyLowQualityMode();
+
             // Show chat container
             if (chatContainer) {
-                chatContainer.style.display = 'block';
+                chatContainer.style.display = 'flex';
             }
             
             // Emit player_ready to server
@@ -8329,6 +9347,7 @@
         initializeZoomControls();
         initWebGL();
         resizeCanvas();
+        applyLowQualityMode();
         window.addEventListener('resize', resizeCanvas);
         window.addEventListener('orientationchange', () => {
             requestAnimationFrame(resizeCanvas);
@@ -8524,44 +9543,188 @@
         });
 
         // Chat input handling
+        const chatContainer = document.getElementById('chat-container');
         const chatInput = document.getElementById('chat-input');
         const chatBox = document.getElementById('chat-box');
+        const chatHeader = document.getElementById('chat-header');
         const chatMessagesContainer = document.getElementById('chat-messages');
         const chatToggle = document.getElementById('chat-toggle');
+        const chatChannelGlobalBtn = document.getElementById('chat-channel-global');
+        const chatChannelGroupBtn = document.getElementById('chat-channel-group');
+        const chatMinimizedButton = document.getElementById('chat-minimized-button');
+        const chatMinimizedBadgeGlobal = document.getElementById('chat-minimized-badge-global');
+        const chatMinimizedBadgeGroup = document.getElementById('chat-minimized-badge-group');
+        let currentGroup = null;
+        let isGroupLeader = false;
+        let knownGroups = {};
+        let selectedGroupMemberId = null;
         let chatActive = false;
-        let chatJustClosed = false; // Prevent immediate reopening
-        let chatExpanded = true; // Track chat expansion state
-        const chatHistory = []; // Store chat history
-        const MAX_CHAT_HISTORY = 50; // Maximum messages to keep in history
+        let chatJustClosed = false;
+        let chatExpanded = true;
+        let activeChatChannel = 'global';
+        let chatMinimized = false;
+        const chatHistory = [];
+        const unreadChatCounts = { global: 0, group: 0 };
+        const MAX_CHAT_HISTORY = 50;
 
-        // Add message to chat box
-        function addMessageToChatBox(sid, name, message) {
-            const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-            
-            const messageElement = document.createElement('div');
-            messageElement.className = 'chat-message';
-            messageElement.id = messageId;
-            messageElement.innerHTML = `
-                <span class="player-id">${name}:</span>
-                <span class="message-text">${message}</span>
-            `;
-            
-            chatMessagesContainer.appendChild(messageElement);
-            
-            // Add to history
-            chatHistory.push({ sid, message, element: messageElement });
-            
-            // Limit history size
-            if (chatHistory.length > MAX_CHAT_HISTORY) {
-                const oldMessage = chatHistory.shift();
-                if (oldMessage.element && oldMessage.element.parentNode) {
-                    oldMessage.element.remove();
-                }
+        function resetChatChannelButtonLabel(button, label) {
+            if (!button) {
+                return;
             }
-            
-            // Scroll to bottom if chat is expanded
-            if (chatExpanded) {
+
+            button.removeAttribute('data-custom-alphabet');
+            button.dataset.customAlphabetText = '';
+            button.replaceChildren(document.createTextNode(label));
+            button.style.fontSize = '11px';
+            button.style.lineHeight = '1.1';
+            button.style.display = 'flex';
+        }
+
+        resetChatChannelButtonLabel(chatChannelGlobalBtn, 'Global');
+        resetChatChannelButtonLabel(chatChannelGroupBtn, 'Group');
+
+        function updateChatInputPlaceholder() {
+            if (!chatInput) {
+                return;
+            }
+
+            chatInput.placeholder = activeChatChannel === 'group'
+                ? (currentGroup ? 'Message your group...' : 'Join a group to chat here...')
+                : 'Type a global message...';
+            chatInput.disabled = activeChatChannel === 'group' && !currentGroup;
+        }
+
+        function isNearChatBottom() {
+            if (!chatMessagesContainer) {
+                return true;
+            }
+
+            const remaining = chatMessagesContainer.scrollHeight - chatMessagesContainer.scrollTop - chatMessagesContainer.clientHeight;
+            return remaining <= 28;
+        }
+
+        function scrollChatToBottom(force = false) {
+            if (!chatMessagesContainer) {
+                return;
+            }
+            if (!force && !isNearChatBottom()) {
+                return;
+            }
+
+            const snapToBottom = () => {
                 chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+            };
+
+            snapToBottom();
+            requestAnimationFrame(snapToBottom);
+        }
+
+        function renderChatMessages(forceScroll = false) {
+            if (!chatMessagesContainer) {
+                return;
+            }
+
+            const shouldStickToBottom = forceScroll || isNearChatBottom();
+            const previousScrollTop = chatMessagesContainer.scrollTop;
+            chatMessagesContainer.innerHTML = '';
+
+            const visibleMessages = chatHistory.filter((entry) => entry.channel === activeChatChannel);
+            visibleMessages.forEach((entry) => {
+                const messageElement = document.createElement('div');
+                messageElement.className = `chat-message${entry.channel === 'group' ? ' group' : ''}`;
+
+                if (entry.channel === 'group') {
+                    const tag = document.createElement('span');
+                    tag.className = 'channel-tag';
+                    tag.textContent = 'Group';
+                    messageElement.appendChild(tag);
+                }
+
+                const playerId = document.createElement('span');
+                playerId.className = 'player-id';
+                playerId.textContent = `${entry.name}:`;
+
+                const messageText = document.createElement('span');
+                messageText.className = 'message-text';
+                messageText.textContent = entry.message;
+
+                messageElement.appendChild(playerId);
+                messageElement.appendChild(messageText);
+                chatMessagesContainer.appendChild(messageElement);
+            });
+
+            if (!visibleMessages.length) {
+                const emptyState = document.createElement('div');
+                emptyState.className = 'chat-message';
+                emptyState.textContent = activeChatChannel === 'group'
+                    ? (currentGroup ? 'No group messages yet.' : 'Join a group to use group chat.')
+                    : 'No global messages yet.';
+                chatMessagesContainer.appendChild(emptyState);
+            }
+
+            if (shouldStickToBottom) {
+                scrollChatToBottom(true);
+            } else {
+                chatMessagesContainer.scrollTop = previousScrollTop;
+            }
+        }
+
+        function updateChatNotificationBadges() {
+            chatMinimizedBadgeGlobal?.classList.toggle('is-visible', unreadChatCounts.global > 0);
+            chatMinimizedBadgeGroup?.classList.toggle('is-visible', unreadChatCounts.group > 0);
+        }
+
+        function clearUnreadForActiveChannel() {
+            unreadChatCounts[activeChatChannel] = 0;
+            updateChatNotificationBadges();
+        }
+
+        function updateChatChrome() {
+            if (!chatContainer || !chatBox || !chatToggle || !chatMinimizedButton) {
+                return;
+            }
+
+            chatContainer.classList.toggle('is-minimized', chatMinimized);
+            chatBox.classList.toggle('expanded', chatExpanded && !chatMinimized);
+            chatBox.classList.toggle('collapsed', !chatExpanded && !chatMinimized);
+            chatBox.classList.toggle('is-minimized', chatMinimized);
+            chatBox.style.display = chatMinimized ? 'none' : 'flex';
+            chatMinimizedButton.style.display = chatMinimized ? 'inline-flex' : 'none';
+            chatToggle.textContent = chatMinimized ? '+' : '-';
+            chatToggle.title = chatMinimized ? 'Open Chat' : 'Close Chat';
+
+            if (!chatMinimized && chatExpanded) {
+                scrollChatToBottom(true);
+            }
+        }
+
+        function updateChatChannelButtons() {
+            resetChatChannelButtonLabel(chatChannelGlobalBtn, 'Global');
+            resetChatChannelButtonLabel(chatChannelGroupBtn, 'Group');
+            chatChannelGlobalBtn?.classList.toggle('is-active', activeChatChannel === 'global');
+            chatChannelGroupBtn?.classList.toggle('is-active', activeChatChannel === 'group');
+            updateChatInputPlaceholder();
+            clearUnreadForActiveChannel();
+            renderChatMessages(true);
+        }
+
+        function addMessageToChatBox(sid, name, message, channel = 'global') {
+            const normalizedChannel = channel === 'group' ? 'group' : 'global';
+            const shouldAutoScroll = normalizedChannel === activeChatChannel && !chatMinimized && chatExpanded && isNearChatBottom();
+
+            chatHistory.push({ sid, name, message, channel: normalizedChannel, createdAt: Date.now() });
+
+            if (chatHistory.length > MAX_CHAT_HISTORY) {
+                chatHistory.shift();
+            }
+
+            if (chatMinimized || activeChatChannel !== normalizedChannel) {
+                unreadChatCounts[normalizedChannel] += 1;
+                updateChatNotificationBadges();
+            }
+
+            if (normalizedChannel === activeChatChannel) {
+                renderChatMessages(shouldAutoScroll);
             }
         }
 
@@ -8574,7 +9737,7 @@
                 chatToggle.textContent = '▼';
                 chatToggle.title = 'Collapse Chat';
                 // Scroll to bottom when expanding
-                chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                scrollChatToBottom();
             } else {
                 chatBox.classList.remove('expanded');
                 chatBox.classList.add('collapsed');
@@ -8583,15 +9746,47 @@
             }
         }
 
+        function setChatMinimized(nextValue) {
+            chatMinimized = Boolean(nextValue);
+            if (chatMinimized) {
+                chatActive = false;
+                chatInput?.blur();
+            } else {
+                chatExpanded = true;
+                clearUnreadForActiveChannel();
+            }
+            updateChatChrome();
+        }
+
+        function toggleChatExpansion() {
+            setChatMinimized(!chatMinimized);
+        }
+
         // Add toggle button event listener
         chatToggle.addEventListener('click', (e) => {
             e.stopPropagation();
             toggleChatExpansion();
         });
 
-        // Add header click to toggle as well
-        document.getElementById('chat-header').addEventListener('click', () => {
-            toggleChatExpansion();
+        chatMinimizedButton?.addEventListener('click', () => {
+            setChatMinimized(false);
+        });
+
+        chatChannelGlobalBtn?.addEventListener('click', () => {
+            activeChatChannel = 'global';
+            updateChatChannelButtons();
+        });
+
+        chatChannelGroupBtn?.addEventListener('click', () => {
+            activeChatChannel = 'group';
+            updateChatChannelButtons();
+        });
+
+        chatHeader?.addEventListener('click', (e) => {
+            if (e.target === chatToggle) {
+                return;
+            }
+            chatInput?.focus();
         });
 
         chatInput.addEventListener('keydown', (e) => {
@@ -8600,7 +9795,7 @@
                 const message = chatInput.value.trim();
                 if (message.length > 0) {
                     // Send chat message to server
-                    socket.emit('chat_message', { message: message });
+                    socket.emit('chat_message', { message, channel: activeChatChannel });
                     chatInput.value = '';
                 } else {
                 }
@@ -8625,29 +9820,17 @@
                 }, 100);
             }
         });
-
         chatInput.addEventListener('focus', () => {
             chatActive = true;
-            chatBox.style.display = 'block';
-            chatBox.classList.remove('expanded', 'collapsed');
-            // Set initial expanded state
-            if (chatExpanded) {
-                chatBox.classList.add('expanded');
-                chatToggle.textContent = '▼';
-            } else {
-                chatBox.classList.add('collapsed');
-                chatToggle.textContent = '▶';
-            }
-            // Load chat history when opening chat
-            if (chatHistory.length === 0) {
-                // Request recent chat history from server (optional enhancement)
-            }
+            setChatMinimized(false);
         });
 
         chatInput.addEventListener('blur', () => {
             chatActive = false;
-            // Keep chat box visible after blur - don't hide it automatically
         });
+        updateChatChannelButtons();
+        updateChatChrome();
+        updateChatNotificationBadges();
 
         // Global enter key to focus chat input
         window.addEventListener('keydown', (e) => {
@@ -8655,6 +9838,7 @@
                 // Don't activate chat if player is using movement keys
                 if (!inputs.left && !inputs.right && !inputs.up) {
                     e.preventDefault();
+                    setChatMinimized(false);
                     chatInput.focus();
                 }
             }
@@ -9644,18 +10828,21 @@
 
         // Handle chat messages from server
         socket.on('chat_message', (data) => {
-            const { sid, name, message, timestamp } = data;
+            const { sid, name, message, timestamp, channel } = data;
+            const state = playerState[sid] || authoritativePlayerState[sid];
             
             // Add to floating messages above player head
             chatMessages[sid] = {
                 text: message,
                 startTime: timestamp || Date.now(),
                 opacity: 1.0,
-                scale: 1.0
+                scale: 1.0,
+                x: Number.isFinite(state?.x) ? state.x : null,
+                y: Number.isFinite(state?.y) ? state.y : null
             };
             
             // Add to chat box
-            addMessageToChatBox(sid, name, message);
+            addMessageToChatBox(sid, name, message, channel || 'global');
             
         });
 
@@ -9826,27 +11013,673 @@
                 startTime: typeof data.collected_at_ms === 'number' ? data.collected_at_ms : Date.now(),
                 duration: 180
             });
+        });
 
-            if (targetSid === socket.id && combatAudio && typeof combatAudio.playSoulCollectedLocal === 'function') {
-                const pickupKey = `${soul.id || 'soul'}|${data.soul_count || 0}|${data.collected_at_ms || Date.now()}`;
-                combatAudio.playSoulCollectedLocal(0.92, pickupKey);
+        // Group System Socket Handlers
+        socket.on('group_created', (groupInfo) => {
+            currentGroup = groupInfo;
+            isGroupLeader = true;
+            selectedGroupMemberId = null;
+            updateGroupUI();
+            updateChatChannelButtons();
+            setGroupStatus(`Created ${groupInfo?.name || 'your group'}.`, 'success');
+            groupPanel?.setAttribute('aria-hidden', 'false');
+            groupToggle?.setAttribute('aria-expanded', 'true');
+        });
+
+        socket.on('group_left', () => {
+            currentGroup = null;
+            isGroupLeader = false;
+            selectedGroupMemberId = null;
+            updateGroupUI();
+            if (activeChatChannel === 'group') {
+                activeChatChannel = 'global';
+            }
+            updateChatChannelButtons();
+            setGroupStatus('Successfully left the group.', 'success');
+        });
+
+        socket.on('group_joined', (groupInfo) => {
+            currentGroup = groupInfo;
+            isGroupLeader = groupInfo?.leaderId === socket.id;
+            selectedGroupMemberId = null;
+            updateGroupUI();
+            updateChatChannelButtons();
+            setGroupStatus(`Joined ${groupInfo?.name || `${getPlayerDisplayNameById(groupInfo?.leaderId)}'s Group`}.`, 'success');
+        });
+
+        socket.on('group_kicked', () => {
+            currentGroup = null;
+            isGroupLeader = false;
+            selectedGroupMemberId = null;
+            updateGroupUI();
+            if (activeChatChannel === 'group') {
+                activeChatChannel = 'global';
+            }
+            updateChatChannelButtons();
+            setGroupStatus('You were kicked from the group.', 'error');
+        });
+
+        socket.on('group_member_added', (data) => {
+            socket.emit('group_get_info');
+            setGroupStatus(`Successfully added ${getPlayerDisplayNameById(data?.memberId)}.`, 'success');
+        });
+
+        socket.on('group_member_kicked', (data) => {
+            socket.emit('group_get_info');
+            setGroupStatus(`Successfully kicked ${getPlayerDisplayNameById(data?.memberId)}.`, 'success');
+        });
+
+        socket.on('group_leader_promoted', (data) => {
+            socket.emit('group_get_info');
+            setGroupStatus(`Successfully promoted ${getPlayerDisplayNameById(data?.memberId)} to leader.`, 'success');
+        });
+
+        socket.on('group_leader_assigned', (data) => {
+            socket.emit('group_get_info');
+            setGroupStatus('You are now the group leader.', 'success');
+        });
+
+        socket.on('group_info', (groupInfo) => {
+            if (groupInfo) {
+                currentGroup = groupInfo;
+                isGroupLeader = groupInfo.leaderId === socket.id;
+            } else {
+                currentGroup = null;
+                isGroupLeader = false;
+            }
+            updateGroupUI();
+            updateChatChannelButtons();
+        });
+
+        socket.on('group_error', (data) => {
+            console.error('Group error:', data.reason);
+            setGroupStatus(data.reason || 'Group action failed.', 'error');
+        });
+
+        socket.on('group_invite_pending', (data) => {
+            setGroupStatus(data?.message || 'Group invite sent.', 'success');
+        });
+
+        socket.on('group_invite_resolved', (data) => {
+            if (!data?.reason) {
+                return;
+            }
+            setGroupStatus(data.reason, data.status === 'accepted' ? 'success' : 'error');
+        });
+
+        socket.on('group_invite_request', async (data) => {
+            const isJoinRequest = data?.type === 'join_request';
+            const title = isJoinRequest ? 'Join Request' : 'Group Invite';
+            const message = isJoinRequest
+                ? `${data?.requesterName || 'Someone'} wants to join ${data?.groupName || 'your group'}.`
+                : `${data?.leaderName || 'Someone'} invited you to join ${data?.groupName || 'their group'}.`;
+            const accepted = await showModal(title, `${message} Accept?`);
+            socket.emit('group_invite_respond', {
+                inviteId: data?.inviteId,
+                accepted: Boolean(accepted),
+            });
+        });
+
+        socket.on('groups_updated', (groups) => {
+            knownGroups = groups || {};
+            updateGroupUI();
+            if (currentGroup) {
+                socket.emit('group_get_info');
+            }
+        });
+
+        // Healing System Socket Handlers
+        let isHealing = false;
+        let healingTargetId = null;
+        const HEAL_DISTANCE = 100;
+
+        socket.on('healing_started', (data) => {
+            isHealing = true;
+            healingTargetId = data.targetId;
+            showHealingEffect();
+        });
+
+        socket.on('healing_stopped', () => {
+            isHealing = false;
+            healingTargetId = null;
+            hideHealingEffect();
+        });
+
+        socket.on('healing_targeted', (data) => {
+            // Someone is healing you
+            showBeingHealedEffect(data.healerId);
+        });
+
+        socket.on('healing_error', (data) => {
+            console.error('Healing error:', data.reason);
+            isHealing = false;
+            healingTargetId = null;
+            hideHealingEffect();
+        });
+
+        socket.on('healing_update', (data) => {
+            // Healing is happening, update visuals if needed
+            if (isHealing && healingTargetId) {
+                updateHealingEffect();
+            }
+        });
+
+        // Group UI Functions
+        const groupToggle = document.getElementById('group-toggle');
+        const groupPanel = document.getElementById('group-panel');
+        const groupClose = document.getElementById('group-close');
+        const groupCreateBtn = document.getElementById('group-create-btn');
+        const groupAddMemberBtn = document.getElementById('group-add-member-btn');
+        const groupLeaveBtn = document.getElementById('group-leave-btn');
+        const groupKickBtn = document.getElementById('group-kick-btn');
+        const groupPromoteBtn = document.getElementById('group-promote-btn');
+        const groupKickHint = document.getElementById('group-kick-hint');
+        const groupStatusElement = document.getElementById('group-status');
+        const groupBrowserEmpty = document.getElementById('group-browser-empty');
+        const groupBrowserList = document.getElementById('group-browser-list');
+        function syncGroupActionLabels() {
+            setCustomAlphabetText(groupCreateBtn, 'Create Group');
+            setCustomAlphabetText(groupAddMemberBtn, 'Add Member');
+            setCustomAlphabetText(groupLeaveBtn, 'Betray');
+            setCustomAlphabetText(groupKickBtn, groupKickBtn?.textContent || 'Kick');
+            setCustomAlphabetText(groupPromoteBtn, groupPromoteBtn?.textContent || 'Promote To Leader');
+            refreshCustomAlphabetUi(groupPanel);
+        }
+
+        function renderJoinableGroups() {
+            if (!groupBrowserList || !groupBrowserEmpty) {
+                return;
             }
 
-            if (authoritativePlayerState[targetSid] && typeof data.soul_count === 'number') {
-                authoritativePlayerState[targetSid].soul_count = data.soul_count;
-                if (typeof data.health === 'number') {
-                    authoritativePlayerState[targetSid].health = data.health;
+            groupBrowserList.innerHTML = '';
+            const joinableGroups = Object.values(knownGroups || {}).filter((group) => {
+                if (!group?.id) {
+                    return false;
+                }
+                if (currentGroup) {
+                    return false;
+                }
+                return !group.members?.includes(socket.id);
+            });
+
+            groupBrowserEmpty.style.display = joinableGroups.length ? 'none' : 'block';
+            joinableGroups.forEach((group) => {
+                const card = document.createElement('div');
+                card.className = 'group-browser-card';
+
+                const name = document.createElement('div');
+                name.className = 'group-browser-name';
+                name.textContent = group.name || `${group.leaderName || 'Unknown'}'s Group`;
+
+                const meta = document.createElement('div');
+                meta.className = 'group-browser-meta';
+                meta.textContent = `${group.memberCount || group.members?.length || 1} member${(group.memberCount || group.members?.length || 1) === 1 ? '' : 's'}`;
+
+                const joinBtn = document.createElement('button');
+                joinBtn.className = 'group-action-btn';
+                joinBtn.type = 'button';
+                joinBtn.setAttribute('data-custom-alphabet', 'button');
+                joinBtn.textContent = 'Join Group';
+                joinBtn.addEventListener('click', async () => {
+                    const confirmed = await showModal('Request Join', `Send a join request for ${group.name || `${group.leaderName || 'this'}'s group`}?`);
+                    if (confirmed) {
+                        socket.emit('group_request_join', { groupId: group.id });
+                    }
+                });
+
+                card.appendChild(name);
+                card.appendChild(meta);
+                card.appendChild(joinBtn);
+                groupBrowserList.appendChild(card);
+                setCustomAlphabetText(joinBtn, 'Join Group');
+            });
+        }
+
+        function getPlayerDisplayNameById(playerId) {
+            if (!playerId) {
+                return 'Unknown';
+            }
+
+            const stateEntry = playerState[playerId] || authoritativePlayerState[playerId];
+            if (stateEntry?.name) {
+                return stateEntry.name;
+            }
+
+            if (currentGroup) {
+                const memberIndex = currentGroup.members.indexOf(playerId);
+                if (memberIndex >= 0 && currentGroup.memberNames?.[memberIndex]) {
+                    return currentGroup.memberNames[memberIndex];
                 }
             }
-            if (playerState[targetSid] && typeof data.soul_count === 'number') {
-                playerState[targetSid].soul_count = data.soul_count;
-                if (typeof data.health === 'number') {
-                    playerState[targetSid].health = data.health;
+
+            return `Player ${playerId.slice(0, 4)}`;
+        }
+
+        function setGroupStatus(message = '', tone = '') {
+            if (!groupStatusElement) {
+                return;
+            }
+
+            groupStatusElement.textContent = message;
+            groupStatusElement.classList.toggle('is-success', tone === 'success');
+            groupStatusElement.classList.toggle('is-error', tone === 'error');
+        }
+
+        function toggleGroupPanel() {
+            const isOpen = groupPanel.getAttribute('aria-hidden') === 'false';
+            groupPanel.setAttribute('aria-hidden', isOpen ? 'true' : 'false');
+            groupToggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+        }
+
+        function updateGroupUI() {
+            const groupNoGroup = document.getElementById('group-no-group');
+            const groupInGroup = document.getElementById('group-in-group');
+            const groupRoleDisplay = document.getElementById('group-role-display');
+            const groupMembersList = document.getElementById('group-members-list');
+            const groupLeaderActions = document.getElementById('group-leader-actions');
+
+            if (!currentGroup) {
+                groupNoGroup.style.display = 'block';
+                groupInGroup.style.display = 'none';
+                selectedGroupMemberId = null;
+                renderJoinableGroups();
+                syncGroupActionLabels();
+            } else {
+                groupNoGroup.style.display = 'none';
+                groupInGroup.style.display = 'flex';
+                
+                groupRoleDisplay.textContent = `${currentGroup.name || 'Group'} - ${isGroupLeader ? 'You are the Leader' : 'You are a Member'}`;
+                
+                groupMembersList.innerHTML = '';
+                if (!currentGroup.members.includes(selectedGroupMemberId)) {
+                    selectedGroupMemberId = null;
+                }
+
+                currentGroup.members.forEach((memberId, index) => {
+                    const memberButton = document.createElement('button');
+                    memberButton.type = 'button';
+                    memberButton.className = 'group-member';
+                    if (memberId === currentGroup.leaderId) {
+                        memberButton.classList.add('is-leader');
+                    }
+                    if (memberId === selectedGroupMemberId) {
+                        memberButton.classList.add('is-selected');
+                    }
+                    if (!isGroupLeader || memberId === socket.id) {
+                        memberButton.disabled = true;
+                    } else {
+                        memberButton.addEventListener('click', () => {
+                            selectedGroupMemberId = selectedGroupMemberId === memberId ? null : memberId;
+                            updateGroupUI();
+                        });
+                    }
+
+                    const memberName = currentGroup.memberNames[index] || `Player ${memberId.slice(0, 4)}`;
+                    const memberNameEl = document.createElement('span');
+                    memberNameEl.className = 'group-member-name';
+                    memberNameEl.textContent = memberName;
+
+                    const memberMetaEl = document.createElement('span');
+                    memberMetaEl.className = 'group-member-meta';
+                    if (memberId === currentGroup.leaderId) {
+                        memberMetaEl.textContent = memberId === socket.id ? 'Leader · You' : 'Leader';
+                    } else if (memberId === socket.id) {
+                        memberMetaEl.textContent = 'You';
+                    } else {
+                        memberMetaEl.textContent = isGroupLeader ? 'Tap to manage' : 'Member';
+                    }
+
+                    memberButton.appendChild(memberNameEl);
+                    memberButton.appendChild(memberMetaEl);
+                    groupMembersList.appendChild(memberButton);
+                });
+
+                // Show/hide leader actions
+                groupLeaderActions.style.display = isGroupLeader ? 'flex' : 'none';
+                if (groupAddMemberBtn) {
+                    groupAddMemberBtn.style.display = isGroupLeader ? 'block' : 'none';
+                }
+                const canKickSelectedMember = isGroupLeader && selectedGroupMemberId && selectedGroupMemberId !== socket.id;
+                if (groupKickBtn) {
+                    groupKickBtn.style.display = canKickSelectedMember ? 'block' : 'none';
+                    if (canKickSelectedMember) {
+                        groupKickBtn.textContent = `Kick ${getPlayerDisplayNameById(selectedGroupMemberId)}`;
+                    }
+                }
+                if (groupPromoteBtn) {
+                    groupPromoteBtn.style.display = canKickSelectedMember ? 'block' : 'none';
+                    if (canKickSelectedMember) {
+                        groupPromoteBtn.textContent = `Promote ${getPlayerDisplayNameById(selectedGroupMemberId)}`;
+                    }
+                }
+                if (groupKickHint) {
+                    groupKickHint.textContent = canKickSelectedMember
+                        ? `${getPlayerDisplayNameById(selectedGroupMemberId)} is selected. Choose an action below.`
+                        : 'Select a member from the list to manage them.';
+                }
+                syncGroupActionLabels();
+            }
+        }
+
+        // Group Event Listeners
+        if (groupToggle) groupToggle.addEventListener('click', toggleGroupPanel);
+        if (groupClose) groupClose.addEventListener('click', toggleGroupPanel);
+
+        if (groupCreateBtn) {
+            groupCreateBtn.addEventListener('click', async () => {
+                const requestedName = await showModal('Create Group', 'Enter a group name. Leave it blank to use the default name.', true, `${(getPlayerState(socket.id)?.name || authoritativePlayerState[socket.id]?.name || 'Player')}'s Group`);
+                if (requestedName !== null) {
+                    socket.emit('group_create', { name: String(requestedName || '').trim() });
+                }
+            });
+        }
+
+        // Modal Dialog System
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalInputContainer = document.getElementById('modal-input-container');
+        const modalInput = document.getElementById('modal-input');
+        const modalInputSuggestions = document.getElementById('modal-input-suggestions');
+        const modalClose = document.getElementById('modal-close');
+        const modalCancel = document.getElementById('modal-cancel');
+        const modalConfirm = document.getElementById('modal-confirm');
+
+        let modalResolve = null;
+
+        function showModal(title, message, showInput = false, placeholder = '') {
+            return new Promise((resolve) => {
+                modalResolve = resolve;
+                modalTitle.textContent = title;
+                modalMessage.textContent = message;
+                
+                if (showInput) {
+                    modalInputContainer.style.display = 'block';
+                    modalInput.placeholder = placeholder;
+                    modalInput.value = '';
+                    if (modalInputSuggestions) {
+                        modalInputSuggestions.innerHTML = '';
+                    }
+                    modalInput.focus();
+                } else {
+                    modalInputContainer.style.display = 'none';
+                }
+                
+                modalOverlay.style.display = 'flex';
+            });
+        }
+
+        function buildJoinablePlayerSuggestions() {
+            const seenNames = new Set();
+            const options = [];
+
+            const addOption = (playerId, playerData) => {
+                const candidateName = typeof playerData?.name === 'string' ? playerData.name.trim() : '';
+                if (!candidateName || playerId === socket.id) {
+                    return;
+                }
+                const key = candidateName.toLowerCase();
+                if (seenNames.has(key)) {
+                    return;
+                }
+                seenNames.add(key);
+                options.push(candidateName);
+            };
+
+            Object.entries(authoritativePlayerState || {}).forEach(([playerId, playerData]) => addOption(playerId, playerData));
+            Object.entries(playerState || {}).forEach(([playerId, playerData]) => addOption(playerId, playerData));
+            options.sort((a, b) => a.localeCompare(b));
+            return options;
+        }
+
+        function populateModalInputSuggestions(options = []) {
+            if (!modalInputSuggestions) {
+                return;
+            }
+
+            modalInputSuggestions.innerHTML = '';
+            options.forEach((optionValue) => {
+                const option = document.createElement('option');
+                option.value = optionValue;
+                modalInputSuggestions.appendChild(option);
+            });
+        }
+
+        function hideModal() {
+            modalOverlay.style.display = 'none';
+        }
+
+        function handleModalConfirm() {
+            const inputValue = modalInputContainer.style.display !== 'none' ? modalInput.value : true;
+            const resolve = modalResolve;
+            hideModal();
+            modalResolve = null;
+            if (resolve) {
+                resolve(inputValue);
+            }
+        }
+
+        function handleModalCancel() {
+            const resolve = modalResolve;
+            hideModal();
+            modalResolve = null;
+            if (resolve) {
+                resolve(null);
+            }
+        }
+
+        if (modalClose) modalClose.addEventListener('click', handleModalCancel);
+        if (modalCancel) modalCancel.addEventListener('click', handleModalCancel);
+        if (modalConfirm) modalConfirm.addEventListener('click', handleModalConfirm);
+
+        modalInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handleModalConfirm();
+            } else if (e.key === 'Escape') {
+                handleModalCancel();
+            }
+        });
+
+        // Function to find player ID by name
+        function findPlayerIdByName(playerName) {
+            const normalizedTarget = String(playerName || '').trim().toLowerCase();
+            if (!normalizedTarget) {
+                return null;
+            }
+
+            for (const [playerId, playerData] of Object.entries(playerState || {})) {
+                if (playerId !== socket.id && playerData?.name && playerData.name.trim().toLowerCase() === normalizedTarget) {
+                    return playerId;
                 }
             }
-            if (targetSid === socket.id) {
-                updateRunHud();
+
+            for (const [playerId, playerData] of Object.entries(authoritativePlayerState || {})) {
+                if (playerId !== socket.id && playerData?.name && playerData.name.trim().toLowerCase() === normalizedTarget) {
+                    return playerId;
+                }
             }
+
+            return null;
+        }
+
+        if (groupLeaveBtn) {
+            groupLeaveBtn.addEventListener('click', async () => {
+                const result = await showModal('Leave Group', 'Are you sure you want to leave the group?');
+                if (result) {
+                    socket.emit('group_leave');
+                }
+            });
+        }
+
+        if (groupAddMemberBtn) {
+            groupAddMemberBtn.addEventListener('click', async () => {
+                populateModalInputSuggestions(buildJoinablePlayerSuggestions());
+                const playerName = await showModal('Invite Member', 'Enter player name to invite:', true, 'Player name');
+                if (playerName && playerName.trim()) {
+                    const memberId = findPlayerIdByName(playerName.trim());
+                    socket.emit('group_add_member', { memberId, memberName: playerName.trim() });
+                }
+            });
+        }
+
+        if (groupKickBtn) {
+            groupKickBtn.addEventListener('click', async () => {
+                const memberId = selectedGroupMemberId;
+                if (memberId) {
+                    const confirmed = await showModal('Kick Member', `Are you sure you want to kick ${getPlayerDisplayNameById(memberId)}?`);
+                    if (confirmed) {
+                        socket.emit('group_kick_member', { memberId });
+                    }
+                }
+            });
+        }
+
+        if (groupPromoteBtn) {
+            groupPromoteBtn.addEventListener('click', async () => {
+                const memberId = selectedGroupMemberId;
+                if (memberId) {
+                    const confirmed = await showModal('Promote Member', `Are you sure you want to make ${getPlayerDisplayNameById(memberId)} the new leader?`);
+                    if (confirmed) {
+                        socket.emit('group_promote_leader', { memberId });
+                    }
+                }
+            });
+        }
+
+        // Healing Input Handling (Hold H key or right mouse button)
+        let healingTimer = null;
+        const HEAL_HOLD_DURATION = 500; // ms
+
+        function startHealingInput() {
+            if (isHealing) return;
+            
+            // Find nearest group member
+            if (!currentGroup || !myPlayer) return;
+            
+            let nearestMemberId = null;
+            let nearestDistance = Infinity;
+            
+            for (const playerId of currentGroup.members) {
+                if (playerId === socket.id) continue;
+                
+                const otherPlayer = players[playerId];
+                if (!otherPlayer) continue;
+                
+                const dx = myPlayer.x - otherPlayer.x;
+                const dy = myPlayer.y - otherPlayer.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < nearestDistance && distance <= HEAL_DISTANCE) {
+                    nearestDistance = distance;
+                    nearestMemberId = playerId;
+                }
+            }
+            
+            if (nearestMemberId) {
+                healingTimer = setTimeout(() => {
+                    socket.emit('healing_start', { targetId: nearestMemberId });
+                }, HEAL_HOLD_DURATION);
+            }
+        }
+
+        function stopHealingInput() {
+            if (healingTimer) {
+                clearTimeout(healingTimer);
+                healingTimer = null;
+            }
+            if (isHealing) {
+                socket.emit('healing_stop');
+            }
+        }
+
+        // Keyboard healing (H key)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'h' || e.key === 'H') {
+                if (!e.repeat) {
+                    startHealingInput();
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'h' || e.key === 'H') {
+                stopHealingInput();
+            }
+        });
+
+        // Mouse healing (right click hold)
+        document.addEventListener('mousedown', (e) => {
+            if (e.button === 2) { // Right click
+                e.preventDefault();
+                startHealingInput();
+            }
+        });
+
+        document.addEventListener('mouseup', (e) => {
+            if (e.button === 2) { // Right click
+                stopHealingInput();
+            }
+        });
+
+        document.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); // Prevent context menu
+        });
+
+        // Healing Visual Effects
+        const healingEffectsContainer = document.getElementById('healing-effects');
+        let healingCircleElement = null;
+
+        function showHealingEffect() {
+            if (!myPlayer) return;
+            
+            healingCircleElement = document.createElement('div');
+            healingCircleElement.className = 'healing-circle';
+            healingCircleElement.style.width = (HEAL_DISTANCE * 2) + 'px';
+            healingCircleElement.style.height = (HEAL_DISTANCE * 2) + 'px';
+            healingEffectsContainer.appendChild(healingCircleElement);
+            
+            updateHealingEffect();
+        }
+
+        function updateHealingEffect() {
+            if (!healingCircleElement || !myPlayer) return;
+            
+            // Position the circle between healer and target
+            const targetPlayer = players[healingTargetId];
+            if (targetPlayer) {
+                const centerX = (myPlayer.x + targetPlayer.x) / 2;
+                const centerY = (myPlayer.y + targetPlayer.y) / 2;
+                
+                // Convert world coordinates to screen coordinates
+                // This depends on your camera implementation
+                const screenX = centerX - cameraX + window.innerWidth / 2;
+                const screenY = centerY - cameraY + window.innerHeight / 2;
+                
+                healingCircleElement.style.left = (screenX - HEAL_DISTANCE) + 'px';
+                healingCircleElement.style.top = (screenY - HEAL_DISTANCE) + 'px';
+            }
+        }
+
+        function hideHealingEffect() {
+            if (healingCircleElement) {
+                healingCircleElement.remove();
+                healingCircleElement = null;
+            }
+        }
+
+        function showBeingHealedEffect(healerId) {
+            // Visual feedback when being healed
+            const healerPlayer = players[healerId];
+            if (healerPlayer && myPlayer) {
+                // Could add a special effect or indicator
+                console.log('Being healed by', healerId);
+            }
+        }
+
+        // Request group info on connect
+        socket.on('connect', () => {
+            socket.emit('group_get_info');
         });
 
         // Handle player hit event from server
@@ -10431,8 +12264,11 @@
         }
         
         function getPlayerPosition(playerId) {
-            const state = playerState[playerId];
-            return state ? { x: state.x, y: state.y } : null;
+            const state = playerState[playerId] || authoritativePlayerState[playerId];
+            if (state && Number.isFinite(state.x) && Number.isFinite(state.y)) {
+                return { x: state.x, y: state.y };
+            }
+            return null;
         }
 
         function getAudioListenerState() {
@@ -12099,8 +13935,11 @@
             ctx.globalCompositeOperation = 'lighter';
             for (let i = soulPickupEffects.length - 1; i >= 0; i -= 1) {
                 const effect = soulPickupEffects[i];
-                const elapsed = now - effect.startTime;
-                const progress = clamp01(elapsed / effect.duration);
+                const startTime = Number.isFinite(effect.startTime) ? effect.startTime : now;
+                const duration = Number.isFinite(effect.duration) && effect.duration > 0 ? effect.duration : 180;
+                const size = Number.isFinite(effect.size) && effect.size > 0 ? effect.size : 1;
+                const elapsed = now - startTime;
+                const progress = clamp01(elapsed / duration);
                 if (progress >= 1) {
                     soulPickupEffects.splice(i, 1);
                     continue;
@@ -12113,9 +13952,14 @@
                 const worldY = effect.y + (targetY - effect.y) * progress;
                 const drawX = worldX - cameraX;
                 const drawY = worldY - cameraY;
-                const radius = Math.max(1.8, 10 * effect.size * (1 - progress * 0.8));
+                const radius = Math.max(1.8, 10 * size * (1 - progress * 0.8));
                 const alpha = 1 - progress;
-                const palette = getSoulPalette(effect.tint);
+                if (!Number.isFinite(drawX) || !Number.isFinite(drawY) || !Number.isFinite(radius)) {
+                    soulPickupEffects.splice(i, 1);
+                    continue;
+                }
+
+                const palette = getSoulPalette(Number.isFinite(effect.tint) ? effect.tint : 0);
                 const gradient = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, radius * 3);
 
                 ctx.globalAlpha = alpha;
@@ -13828,13 +15672,22 @@
                 // --- DRAW CHAT MESSAGES BEFORE WEBGL ---
                 // Draw chat messages here so they are affected by the shader
                 for (const sid in chatMessages) {
-                    const pos = getPlayerPosition(sid);
+                    const chatMsg = chatMessages[sid];
+                    const livePos = getPlayerPosition(sid);
+                    if (livePos) {
+                        chatMsg.x = livePos.x;
+                        chatMsg.y = livePos.y;
+                    }
+                    const pos = livePos || (
+                        Number.isFinite(chatMsg?.x) && Number.isFinite(chatMsg?.y)
+                            ? { x: chatMsg.x, y: chatMsg.y }
+                            : null
+                    );
                     if (!pos) continue;
                     if (!isWorldRectVisible(pos.x - 40, pos.y - 120, 80, 80, 40, visibleBounds)) {
                         continue;
                     }
 
-                    const chatMsg = chatMessages[sid];
                     const elapsed = now - chatMsg.startTime;
                     
                     // Only draw if within duration
@@ -13883,8 +15736,10 @@
 
                 ctx.restore();
 
-                // WebGL Post-processing
-                if (gl && program) {
+                if (shouldUseLowQualityPresentation()) {
+                    renderLowQualityPresentation(nowMs, renderServerTimeMs, effectVisibleBounds);
+                } else if (gl && program) {
+                    // WebGL Post-processing
                     gl.useProgram(program);
 
                     // Update texture with 2D canvas content
@@ -13901,12 +15756,12 @@
                         // Apply camera transformation and zoom, then center on the player
                         const screenX = (localPlayerPos.x - cameraX) * cameraZoom;
                         const screenY = (localPlayerPos.y - cameraY) * cameraZoom;
-                        
+
                         // Ensure light stays centered on player regardless of position
                         // The coordinates should be relative to the canvas, not flipped
                         const finalX = screenX;
                         const finalY = screenY;
-                        
+
                         gl.uniform2f(glLightPosLocation, finalX, finalY);
                     } else {
                         // When player position is unavailable (e.g., low-end PC frame drops),
@@ -13927,20 +15782,10 @@
                     }
                     gl.uniform4fv(glDynamicLightsLocation, dynamicLightUniformBuffer);
 
-                    // Bind buffers
-                    gl.enableVertexAttribArray(glPositionLocation);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                    gl.vertexAttribPointer(glPositionLocation, 2, gl.FLOAT, false, 0, 0);
-
-                    gl.enableVertexAttribArray(glTexCoordLocation);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-                    gl.vertexAttribPointer(glTexCoordLocation, 2, gl.FLOAT, false, 0, 0);
-
                     // Draw to WebGL canvas
                     gl.clearColor(0, 0, 0, 1);
                     gl.clear(gl.COLOR_BUFFER_BIT);
                     gl.drawArrays(gl.TRIANGLES, 0, 6);
-
                 }
             }
 

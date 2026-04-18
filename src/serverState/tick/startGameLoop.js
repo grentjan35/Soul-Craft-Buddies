@@ -14,6 +14,7 @@ const {
   PLAYER_HITBOX_HEIGHT,
   PLAYER_MAX_HEALTH,
 } = require('../state/constants');
+const { HealingSystem } = require('../healing/healingSystem');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
 const {
   checkFireballEnemyCollision,
@@ -57,7 +58,7 @@ function getPlayerKillXp(victim, killer = null) {
 
 /** @type {NodeJS.Timeout | null} */
 let gameLoopInterval = null;
-/** @type {{io: import('socket.io').Server, state: any} | null} */
+/** @type {{io: import('socket.io').Server, state: any, healingSystem: HealingSystem} | null} */
 let gameLoopContext = null;
 
 /**
@@ -166,7 +167,8 @@ function startGameLoop(input) {
   const fairyBroadcastIntervalMs = 250;
 
   input.state.lastActivePlayerAtMs = Date.now();
-  gameLoopContext = input;
+  const healingSystem = new HealingSystem(input.state);
+  gameLoopContext = { ...input, healingSystem };
 
   gameLoopInterval = setInterval(() => {
     const nowMs = Date.now();
@@ -201,6 +203,11 @@ function startGameLoop(input) {
       updateDeathsAndRespawns({ state: input.state, io: input.io });
       applyPassivePlayerRegeneration({ state: input.state, dt });
       cleanupDeadBodies({ state: input.state });
+      
+      const healEvents = healingSystem.update(dt);
+      if (healEvents.length > 0) {
+        input.io.emit('healing_update', { events: healEvents });
+      }
     }
 
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {

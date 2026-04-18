@@ -6,6 +6,8 @@ const {
   FIREBALL_MAX_DISTANCE,
   GRAVITY,
 } = require('../state/constants');
+const { GroupManager } = require('../groups/groupManager');
+const { HealingSystem } = require('../healing/healingSystem');
 const { pickSpawnPoint } = require('./spawn/pickSpawnPoint');
 const { dropSoulsForPlayerDeath, serializeSoulsForState } = require('../state/souls/soulSystem');
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
@@ -30,6 +32,8 @@ const { emitProgressionNotification } = require('../state/progression/notificati
  */
 function registerSocketHandlers(input) {
   const { socket, io, state } = input;
+  const groupManager = new GroupManager(state);
+  const healingSystem = new HealingSystem(state);
 
   handleConnect({ socket, io, state });
 
@@ -98,12 +102,29 @@ function registerSocketHandlers(input) {
       if (messageLower.includes(word)) return;
     }
 
-    io.emit('chat_message', {
+    const chatChannel = data?.channel === 'group' ? 'group' : 'global';
+    const payload = {
       sid: socket.id,
       name: String(player.name ?? `P${socket.id.slice(0, 4)}`),
       message,
       timestamp: Date.now(),
-    });
+      channel: chatChannel,
+    };
+
+    if (chatChannel === 'group') {
+      const groupInfo = groupManager.getGroupInfo(socket.id);
+      if (!groupInfo) {
+        socket.emit('group_error', { reason: 'You must be in a group to use group chat' });
+        return;
+      }
+
+      for (const memberId of groupInfo.members) {
+        io.to(memberId).emit('chat_message', payload);
+      }
+      return;
+    }
+
+    io.emit('chat_message', payload);
   });
 
   socket.on('respawn_request', () => {
@@ -231,6 +252,312 @@ function registerSocketHandlers(input) {
 
     console.error(`[client-runtime-error] ${label} ${errorType}: ${message}${source}${line}${column}${stack}`);
   });
+
+  socket.on('group_create', (data) => {
+    const requestedName = typeof data?.name === 'string' ? data.name : null;
+    const result = groupManager.createGroupWithName(socket.id, requestedName);
+    if (result.ok) {
+      const groupInfo = groupManager.getGroupInfo(socket.id);
+      socket.emit('group_created', groupInfo);
+      io.emit('groups_updated', groupManager.serializeGroups());
+    } else {
+      socket.emit('group_error', { reason: result.reason });
+    }
+  });
+
+  socket.on('group_request_join', (data) => {
+    const groupId = String(data?.groupId ?? '').trim();
+    if (!groupId) {
+      socket.emit('group_error', { reason: 'Invalid group ID' });
+      return;
+    }
+
+    const player = state.players.get(socket.id);
+    if (!player) {
+      socket.emit('group_error', { reason: 'Player not found' });
+      return;
+    }
+
+    if (groupManager.findGroupByMember(socket.id)) {
+      socket.emit('group_error', { reason: 'Player already in a group' });
+      return;
+    }
+
+    const targetGroup = state.groups.get(groupId);
+    if (!targetGroup) {
+      socket.emit('group_error', { reason: 'Group not found' });
+      return;
+    }
+
+    const leaderId = targetGroup.leaderId;
+    const leader = state.players.get(leaderId);
+    if (!leader) {
+      socket.emit('group_error', { reason: 'Group leader is unavailable' });
+      return;
+    }
+
+    const inviteId = `group_invite_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    state.pendingGroupInvites.set(inviteId, {
+      id: inviteId,
+      type: 'join_request',
+      groupId,
+      leaderId,
+      requesterId: socket.id,
+      targetId: socket.id,
+      approverId: leaderId,
+      createdAt: Date.now(),
+    });
+
+    io.to(leaderId).emit('group_invite_request', {
+      inviteId,
+      type: 'join_request',
+      groupId,
+      groupName: targetGroup.name || `${leader.name || 'Player'}'s Group`,
+      requesterId: socket.id,
+      requesterName: String(player.name ?? `P${socket.id.slice(0, 4)}`),
+      leaderId,
+      leaderName: String(leader.name ?? `P${leaderId.slice(0, 4)}`),
+    });
+    socket.emit('group_invite_pending', {
+      inviteId,
+      type: 'join_request',
+      groupId,
+      groupName: targetGroup.name || `${leader.name || 'Player'}'s Group`,
+      message: `Join request sent to ${String(leader.name ?? 'the leader')}.`,
+    });
+  });
+
+  socket.on('group_leave', () => {
+    const result = groupManager.leaveGroup(socket.id);
+    if (result.ok) {
+      socket.emit('group_left');
+      io.emit('groups_updated', groupManager.serializeGroups());
+    } else {
+      socket.emit('group_error', { reason: result.reason });
+    }
+  });
+
+  socket.on('group_add_member', (data) => {
+    let memberId = String(data?.memberId ?? '').trim();
+    const memberName = String(data?.memberName ?? '').trim().toLowerCase();
+    if (!memberId && memberName) {
+      for (const [candidateId, player] of state.players.entries()) {
+        const candidateName = String(player?.name ?? '').trim().toLowerCase();
+        if (candidateName && candidateName === memberName) {
+          memberId = candidateId;
+          break;
+        }
+      }
+    }
+    if (!memberId) {
+      socket.emit('group_error', { reason: 'Player not found' });
+      return;
+    }
+    const leaderGroup = groupManager.findGroupByMember(socket.id);
+    if (!leaderGroup) {
+      socket.emit('group_error', { reason: 'Leader not in a group' });
+      return;
+    }
+    if (leaderGroup.leaderId !== socket.id) {
+      socket.emit('group_error', { reason: 'Only leader can add members' });
+      return;
+    }
+    if (groupManager.findGroupByMember(memberId)) {
+      socket.emit('group_error', { reason: 'Member already in a group' });
+      return;
+    }
+    if (leaderGroup.members.includes(memberId)) {
+      socket.emit('group_error', { reason: 'Member already in this group' });
+      return;
+    }
+
+    const inviteId = `group_invite_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    state.pendingGroupInvites.set(inviteId, {
+      id: inviteId,
+      type: 'group_invite',
+      groupId: leaderGroup.id,
+      leaderId: socket.id,
+      requesterId: socket.id,
+      targetId: memberId,
+      approverId: memberId,
+      createdAt: Date.now(),
+    });
+
+    const leader = state.players.get(socket.id);
+    io.to(memberId).emit('group_invite_request', {
+      inviteId,
+      type: 'group_invite',
+      groupId: leaderGroup.id,
+      groupName: leaderGroup.name || `${String(leader?.name || 'Player')}'s Group`,
+      leaderId: socket.id,
+      leaderName: String(leader?.name ?? `P${socket.id.slice(0, 4)}`),
+      requesterId: socket.id,
+      requesterName: String(leader?.name ?? `P${socket.id.slice(0, 4)}`),
+    });
+    socket.emit('group_invite_pending', {
+      inviteId,
+      type: 'group_invite',
+      groupId: leaderGroup.id,
+      groupName: leaderGroup.name || `${String(leader?.name || 'Player')}'s Group`,
+      message: `Invite sent to ${String(state.players.get(memberId)?.name ?? data?.memberName ?? 'that player')}.`,
+    });
+  });
+
+  socket.on('group_invite_respond', (data) => {
+    const inviteId = String(data?.inviteId ?? '').trim();
+    const accepted = Boolean(data?.accepted);
+    if (!inviteId) {
+      socket.emit('group_error', { reason: 'Invalid invite response' });
+      return;
+    }
+
+    const invite = state.pendingGroupInvites.get(inviteId);
+    if (!invite) {
+      socket.emit('group_error', { reason: 'That group invite is no longer available' });
+      return;
+    }
+
+    if (invite.approverId !== socket.id) {
+      socket.emit('group_error', { reason: 'You cannot respond to that invite' });
+      return;
+    }
+
+    state.pendingGroupInvites.delete(inviteId);
+
+    const group = state.groups.get(invite.groupId);
+    const leader = state.players.get(invite.leaderId);
+    const joiningPlayer = state.players.get(invite.targetId);
+    if (!accepted) {
+      const denialMessage = invite.type === 'join_request'
+        ? `${String(leader?.name ?? 'The leader')} declined your request to join ${group?.name || 'the group'}.`
+        : `${String(joiningPlayer?.name ?? 'That player')} declined your invite to ${group?.name || 'the group'}.`;
+      if (invite.type === 'join_request') {
+        io.to(invite.requesterId).emit('group_invite_resolved', { inviteId, status: 'rejected', reason: denialMessage });
+      } else {
+        io.to(invite.leaderId).emit('group_invite_resolved', { inviteId, status: 'rejected', reason: denialMessage });
+      }
+      return;
+    }
+
+    if (!group) {
+      socket.emit('group_error', { reason: 'Group not found' });
+      return;
+    }
+    if (!leader || group.leaderId !== invite.leaderId) {
+      socket.emit('group_error', { reason: 'That group invite is no longer valid' });
+      return;
+    }
+    if (!joiningPlayer) {
+      io.to(invite.leaderId).emit('group_invite_resolved', { inviteId, status: 'error', reason: 'Player not found' });
+      return;
+    }
+    if (groupManager.findGroupByMember(invite.targetId)) {
+      io.to(invite.leaderId).emit('group_invite_resolved', { inviteId, status: 'error', reason: 'Player already in a group' });
+      if (invite.type === 'join_request') {
+        io.to(invite.requesterId).emit('group_invite_resolved', { inviteId, status: 'error', reason: 'You are already in a group' });
+      }
+      return;
+    }
+
+    const joinResult = groupManager.joinGroup(invite.targetId, invite.groupId);
+    if (!joinResult.ok) {
+      io.to(invite.leaderId).emit('group_invite_resolved', { inviteId, status: 'error', reason: joinResult.reason });
+      if (invite.type === 'join_request') {
+        io.to(invite.requesterId).emit('group_invite_resolved', { inviteId, status: 'error', reason: joinResult.reason });
+      }
+      return;
+    }
+
+    const groupInfo = groupManager.getGroupInfo(invite.targetId);
+    io.emit('groups_updated', groupManager.serializeGroups());
+    io.to(invite.targetId).emit('group_joined', groupInfo);
+    io.to(invite.leaderId).emit('group_info', groupManager.getGroupInfo(invite.leaderId));
+    io.to(invite.leaderId).emit('group_member_added', { memberId: invite.targetId });
+    io.to(invite.targetId).emit('group_invite_resolved', {
+      inviteId,
+      status: 'accepted',
+      reason: `You joined ${groupInfo?.name || 'the group'}.`,
+    });
+    if (invite.type === 'join_request') {
+      io.to(invite.requesterId).emit('group_invite_resolved', {
+        inviteId,
+        status: 'accepted',
+        reason: `You joined ${groupInfo?.name || 'the group'}.`,
+      });
+    } else {
+      io.to(invite.leaderId).emit('group_invite_resolved', {
+        inviteId,
+        status: 'accepted',
+        reason: `${String(joiningPlayer.name ?? 'Player')} joined ${groupInfo?.name || 'the group'}.`,
+      });
+    }
+  });
+
+  socket.on('group_promote_leader', (data) => {
+    const memberId = String(data?.memberId ?? '').trim();
+    if (!memberId) {
+      socket.emit('group_error', { reason: 'Invalid member ID' });
+      return;
+    }
+    const result = groupManager.promoteLeader(socket.id, memberId);
+    if (result.ok) {
+      const promotedGroupInfo = groupManager.getGroupInfo(memberId);
+      io.emit('groups_updated', groupManager.serializeGroups());
+      socket.emit('group_info', groupManager.getGroupInfo(socket.id));
+      io.to(memberId).emit('group_info', promotedGroupInfo);
+      socket.emit('group_leader_promoted', { memberId });
+      io.to(memberId).emit('group_leader_assigned', { leaderId: memberId });
+    } else {
+      socket.emit('group_error', { reason: result.reason });
+    }
+  });
+
+  socket.on('group_kick_member', (data) => {
+    const memberId = String(data?.memberId ?? '').trim();
+    if (!memberId) {
+      socket.emit('group_error', { reason: 'Invalid member ID' });
+      return;
+    }
+    const result = groupManager.kickMember(socket.id, memberId);
+    if (result.ok) {
+      io.emit('groups_updated', groupManager.serializeGroups());
+      io.to(memberId).emit('group_kicked');
+      socket.emit('group_member_kicked', { memberId });
+    } else {
+      socket.emit('group_error', { reason: result.reason });
+    }
+  });
+
+  socket.on('group_get_info', () => {
+    const groupInfo = groupManager.getGroupInfo(socket.id);
+    if (groupInfo) {
+      socket.emit('group_info', groupInfo);
+    } else {
+      socket.emit('group_info', null);
+    }
+  });
+
+  socket.on('healing_start', (data) => {
+    const targetId = String(data?.targetId ?? '').trim();
+    if (!targetId) {
+      socket.emit('healing_error', { reason: 'Invalid target ID' });
+      return;
+    }
+    const result = healingSystem.startHealing(socket.id, targetId);
+    if (result.ok) {
+      socket.emit('healing_started', { healingId: result.healingId, targetId });
+      io.to(targetId).emit('healing_targeted', { healerId: socket.id });
+    } else {
+      socket.emit('healing_error', { reason: result.reason });
+    }
+  });
+
+  socket.on('healing_stop', () => {
+    const result = healingSystem.stopHealing(socket.id);
+    if (result.ok) {
+      socket.emit('healing_stopped');
+    }
+  });
 }
 
 /**
@@ -297,6 +624,7 @@ function handleConnect(input) {
   }
 
   input.socket.emit('character_assigned', { character });
+  input.socket.emit('groups_updated', new GroupManager(input.state).serializeGroups());
 }
 
 /**
@@ -324,6 +652,28 @@ function handleDisconnect(input) {
   despawnEnemiesSpawnedForPlayer(input.state, input.socket.id);
   input.state.deadBodies.set(input.socket.id, deathData);
   input.io.emit('player_dying', deathData);
+  
+  // Clean up healing sessions
+  input.state.activeHealings.delete(input.socket.id);
+  
+  // Remove player from group if in one
+  if (player.groupId) {
+    const groupManager = new GroupManager(input.state);
+    groupManager.leaveGroup(input.socket.id);
+    input.io.emit('groups_updated', groupManager.serializeGroups());
+  }
+
+  for (const [inviteId, invite] of input.state.pendingGroupInvites.entries()) {
+    if (
+      invite.leaderId === input.socket.id ||
+      invite.requesterId === input.socket.id ||
+      invite.targetId === input.socket.id ||
+      invite.approverId === input.socket.id
+    ) {
+      input.state.pendingGroupInvites.delete(inviteId);
+    }
+  }
+  
   input.state.players.delete(input.socket.id);
 }
 
