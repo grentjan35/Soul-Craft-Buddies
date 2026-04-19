@@ -898,6 +898,9 @@ function updateFireballs(input) {
 
   for (const [id, f] of input.state.fireballs.entries()) {
     if (!f.active) continue;
+    const ownerPlayer = f.owner_type === 'player' && f.owner_sid
+      ? input.state.players.get(f.owner_sid)
+      : null;
 
     f.vy += GRAVITY * Math.max(0.25, Number(f.gravity_scale) || 1) * input.dt * 60;
     f.x += f.vx * input.dt;
@@ -956,6 +959,7 @@ function updateFireballs(input) {
     for (const [sid, p] of input.state.players.entries()) {
       if (p.is_dying) continue;
       if (f.owner_type !== 'enemy' && sid === f.owner_sid) continue;
+      if (ownerPlayer && arePlayersFriendly(ownerPlayer, p)) continue;
 
       if (checkFireballPlayerCollision({ fireball: f, player: p })) {
         createExplosion({
@@ -1056,10 +1060,12 @@ function applyExplosionDamage(input) {
   const radius = Math.max(24, Number(input.radius) || EXPLOSION_RADIUS) * 2.35;
   const ENEMY_EXPLOSION_DIRECT_DAMAGE = Math.max(1, Math.round((input.damage ?? FIREBALL_DAMAGE) * Math.max(0.2, Number(input.damageMultiplier) || 1)));
   const ENEMY_EXPLOSION_SPLASH_MIN_PROXIMITY = 0.28;
+  const ownerPlayer = input.ownerSid ? input.state.players.get(input.ownerSid) : null;
 
   for (const [sid, player] of input.state.players.entries()) {
     if (player.is_dying) continue;
     if (sid === input.ownerSid) continue;
+    if (ownerPlayer && arePlayersFriendly(ownerPlayer, player)) continue;
 
     const dx = player.x - input.x;
     const dy = player.y - input.y;
@@ -1240,6 +1246,21 @@ function createExplosion(input) {
     owner_enemy_type: ownerEnemyType,
   });
   applyExplosionDamage(input);
+}
+
+/**
+ * @param {any} playerA
+ * @param {any} playerB
+ * @returns {boolean}
+ */
+function arePlayersFriendly(playerA, playerB) {
+  if (!playerA || !playerB) {
+    return false;
+  }
+
+  const groupA = typeof playerA.groupId === 'string' ? playerA.groupId : '';
+  const groupB = typeof playerB.groupId === 'string' ? playerB.groupId : '';
+  return Boolean(groupA) && groupA === groupB;
 }
 
 /**

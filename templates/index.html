@@ -2535,6 +2535,7 @@
             padding: 5px 10px;
             cursor: pointer;
             align-self: flex-end;
+            position: relative;
         }
 
         #chat-container.is-minimized #chat-minimized-button {
@@ -2561,6 +2562,22 @@
         .chat-notification-badge.group {
             color: #62afff;
             background: #62afff;
+        }
+
+        .chat-minimized-alert {
+            position: absolute;
+            top: 5px;
+            right: 7px;
+            width: 11px;
+            height: 11px;
+            border-radius: 999px;
+            background: #ff4f5e;
+            box-shadow: 0 0 14px rgba(255, 79, 94, 0.9);
+            display: none;
+        }
+
+        .chat-minimized-alert.is-visible {
+            display: block;
         }
 
         /* Scrollbar styling for chat box */
@@ -3292,6 +3309,7 @@
             <span id="chat-minimized-label">CHAT</span>
             <span id="chat-minimized-badge-global" class="chat-notification-badge global"></span>
             <span id="chat-minimized-badge-group" class="chat-notification-badge group"></span>
+            <span id="chat-minimized-alert" class="chat-minimized-alert" aria-hidden="true"></span>
         </button>
     </div>
 
@@ -4318,6 +4336,64 @@
             }
 
             return canvas;
+        }
+
+        function measureCustomAlphabetText(text, options = {}) {
+            const {
+                scale = 1,
+                letterSpacing = 0,
+                wordSpacing = 0,
+                trimOverlap = 0,
+                paddingX = 2,
+                paddingY = 2,
+            } = options;
+
+            const value = String(text ?? '');
+            const measurements = [];
+            let width = paddingX * 2;
+            let height = paddingY * 2;
+
+            for (const rawChar of value) {
+                if (rawChar === ' ') {
+                    measurements.push({ type: 'space' });
+                    continue;
+                }
+
+                const letter = normalizeCustomAlphabetChar(rawChar);
+                const glyph = letter ? customAlphabetCache.get(letter) : null;
+                if (glyph) {
+                    const glyphScale = getCustomAlphabetGlyphScale(glyph, scale);
+                    measurements.push({
+                        type: 'glyph',
+                        glyph,
+                        width: glyph.width * glyphScale,
+                        height: glyph.height * glyphScale,
+                    });
+                    height = Math.max(height, glyph.height * glyphScale + paddingY * 2);
+                } else {
+                    measurements.push({ type: 'fallback', char: rawChar });
+                    height = Math.max(height, 10 * scale + paddingY * 2);
+                }
+            }
+
+            for (let index = 0; index < measurements.length; index++) {
+                const entry = measurements[index];
+                const nextEntry = measurements[index + 1] || null;
+
+                if (entry.type === 'space') {
+                    width += Math.max(2, wordSpacing * scale);
+                    continue;
+                }
+
+                if (entry.type === 'glyph') {
+                    width += entry.width - trimOverlap * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+                    continue;
+                }
+
+                width += 4 * scale + getCustomAlphabetAdvanceAdjustment(entry, nextEntry, scale, letterSpacing);
+            }
+
+            return { width, height };
         }
 
         function applyCustomAlphabetToElement(element, options = {}) {
@@ -9556,6 +9632,7 @@
         const chatMinimizedButton = document.getElementById('chat-minimized-button');
         const chatMinimizedBadgeGlobal = document.getElementById('chat-minimized-badge-global');
         const chatMinimizedBadgeGroup = document.getElementById('chat-minimized-badge-group');
+        const chatMinimizedAlert = document.getElementById('chat-minimized-alert');
         let currentGroup = null;
         let isGroupLeader = false;
         let knownGroups = {};
@@ -9669,6 +9746,7 @@
         function updateChatNotificationBadges() {
             chatMinimizedBadgeGlobal?.classList.toggle('is-visible', unreadChatCounts.global > 0);
             chatMinimizedBadgeGroup?.classList.toggle('is-visible', unreadChatCounts.group > 0);
+            chatMinimizedAlert?.classList.toggle('is-visible', (unreadChatCounts.global + unreadChatCounts.group) > 0);
         }
 
         function clearUnreadForActiveChannel() {
@@ -11304,6 +11382,96 @@
             groupStatusElement.classList.toggle('is-error', tone === 'error');
         }
 
+        function getCurrentGroupMemberIds() {
+            if (!currentGroup || !Array.isArray(currentGroup.members)) {
+                return [];
+            }
+
+            return currentGroup.members.filter((memberId) => memberId && memberId !== socket.id);
+        }
+
+        function drawGroupMateIndicators(ctx) {
+            const localPlayer = getPlayerPosition(socket.id);
+            if (!ctx || !currentGroup || !localPlayer) {
+                return;
+            }
+
+            const teammateIds = getCurrentGroupMemberIds();
+            if (!teammateIds.length) {
+                return;
+            }
+
+            const viewportWidth = canvas?.width || window.innerWidth;
+            const viewportHeight = canvas?.height || window.innerHeight;
+            const edgePadding = 24;
+            const safeLeft = edgePadding;
+            const safeTop = edgePadding;
+            const safeRight = viewportWidth - edgePadding;
+            const safeBottom = viewportHeight - edgePadding;
+
+            for (const teammateId of teammateIds) {
+                const teammateState = playerState[teammateId] || authoritativePlayerState[teammateId];
+                if (!teammateState || dyingPlayers[teammateId]) {
+                    continue;
+                }
+
+                const screenX = (teammateState.x - cameraX) * cameraZoom;
+                const screenY = (teammateState.y - cameraY) * cameraZoom;
+                const isOnscreen =
+                    screenX >= 0 &&
+                    screenX <= viewportWidth &&
+                    screenY >= 0 &&
+                    screenY <= viewportHeight;
+                if (isOnscreen) {
+                    const metrics = getPlayerNameplateMetrics(teammateId);
+                    if (!metrics) {
+                        continue;
+                    }
+
+                    const markerX = Math.max(8, Math.min(viewportWidth - 8, metrics.x - metrics.width / 2 - 8));
+                    const markerY = Math.max(8, Math.min(viewportHeight - 8, metrics.y));
+                    drawScreenArrow(ctx, markerX, markerY, 0, 1.02);
+                    continue;
+                }
+
+                const dx = teammateState.x - localPlayer.x;
+                const dy = teammateState.y - localPlayer.y;
+                const angle = Math.atan2(dy, dx);
+                const centerX = viewportWidth / 2;
+                const centerY = viewportHeight / 2;
+                const maxRadiusX = Math.max(20, viewportWidth / 2 - 34);
+                const maxRadiusY = Math.max(20, viewportHeight / 2 - 34);
+                const scale = 1 / Math.max(
+                    Math.abs(Math.cos(angle)) / maxRadiusX,
+                    Math.abs(Math.sin(angle)) / maxRadiusY
+                );
+                const indicatorX = Math.max(safeLeft, Math.min(safeRight, centerX + Math.cos(angle) * scale));
+                const indicatorY = Math.max(safeTop, Math.min(safeBottom, centerY + Math.sin(angle) * scale));
+                drawScreenArrow(ctx, indicatorX, indicatorY, angle, 1.15);
+            }
+        }
+
+        function drawScreenArrow(ctx, x, y, angle, scale = 1) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+            ctx.shadowColor = 'rgba(104, 205, 255, 0.9)';
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = '#68cdff';
+            ctx.strokeStyle = 'rgba(8, 18, 24, 0.96)';
+            ctx.lineJoin = 'miter';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(10 * scale, 0);
+            ctx.lineTo(-6 * scale, -5 * scale);
+            ctx.lineTo(-2 * scale, 0);
+            ctx.lineTo(-6 * scale, 5 * scale);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.fill();
+            ctx.restore();
+        }
+
         function toggleGroupPanel() {
             const isOpen = groupPanel.getAttribute('aria-hidden') === 'false';
             groupPanel.setAttribute('aria-hidden', isOpen ? 'true' : 'false');
@@ -11426,7 +11594,7 @@
 
         let modalResolve = null;
 
-        function showModal(title, message, showInput = false, placeholder = '') {
+        function showModal(title, message, showInput = false, placeholder = '', suggestions = []) {
             return new Promise((resolve) => {
                 modalResolve = resolve;
                 modalTitle.textContent = title;
@@ -11436,12 +11604,11 @@
                     modalInputContainer.style.display = 'block';
                     modalInput.placeholder = placeholder;
                     modalInput.value = '';
-                    if (modalInputSuggestions) {
-                        modalInputSuggestions.innerHTML = '';
-                    }
+                    populateModalInputSuggestions(suggestions);
                     modalInput.focus();
                 } else {
                     modalInputContainer.style.display = 'none';
+                    populateModalInputSuggestions([]);
                 }
                 
                 modalOverlay.style.display = 'flex';
@@ -11451,10 +11618,15 @@
         function buildJoinablePlayerSuggestions() {
             const seenNames = new Set();
             const options = [];
+            const groupedPlayerIds = new Set();
+
+            Object.values(knownGroups || {}).forEach((group) => {
+                (group?.members || []).forEach((memberId) => groupedPlayerIds.add(memberId));
+            });
 
             const addOption = (playerId, playerData) => {
                 const candidateName = typeof playerData?.name === 'string' ? playerData.name.trim() : '';
-                if (!candidateName || playerId === socket.id) {
+                if (!candidateName || playerId === socket.id || groupedPlayerIds.has(playerId)) {
                     return;
                 }
                 const key = candidateName.toLowerCase();
@@ -11552,8 +11724,14 @@
 
         if (groupAddMemberBtn) {
             groupAddMemberBtn.addEventListener('click', async () => {
-                populateModalInputSuggestions(buildJoinablePlayerSuggestions());
-                const playerName = await showModal('Invite Member', 'Enter player name to invite:', true, 'Player name');
+                const playerSuggestions = buildJoinablePlayerSuggestions();
+                const playerName = await showModal(
+                    'Invite Member',
+                    'Choose a player to invite:',
+                    true,
+                    'Select player',
+                    playerSuggestions
+                );
                 if (playerName && playerName.trim()) {
                     const memberId = findPlayerIdByName(playerName.trim());
                     socket.emit('group_add_member', { memberId, memberName: playerName.trim() });
@@ -12317,6 +12495,47 @@
                 letterSpacing: 0,
             });
             ctx.restore();
+        }
+
+        function getPlayerNameplateScreenPosition(playerId) {
+            const state = playerState[playerId] || authoritativePlayerState[playerId];
+            if (!state || !Number.isFinite(state.x) || !Number.isFinite(state.y)) {
+                return null;
+            }
+
+            const renderDims = playerRenderDimensions[playerId] || { width: 60, height: 60 };
+            return {
+                x: (state.x - cameraX) * cameraZoom,
+                y: (state.y - cameraY - (renderDims.height / 2 + 16)) * cameraZoom
+            };
+        }
+
+        function getPlayerNameplateMetrics(playerId) {
+            const state = playerState[playerId] || authoritativePlayerState[playerId];
+            if (!state || !Number.isFinite(state.x) || !Number.isFinite(state.y)) {
+                return null;
+            }
+
+            const displayLabel = String(state.name || `P${playerId.slice(0, 4)}`).trim();
+            const displayLevel = Math.max(1, Math.round(Number(playerId === socket.id ? (localProgressionState?.level || state.level) : state.level) || 1));
+            const text = `${displayLabel} LVL. ${displayLevel}`;
+            const position = getPlayerNameplateScreenPosition(playerId);
+            const measured = measureCustomAlphabetText(text, {
+                scale: 0.45,
+                letterSpacing: 0,
+                paddingX: 0,
+                paddingY: 0,
+            });
+
+            return position
+                ? {
+                    text,
+                    x: position.x,
+                    y: position.y,
+                    width: measured.width * cameraZoom,
+                    height: measured.height * cameraZoom,
+                }
+                : null;
         }
 
         function drawHealthBar(ctx, playerX, playerY, health, maxHealth, cameraX, cameraY) {
@@ -15799,6 +16018,7 @@
                 // --- END CHAT MESSAGES ---
 
                 ctx.restore();
+                drawGroupMateIndicators(ctx);
 
                 if (shouldUseLowQualityPresentation()) {
                     renderLowQualityPresentation(nowMs, renderServerTimeMs, effectVisibleBounds);
