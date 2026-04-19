@@ -48,6 +48,7 @@ const ENEMY_WAKE_RADIUS_X = 1200;
 const ENEMY_WAKE_RADIUS_Y = 850;
 const ENEMY_SEND_RADIUS_X = 1500;
 const ENEMY_SEND_RADIUS_Y = 1000;
+const ENEMY_FULL_SYNC_INTERVAL_MS = 750;
 
 function getPlayerKillXp(victim, killer = null) {
   const victimLevel = Math.max(1, getPlayerLevel(victim));
@@ -328,6 +329,7 @@ function broadcastState(input) {
     input.io.volatile.emit('state', {
       ...basePayload,
       enemies: {},
+      enemies_full: true,
     });
     return;
   }
@@ -338,19 +340,118 @@ function broadcastState(input) {
       continue;
     }
 
+    const enemyReplication = buildEnemyReplicationPayload({
+      socket,
+      ts,
+      state: input.state,
+      centerX: player.x,
+      centerY: player.y,
+      radiusX: ENEMY_SEND_RADIUS_X,
+      radiusY: ENEMY_SEND_RADIUS_Y,
+    });
+
     socket.volatile.emit('state', {
       ...basePayload,
       self: {
         progression: getPlayerProgressionPayload(player),
       },
-      enemies: serializeEnemiesForState(input.state, {
-        centerX: player.x,
-        centerY: player.y,
-        radiusX: ENEMY_SEND_RADIUS_X,
-        radiusY: ENEMY_SEND_RADIUS_Y,
-      }),
+      enemies: enemyReplication.enemies,
+      enemies_full: enemyReplication.full,
+      enemy_removed: enemyReplication.removed,
     });
   }
+}
+
+/**
+ * @param {import('socket.io').Socket} socket
+ * @returns {{lastFullSyncAt: number, snapshotsById: Map<string, Record<string, any>>}}
+ */
+function getEnemyReplicationState(socket) {
+  if (!socket.data.enemyReplication || typeof socket.data.enemyReplication !== 'object') {
+    socket.data.enemyReplication = {
+      lastFullSyncAt: 0,
+      snapshotsById: new Map(),
+    };
+  }
+
+  if (!(socket.data.enemyReplication.snapshotsById instanceof Map)) {
+    socket.data.enemyReplication.snapshotsById = new Map();
+  }
+
+  return socket.data.enemyReplication;
+}
+
+/**
+ * @param {{socket: import('socket.io').Socket, ts: number, state: any, centerX: number, centerY: number, radiusX: number, radiusY: number}} input
+ * @returns {{enemies: Record<string, any>, full: boolean, removed: string[]}}
+ */
+function buildEnemyReplicationPayload(input) {
+  const visibleEnemies = serializeEnemiesForState(input.state, {
+    centerX: input.centerX,
+    centerY: input.centerY,
+    radiusX: input.radiusX,
+    radiusY: input.radiusY,
+  });
+  const replicationState = getEnemyReplicationState(input.socket);
+  const sendFullSnapshot =
+    replicationState.lastFullSyncAt <= 0 ||
+    input.ts - replicationState.lastFullSyncAt >= ENEMY_FULL_SYNC_INTERVAL_MS;
+  const nextSnapshotsById = new Map();
+  const removed = [];
+  const enemies = {};
+
+  for (const [enemyId, snapshot] of Object.entries(visibleEnemies)) {
+    const previousSnapshot = replicationState.snapshotsById.get(enemyId);
+    nextSnapshotsById.set(enemyId, snapshot);
+
+    const payload = buildEnemyDiffPayload(snapshot, previousSnapshot, sendFullSnapshot);
+    if (payload) {
+      enemies[enemyId] = payload;
+    }
+  }
+
+  for (const enemyId of replicationState.snapshotsById.keys()) {
+    if (!nextSnapshotsById.has(enemyId)) {
+      removed.push(enemyId);
+    }
+  }
+
+  replicationState.snapshotsById = nextSnapshotsById;
+  if (sendFullSnapshot) {
+    replicationState.lastFullSyncAt = input.ts;
+  }
+
+  return {
+    enemies: sendFullSnapshot || Object.keys(enemies).length > 0 ? enemies : undefined,
+    full: sendFullSnapshot,
+    removed: removed.length > 0 ? removed : undefined,
+  };
+}
+
+/**
+ * @param {Record<string, any>} currentSnapshot
+ * @param {Record<string, any> | undefined} previousSnapshot
+ * @param {boolean} forceFullSnapshot
+ * @returns {Record<string, any> | null}
+ */
+function buildEnemyDiffPayload(currentSnapshot, previousSnapshot, forceFullSnapshot) {
+  if (forceFullSnapshot || !previousSnapshot) {
+    return currentSnapshot;
+  }
+
+  const diff = {};
+  let changed = false;
+
+  for (const [key, value] of Object.entries(currentSnapshot)) {
+    if (previousSnapshot[key] === value) {
+      continue;
+    }
+
+    diff[key] = value;
+    changed = true;
+  }
+
+  return changed ? diff : null;
 }
 
 function getActivePlayers(state) {

@@ -2585,7 +2585,7 @@
         /* Group System Styling */
         .group-button {
             position: fixed;
-            bottom: 20px;
+            bottom: 10px;
             left: 20px;
             z-index: 100;
             padding: 8px 16px;
@@ -9397,6 +9397,8 @@
         const MAX_SNAPSHOT_AGE_MS = 1000;
         const MIN_INTERPOLATION_DELAY_MS = 40;
         const MAX_INTERPOLATION_DELAY_MS = 200;
+        const ENEMY_EXTRAPOLATION_LIMIT_MS = 140;
+        const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         let renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
         const packetReceiveTimes = [];
@@ -9562,7 +9564,7 @@
         let chatJustClosed = false;
         let chatExpanded = true;
         let activeChatChannel = 'global';
-        let chatMinimized = false;
+        let chatMinimized = true;
         const chatHistory = [];
         const unreadChatCounts = { global: 0, group: 0 };
         const MAX_CHAT_HISTORY = 50;
@@ -9572,12 +9574,7 @@
                 return;
             }
 
-            button.removeAttribute('data-custom-alphabet');
-            button.dataset.customAlphabetText = '';
-            button.replaceChildren(document.createTextNode(label));
-            button.style.fontSize = '11px';
-            button.style.lineHeight = '1.1';
-            button.style.display = 'flex';
+            setCustomAlphabetText(button, label);
         }
 
         resetChatChannelButtonLabel(chatChannelGlobalBtn, 'Global');
@@ -10301,6 +10298,14 @@
             }
         });
 
+        function removeEnemyState(enemyId) {
+            delete enemyState[enemyId];
+            delete authoritativeEnemyState[enemyId];
+            delete enemySnapshots[enemyId];
+            delete enemyAnimFrames[enemyId];
+            delete enemyRenderDimensions[enemyId];
+            delete enemyHitFlashUntilMs[enemyId];
+        }
 
         // State synchronization - server authoritative
         socket.on('state', (serverState) => {
@@ -10312,6 +10317,8 @@
                 seq,
                 players: serverPlayers,
                 enemies: serverEnemies,
+                enemies_full: serverEnemiesFull,
+                enemy_removed: serverEnemyRemoved,
                 fairies: serverFairies,
                 souls: serverSouls,
                 fireballs: serverFireballs,
@@ -10468,35 +10475,51 @@
             }
 
             if (serverEnemies) {
+                const receivedEnemyIds = new Set();
                 for (const [enemyId, enemyPos] of Object.entries(serverEnemies)) {
-                    if (enemyPos.type && !enemyAssetsByType[enemyPos.type]) {
-                        loadEnemyAssetsFor(enemyPos.type);
+                    receivedEnemyIds.add(enemyId);
+                    const previousEnemyState = authoritativeEnemyState[enemyId] || enemyState[enemyId] || null;
+                    const mergedEnemyState = {
+                        ...(previousEnemyState || {}),
+                        id: enemyId,
+                        ...enemyPos
+                    };
+
+                    if (!mergedEnemyState.type) {
+                        continue;
+                    }
+
+                    if (mergedEnemyState.type && !enemyAssetsByType[mergedEnemyState.type]) {
+                        loadEnemyAssetsFor(mergedEnemyState.type);
                     }
 
                     const nextEnemyState = {
                         id: enemyId,
-                        type: enemyPos.type,
-                        displayName: enemyPos.displayName,
-                        level: typeof enemyPos.level === 'number' ? enemyPos.level : 1,
-                        x: enemyPos.x,
-                        y: enemyPos.y,
-                        vx: enemyPos.vx,
-                        vy: enemyPos.vy,
-                        action: enemyPos.action,
-                        direction: enemyPos.direction,
-                        on_ground: enemyPos.on_ground,
-                        health: enemyPos.health,
-                        max_health: enemyPos.max_health,
-                        alive: enemyPos.alive,
-                        brain_state: enemyPos.brain_state,
-                        state_started_at_ms: enemyPos.state_started_at_ms,
-                        spawn_time_ms: typeof enemyPos.spawn_time_ms === 'number' ? enemyPos.spawn_time_ms : Date.now(),
-                        death_time_ms: enemyPos.death_time_ms,
-                        despawn_at_ms: enemyPos.despawn_at_ms,
-                        respawn_at_ms: enemyPos.respawn_at_ms,
-                        target_sid: enemyPos.target_sid ?? null,
-                        stealth_broken: Boolean(enemyPos.stealth_broken),
-                        render_opacity: typeof enemyPos.render_opacity === 'number' ? enemyPos.render_opacity : 1
+                        type: mergedEnemyState.type,
+                        displayName: mergedEnemyState.displayName,
+                        level: typeof mergedEnemyState.level === 'number' ? mergedEnemyState.level : 1,
+                        x: mergedEnemyState.x,
+                        y: mergedEnemyState.y,
+                        vx: mergedEnemyState.vx,
+                        vy: mergedEnemyState.vy,
+                        action: mergedEnemyState.action,
+                        direction: mergedEnemyState.direction,
+                        on_ground: mergedEnemyState.on_ground,
+                        health: mergedEnemyState.health,
+                        max_health: mergedEnemyState.max_health,
+                        alive: mergedEnemyState.alive,
+                        brain_state: mergedEnemyState.brain_state,
+                        state_started_at_ms: mergedEnemyState.state_started_at_ms,
+                        spawn_time_ms: typeof mergedEnemyState.spawn_time_ms === 'number' ? mergedEnemyState.spawn_time_ms : (previousEnemyState?.spawn_time_ms ?? Date.now()),
+                        death_time_ms: mergedEnemyState.death_time_ms,
+                        despawn_at_ms: mergedEnemyState.despawn_at_ms,
+                        respawn_at_ms: mergedEnemyState.respawn_at_ms,
+                        target_sid: mergedEnemyState.target_sid ?? null,
+                        attached_sid: mergedEnemyState.attached_sid ?? null,
+                        gargoyle_mode: mergedEnemyState.gargoyle_mode ?? null,
+                        stealth_broken: Boolean(mergedEnemyState.stealth_broken),
+                        render_opacity: typeof mergedEnemyState.render_opacity === 'number' ? mergedEnemyState.render_opacity : 1,
+                        striker_slam_impacted_at_ms: typeof mergedEnemyState.striker_slam_impacted_at_ms === 'number' ? mergedEnemyState.striker_slam_impacted_at_ms : 0
                     };
 
                     if (
@@ -10513,27 +10536,30 @@
                     authoritativeEnemyState[enemyId] = nextEnemyState;
                     appendSnapshot(enemySnapshots, enemyId, {
                         ts: receivedAt,
-                        x: enemyPos.x,
-                        y: enemyPos.y,
-                        vx: enemyPos.vx,
-                        vy: enemyPos.vy,
-                        action: enemyPos.action,
-                        direction: enemyPos.direction,
-                        on_ground: enemyPos.on_ground,
-                        displayName: enemyPos.displayName,
-                        level: typeof enemyPos.level === 'number' ? enemyPos.level : 1,
-                        health: enemyPos.health,
-                        max_health: enemyPos.max_health,
-                        alive: enemyPos.alive,
-                        brain_state: enemyPos.brain_state,
-                        state_started_at_ms: enemyPos.state_started_at_ms,
-                        spawn_time_ms: typeof enemyPos.spawn_time_ms === 'number' ? enemyPos.spawn_time_ms : Date.now(),
-                        death_time_ms: enemyPos.death_time_ms,
-                        despawn_at_ms: enemyPos.despawn_at_ms,
-                        respawn_at_ms: enemyPos.respawn_at_ms,
-                        target_sid: enemyPos.target_sid ?? null,
-                        stealth_broken: Boolean(enemyPos.stealth_broken),
-                        render_opacity: typeof enemyPos.render_opacity === 'number' ? enemyPos.render_opacity : 1
+                        x: nextEnemyState.x,
+                        y: nextEnemyState.y,
+                        vx: nextEnemyState.vx,
+                        vy: nextEnemyState.vy,
+                        action: nextEnemyState.action,
+                        direction: nextEnemyState.direction,
+                        on_ground: nextEnemyState.on_ground,
+                        displayName: nextEnemyState.displayName,
+                        level: nextEnemyState.level,
+                        health: nextEnemyState.health,
+                        max_health: nextEnemyState.max_health,
+                        alive: nextEnemyState.alive,
+                        brain_state: nextEnemyState.brain_state,
+                        state_started_at_ms: nextEnemyState.state_started_at_ms,
+                        spawn_time_ms: nextEnemyState.spawn_time_ms,
+                        death_time_ms: nextEnemyState.death_time_ms,
+                        despawn_at_ms: nextEnemyState.despawn_at_ms,
+                        respawn_at_ms: nextEnemyState.respawn_at_ms,
+                        target_sid: nextEnemyState.target_sid ?? null,
+                        attached_sid: nextEnemyState.attached_sid ?? null,
+                        gargoyle_mode: nextEnemyState.gargoyle_mode ?? null,
+                        stealth_broken: Boolean(nextEnemyState.stealth_broken),
+                        render_opacity: typeof nextEnemyState.render_opacity === 'number' ? nextEnemyState.render_opacity : 1,
+                        striker_slam_impacted_at_ms: nextEnemyState.striker_slam_impacted_at_ms
                     });
                     enemyState[enemyId] = {
                         ...(enemyState[enemyId] || {}),
@@ -10541,24 +10567,36 @@
                     };
                 }
 
-                for (const enemyId in enemyState) {
-                    if (!serverEnemies[enemyId]) {
-                        delete enemyState[enemyId];
-                        delete authoritativeEnemyState[enemyId];
-                        delete enemySnapshots[enemyId];
-                        delete enemyAnimFrames[enemyId];
-                        delete enemyRenderDimensions[enemyId];
-                        delete enemyHitFlashUntilMs[enemyId];
+                if (Array.isArray(serverEnemyRemoved)) {
+                    for (const enemyId of serverEnemyRemoved) {
+                        if (typeof enemyId !== 'string') {
+                            continue;
+                        }
+                        removeEnemyState(enemyId);
+                    }
+                }
+
+                if (serverEnemiesFull) {
+                    for (const enemyId in authoritativeEnemyState) {
+                        if (!receivedEnemyIds.has(enemyId)) {
+                            removeEnemyState(enemyId);
+                        }
                     }
                 }
             } else {
-                for (const enemyId in enemyState) {
-                    delete enemyState[enemyId];
-                    delete authoritativeEnemyState[enemyId];
-                    delete enemySnapshots[enemyId];
-                    delete enemyAnimFrames[enemyId];
-                    delete enemyRenderDimensions[enemyId];
-                    delete enemyHitFlashUntilMs[enemyId];
+                if (Array.isArray(serverEnemyRemoved)) {
+                    for (const enemyId of serverEnemyRemoved) {
+                        if (typeof enemyId !== 'string') {
+                            continue;
+                        }
+                        removeEnemyState(enemyId);
+                    }
+                }
+
+                if (serverEnemiesFull) {
+                    for (const enemyId in authoritativeEnemyState) {
+                        removeEnemyState(enemyId);
+                    }
                 }
             }
 
@@ -11954,7 +11992,27 @@
                 }
             }
 
-            return snapshots[snapshots.length - 1];
+            const latestSnapshot = snapshots[snapshots.length - 1];
+            const extrapolationLimitMs = Number(options.extrapolationLimitMs);
+            if (
+                renderTs > latestSnapshot.ts &&
+                Number.isFinite(extrapolationLimitMs) &&
+                extrapolationLimitMs > 0
+            ) {
+                const extrapolatedMs = Math.min(extrapolationLimitMs, renderTs - latestSnapshot.ts);
+                const extrapolatedSeconds = extrapolatedMs / 1000;
+                return {
+                    ...latestSnapshot,
+                    x: typeof latestSnapshot.vx === 'number'
+                        ? latestSnapshot.x + latestSnapshot.vx * extrapolatedSeconds
+                        : latestSnapshot.x,
+                    y: typeof latestSnapshot.vy === 'number'
+                        ? latestSnapshot.y + latestSnapshot.vy * extrapolatedSeconds
+                        : latestSnapshot.y
+                };
+            }
+
+            return latestSnapshot;
         }
 
         function updateInterpolatedPlayerStates(renderNowTs) {
@@ -11988,7 +12046,10 @@
             const renderTs = renderNowTs - renderDelayMs;
 
             for (const enemyId in authoritativeEnemyState) {
-                const sampled = sampleSnapshots(enemySnapshots[enemyId], renderTs, { useHermitePosition: true });
+                const sampled = sampleSnapshots(enemySnapshots[enemyId], renderTs, {
+                    useHermitePosition: true,
+                    extrapolationLimitMs: ENEMY_EXTRAPOLATION_LIMIT_MS
+                });
                 if (!sampled) continue;
 
                 enemyState[enemyId] = {
@@ -12021,7 +12082,10 @@
             const nextFairies = [];
 
             for (const fairyId in authoritativeFairyState) {
-                const sampled = sampleSnapshots(fairySnapshots[fairyId], renderTs, { useHermitePosition: true });
+                const sampled = sampleSnapshots(fairySnapshots[fairyId], renderTs, {
+                    useHermitePosition: true,
+                    extrapolationLimitMs: FAIRY_EXTRAPOLATION_LIMIT_MS
+                });
                 const fairyMeta = authoritativeFairyState[fairyId];
                 if (!sampled || !fairyMeta) continue;
 
