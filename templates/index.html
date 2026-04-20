@@ -9473,7 +9473,7 @@
         const MAX_SNAPSHOT_AGE_MS = 1000;
         const MIN_INTERPOLATION_DELAY_MS = 40;
         const MAX_INTERPOLATION_DELAY_MS = 200;
-        const ENEMY_EXTRAPOLATION_LIMIT_MS = 140;
+        const ENEMY_EXTRAPOLATION_LIMIT_MS = 80;
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         let renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
@@ -12153,6 +12153,19 @@
                         y = cubicHermite(from.y, from.vy * spanSeconds, to.y, to.vy * spanSeconds, t);
                     }
 
+                    if (options.clampPositionToSegment) {
+                        if (typeof from.x === 'number' && typeof to.x === 'number') {
+                            const minX = Math.min(from.x, to.x);
+                            const maxX = Math.max(from.x, to.x);
+                            x = Math.max(minX, Math.min(maxX, x));
+                        }
+                        if (typeof from.y === 'number' && typeof to.y === 'number') {
+                            const minY = Math.min(from.y, to.y);
+                            const maxY = Math.max(from.y, to.y);
+                            y = Math.max(minY, Math.min(maxY, y));
+                        }
+                    }
+
                     return {
                         x,
                         y,
@@ -12224,33 +12237,33 @@
             const renderTs = renderNowTs - renderDelayMs;
 
             for (const enemyId in authoritativeEnemyState) {
+                const authoritativeState = authoritativeEnemyState[enemyId];
                 const sampled = sampleSnapshots(enemySnapshots[enemyId], renderTs, {
                     useHermitePosition: true,
+                    clampPositionToSegment: true,
                     extrapolationLimitMs: ENEMY_EXTRAPOLATION_LIMIT_MS
                 });
                 if (!sampled) continue;
 
                 enemyState[enemyId] = {
-                    ...authoritativeEnemyState[enemyId],
+                    ...authoritativeState,
                     x: sampled.x,
                     y: sampled.y,
-                    vx: typeof sampled.vx === 'number' ? sampled.vx : authoritativeEnemyState[enemyId].vx,
-                    vy: typeof sampled.vy === 'number' ? sampled.vy : authoritativeEnemyState[enemyId].vy,
-                    action: sampled.action ?? authoritativeEnemyState[enemyId].action,
-                    direction: sampled.direction ?? authoritativeEnemyState[enemyId].direction,
-                    on_ground: typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativeEnemyState[enemyId].on_ground,
-                    health: sampled.health ?? authoritativeEnemyState[enemyId].health,
-                    max_health: sampled.max_health ?? authoritativeEnemyState[enemyId].max_health,
-                    alive: typeof sampled.alive === 'boolean' ? sampled.alive : authoritativeEnemyState[enemyId].alive,
-                    brain_state: sampled.brain_state ?? authoritativeEnemyState[enemyId].brain_state,
-                    state_started_at_ms: sampled.state_started_at_ms ?? authoritativeEnemyState[enemyId].state_started_at_ms,
-                    death_time_ms: sampled.death_time_ms ?? authoritativeEnemyState[enemyId].death_time_ms,
-                    despawn_at_ms: sampled.despawn_at_ms ?? authoritativeEnemyState[enemyId].despawn_at_ms,
-                    respawn_at_ms: sampled.respawn_at_ms ?? authoritativeEnemyState[enemyId].respawn_at_ms,
-                    target_sid: sampled.target_sid ?? authoritativeEnemyState[enemyId].target_sid ?? null,
-                    stealth_broken: typeof sampled.stealth_broken === 'boolean'
-                        ? sampled.stealth_broken
-                        : Boolean(authoritativeEnemyState[enemyId].stealth_broken)
+                    vx: typeof sampled.vx === 'number' ? sampled.vx : authoritativeState.vx,
+                    vy: typeof sampled.vy === 'number' ? sampled.vy : authoritativeState.vy,
+                    action: authoritativeState.action,
+                    direction: authoritativeState.direction,
+                    on_ground: authoritativeState.on_ground,
+                    health: authoritativeState.health,
+                    max_health: authoritativeState.max_health,
+                    alive: authoritativeState.alive,
+                    brain_state: authoritativeState.brain_state,
+                    state_started_at_ms: authoritativeState.state_started_at_ms,
+                    death_time_ms: authoritativeState.death_time_ms,
+                    despawn_at_ms: authoritativeState.despawn_at_ms,
+                    respawn_at_ms: authoritativeState.respawn_at_ms,
+                    target_sid: authoritativeState.target_sid ?? null,
+                    stealth_broken: Boolean(authoritativeState.stealth_broken)
                 };
             }
         }

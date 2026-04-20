@@ -49,6 +49,30 @@ const ENEMY_WAKE_RADIUS_Y = 850;
 const ENEMY_SEND_RADIUS_X = 1500;
 const ENEMY_SEND_RADIUS_Y = 1000;
 const ENEMY_FULL_SYNC_INTERVAL_MS = 750;
+const ENEMY_STICKY_FIELD_EXTRA_SENDS = 3;
+const ENEMY_STICKY_FIELDS = new Set([
+  'x',
+  'y',
+  'vx',
+  'vy',
+  'on_ground',
+  'direction',
+  'action',
+  'brain_state',
+  'state_started_at_ms',
+  'health',
+  'max_health',
+  'alive',
+  'death_time_ms',
+  'despawn_at_ms',
+  'respawn_at_ms',
+  'target_sid',
+  'attached_sid',
+  'gargoyle_mode',
+  'stealth_broken',
+  'render_opacity',
+  'striker_slam_impacted_at_ms',
+]);
 
 function getPlayerKillXp(victim, killer = null) {
   const victimLevel = Math.max(1, getPlayerLevel(victim));
@@ -364,18 +388,23 @@ function broadcastState(input) {
 
 /**
  * @param {import('socket.io').Socket} socket
- * @returns {{lastFullSyncAt: number, snapshotsById: Map<string, Record<string, any>>}}
+ * @returns {{lastFullSyncAt: number, snapshotsById: Map<string, Record<string, any>>, stickyFieldsById: Map<string, Map<string, number>>}}
  */
 function getEnemyReplicationState(socket) {
   if (!socket.data.enemyReplication || typeof socket.data.enemyReplication !== 'object') {
     socket.data.enemyReplication = {
       lastFullSyncAt: 0,
       snapshotsById: new Map(),
+      stickyFieldsById: new Map(),
     };
   }
 
   if (!(socket.data.enemyReplication.snapshotsById instanceof Map)) {
     socket.data.enemyReplication.snapshotsById = new Map();
+  }
+
+  if (!(socket.data.enemyReplication.stickyFieldsById instanceof Map)) {
+    socket.data.enemyReplication.stickyFieldsById = new Map();
   }
 
   return socket.data.enemyReplication;
@@ -397,16 +426,23 @@ function buildEnemyReplicationPayload(input) {
     replicationState.lastFullSyncAt <= 0 ||
     input.ts - replicationState.lastFullSyncAt >= ENEMY_FULL_SYNC_INTERVAL_MS;
   const nextSnapshotsById = new Map();
+  const nextStickyFieldsById = new Map();
   const removed = [];
   const enemies = {};
 
   for (const [enemyId, snapshot] of Object.entries(visibleEnemies)) {
     const previousSnapshot = replicationState.snapshotsById.get(enemyId);
+    const previousStickyFields = replicationState.stickyFieldsById.get(enemyId);
     nextSnapshotsById.set(enemyId, snapshot);
 
-    const payload = buildEnemyDiffPayload(snapshot, previousSnapshot, sendFullSnapshot);
+    const payload = buildEnemyDiffPayload(snapshot, previousSnapshot, previousStickyFields, sendFullSnapshot);
     if (payload) {
-      enemies[enemyId] = payload;
+      const { _stickyFieldState, ...publicPayload } = payload;
+      enemies[enemyId] = publicPayload;
+
+      if (_stickyFieldState instanceof Map && _stickyFieldState.size > 0) {
+        nextStickyFieldsById.set(enemyId, _stickyFieldState);
+      }
     }
   }
 
@@ -417,6 +453,7 @@ function buildEnemyReplicationPayload(input) {
   }
 
   replicationState.snapshotsById = nextSnapshotsById;
+  replicationState.stickyFieldsById = nextStickyFieldsById;
   if (sendFullSnapshot) {
     replicationState.lastFullSyncAt = input.ts;
   }
@@ -431,15 +468,31 @@ function buildEnemyReplicationPayload(input) {
 /**
  * @param {Record<string, any>} currentSnapshot
  * @param {Record<string, any> | undefined} previousSnapshot
+ * @param {Map<string, number> | undefined} previousStickyFields
  * @param {boolean} forceFullSnapshot
  * @returns {Record<string, any> | null}
  */
-function buildEnemyDiffPayload(currentSnapshot, previousSnapshot, forceFullSnapshot) {
+function buildEnemyDiffPayload(currentSnapshot, previousSnapshot, previousStickyFields, forceFullSnapshot) {
   if (forceFullSnapshot || !previousSnapshot) {
-    return currentSnapshot;
+    const fullSnapshot = { ...currentSnapshot };
+    if (ENEMY_STICKY_FIELD_EXTRA_SENDS > 0) {
+      const stickyFieldState = new Map();
+      for (const key of ENEMY_STICKY_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(currentSnapshot, key)) {
+          stickyFieldState.set(key, ENEMY_STICKY_FIELD_EXTRA_SENDS);
+        }
+      }
+      if (stickyFieldState.size > 0) {
+        fullSnapshot._stickyFieldState = stickyFieldState;
+      }
+    }
+    return fullSnapshot;
   }
 
   const diff = {};
+  const stickyFieldState = previousStickyFields instanceof Map
+    ? new Map(previousStickyFields)
+    : new Map();
   let changed = false;
 
   for (const [key, value] of Object.entries(currentSnapshot)) {
@@ -449,9 +502,41 @@ function buildEnemyDiffPayload(currentSnapshot, previousSnapshot, forceFullSnaps
 
     diff[key] = value;
     changed = true;
+
+    if (ENEMY_STICKY_FIELDS.has(key) && ENEMY_STICKY_FIELD_EXTRA_SENDS > 0) {
+      stickyFieldState.set(key, ENEMY_STICKY_FIELD_EXTRA_SENDS);
+    }
   }
 
-  return changed ? diff : null;
+  for (const [key, remainingSends] of stickyFieldState.entries()) {
+    if (!Object.prototype.hasOwnProperty.call(currentSnapshot, key)) {
+      stickyFieldState.delete(key);
+      continue;
+    }
+
+    if (!Number.isFinite(remainingSends) || remainingSends <= 0) {
+      stickyFieldState.delete(key);
+      continue;
+    }
+
+    diff[key] = currentSnapshot[key];
+    changed = true;
+    stickyFieldState.set(key, remainingSends - 1);
+
+    if (remainingSends - 1 <= 0) {
+      stickyFieldState.delete(key);
+    }
+  }
+
+  if (!changed) {
+    return null;
+  }
+
+  if (stickyFieldState.size > 0) {
+    diff._stickyFieldState = stickyFieldState;
+  }
+
+  return diff;
 }
 
 function getActivePlayers(state) {
