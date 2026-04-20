@@ -35,12 +35,19 @@ function listAvailableCharacterCards(staticDir) {
     cardNames = new Set();
   }
 
+  const normalizeCharacterName = (value) => String(value || '').trim().toLowerCase().replace(/a$/, '');
+
   return characterNames
-    .filter((character) => cardNames.has(`${character.toLowerCase()}a`))
+    .filter((character) => {
+      const normalized = normalizeCharacterName(character);
+      return cardNames.has(`${normalized}a`) || cardNames.has(normalized);
+    })
     .sort()
     .map((character) => ({
       character,
-      cardAsset: `${character}A`,
+      cardAsset: cardNames.has(`${normalizeCharacterName(character)}a`)
+        ? `${normalizeCharacterName(character)}A`
+        : character,
     }));
 }
 

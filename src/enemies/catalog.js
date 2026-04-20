@@ -3,8 +3,8 @@ const path = require('path');
 
 const DEFAULT_FRAME_SIZE = { w: 64, h: 64 };
 const DEFAULT_STATS = {
-  maxHealth: 4,
-  contactDamage: 25,
+  maxHealth: 5,
+  contactDamage: 34,
   respawnDelayMs: 6000,
 };
 const DEFAULT_BEHAVIOR = {
@@ -13,15 +13,15 @@ const DEFAULT_BEHAVIOR = {
   detectionRadius: 320,
   leashRadius: 520,
   wanderRadius: 192,
-  moveSpeed: 115,
+  moveSpeed: 126,
   verticalMoveSpeed: 100,
-  telegraphDurationMs: 420,
-  lungeDurationMs: 520,
-  attackCooldownMs: 1400,
-  attackRange: 210,
-  lungeSpeed: 560,
-  lungeLift: 760,
-  jumpForce: 720,
+  telegraphDurationMs: 340,
+  lungeDurationMs: 560,
+  attackCooldownMs: 1180,
+  attackRange: 228,
+  lungeSpeed: 610,
+  lungeLift: 790,
+  jumpForce: 760,
   stuckJumpDelayMs: 380,
   doubleJumpDelayMs: 780,
   despawnAfterDeathMs: 1400,
@@ -30,7 +30,7 @@ const DEFAULT_BEHAVIOR = {
   hoverBobAmplitude: 16,
   hoverBobSpeed: 2.3,
   projectileSpeed: 800,
-  projectileDamage: 18,
+  projectileDamage: 24,
   projectileScale: 1,
   projectileRadiusScale: 1,
   projectileYOffset: 0,
