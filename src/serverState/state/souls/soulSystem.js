@@ -1,6 +1,10 @@
 const { getNearbyPlatforms } = require('../platformGrid/buildPlatformGrid');
 const { TILE_SIZE, PLAYER_MAX_HEALTH } = require('../constants');
-const { getPlayerRunStats, recordProgressionMetric } = require('../progression/system');
+const {
+  getPlayerRunStats,
+  getSoulTierForCount,
+  recordProgressionMetric,
+} = require('../progression/system');
 const { emitProgressionNotification } = require('../progression/notifications');
 
 const SOUL_GRAVITY = 920;
@@ -17,6 +21,54 @@ const SOUL_ENEMY_DROP_SPREAD_X = 14;
 const SOUL_MAX_BUNDLE_VALUE = 5;
 const SOUL_HEAL_PER_VALUE = 12;
 const SOUL_RADIUS_BASE = 7;
+const SOUL_PUBLIC_WARNING_TIER_INDEX = 2;
+
+function formatPlayerName(player, fallbackId = 'player') {
+  return String(player?.name ?? `P${String(fallbackId).slice(0, 4)}`);
+}
+
+function announceSoulTierRise(io, sid, player, previousSoulCount, nextSoulCount) {
+  const previousTier = getSoulTierForCount(previousSoulCount);
+  const nextTier = getSoulTierForCount(nextSoulCount);
+  if (nextTier.index <= previousTier.index) {
+    return;
+  }
+
+  emitProgressionNotification(io, sid, {
+    type: nextTier.index >= SOUL_PUBLIC_WARNING_TIER_INDEX ? 'danger' : 'summon',
+    title: nextTier.title,
+    caption: 'Soul Dominion',
+    message: `You now carry ${nextSoulCount} souls. Your flame is growing harder to challenge.`,
+    xp: 0,
+  });
+
+  if (nextTier.index >= SOUL_PUBLIC_WARNING_TIER_INDEX) {
+    io.emit('progression_notification', {
+      type: 'danger',
+      title: 'Soul Bounty Rising',
+      caption: nextTier.title,
+      message: `${formatPlayerName(player, sid)} is now carrying ${nextSoulCount} souls.`,
+      xp: 0,
+      timestamp: Date.now(),
+    });
+  }
+}
+
+function announceSoulTierFall(io, player, soulCount) {
+  const tier = getSoulTierForCount(soulCount);
+  if (tier.index < SOUL_PUBLIC_WARNING_TIER_INDEX) {
+    return;
+  }
+
+  io.emit('progression_notification', {
+    type: 'danger',
+    title: 'Soul Hoard Shattered',
+    caption: tier.title,
+    message: `${formatPlayerName(player)} dropped ${soulCount} souls into the world.`,
+    xp: 0,
+    timestamp: Date.now(),
+  });
+}
 
 function ensureSoulState(state) {
   if (!(state.souls instanceof Map)) {
@@ -80,7 +132,8 @@ function spawnSoulsBurst(state, io, input) {
 }
 
 function dropSoulsForPlayerDeath(state, io, player) {
-  const soulCount = Math.max(1, Math.round(player.soul_count || 0));
+  const carriedSoulCount = Math.max(0, Math.round(player.soul_count || 0));
+  const soulCount = Math.max(1, carriedSoulCount);
   spawnSoulsBurst(state, io, {
     x: player.x,
     y: player.y - 10,
@@ -88,6 +141,9 @@ function dropSoulsForPlayerDeath(state, io, player) {
     spreadX: SOUL_PLAYER_DROP_SPREAD_X,
     baseLift: 165,
   });
+  if (carriedSoulCount > 0 && io) {
+    announceSoulTierFall(io, player, carriedSoulCount);
+  }
   player.soul_count = 0;
 }
 
@@ -269,15 +325,22 @@ function updateSouls(input) {
       const soulValue = Math.max(1, Math.round(soul.value || 1));
       const collectRadius = (SOUL_COLLECT_RADIUS + Math.max(0, soulValue - 1) * 8 + Math.max(0, (soul.size || 1) - 1) * 8) * Math.min(1.65, magnetMultiplier);
       if (nearestDistance <= collectRadius) {
-        nearestPlayer.soul_count = Math.max(0, Math.round(nearestPlayer.soul_count || 0)) + soulValue;
+        const previousSoulCount = Math.max(0, Math.round(nearestPlayer.soul_count || 0));
+        const previousMaxHealth = Math.max(1, Number(nearestStats?.maxHealth) || PLAYER_MAX_HEALTH);
+        const wasEffectivelyFullHealth = Number.isFinite(nearestPlayer.health) && nearestPlayer.health >= previousMaxHealth - 0.01;
+        nearestPlayer.soul_count = previousSoulCount + soulValue;
         const unlockedAchievements = recordProgressionMetric(nearestPlayer, 'soulsCollected', soulValue);
         if (Number.isFinite(nearestPlayer.health)) {
-          const maxHealth = Math.max(1, Number(nearestStats?.maxHealth) || Number(input.state.maxHealth) || PLAYER_MAX_HEALTH);
-          nearestPlayer.health = Math.min(maxHealth, nearestPlayer.health + soulValue * SOUL_HEAL_PER_VALUE * healMultiplier);
+          const refreshedStats = getPlayerRunStats(nearestPlayer);
+          const maxHealth = Math.max(1, Number(refreshedStats?.maxHealth) || PLAYER_MAX_HEALTH);
+          nearestPlayer.health = wasEffectivelyFullHealth
+            ? maxHealth
+            : Math.min(maxHealth, nearestPlayer.health + soulValue * SOUL_HEAL_PER_VALUE * healMultiplier);
         }
         for (const achievement of unlockedAchievements) {
           emitProgressionNotification(input.io, nearestSid, achievement);
         }
+        announceSoulTierRise(input.io, nearestSid, nearestPlayer, previousSoulCount, nearestPlayer.soul_count);
         removals.push(soul.id);
         input.io.emit('soul_collected', {
           soul: serializeSoul(soul),

@@ -10,6 +10,51 @@ const CARD_RARITY_META = {
   legendary: { label: 'Legendary', weight: 14, accent: '#ffb347', glow: 'rgba(255, 189, 88, 0.44)' },
 };
 
+const SOUL_TIER_RULES = Object.freeze([
+  {
+    threshold: 0,
+    title: 'Kindled',
+    shortTitle: 'Kindled',
+    accent: '#d2c1a1',
+    aura: 'rgba(212, 193, 161, 0.18)',
+  },
+  {
+    threshold: 30,
+    title: 'Soulbound',
+    shortTitle: 'Soulbound',
+    accent: '#74d7d2',
+    aura: 'rgba(116, 215, 210, 0.24)',
+  },
+  {
+    threshold: 120,
+    title: 'Feared Vessel',
+    shortTitle: 'Feared',
+    accent: '#58a7ff',
+    aura: 'rgba(88, 167, 255, 0.3)',
+  },
+  {
+    threshold: 320,
+    title: 'Soul Tyrant',
+    shortTitle: 'Tyrant',
+    accent: '#d06cff',
+    aura: 'rgba(208, 108, 255, 0.36)',
+  },
+  {
+    threshold: 1000,
+    title: 'Crownbearer',
+    shortTitle: 'Crown',
+    accent: '#ffb347',
+    aura: 'rgba(255, 179, 71, 0.42)',
+  },
+  {
+    threshold: 2500,
+    title: 'Soul Sovereign',
+    shortTitle: 'Sovereign',
+    accent: '#ff6f61',
+    aura: 'rgba(255, 111, 97, 0.5)',
+  },
+]);
+
 const BASE_PLAYER_RUN_STATS = Object.freeze({
   maxHealth: PLAYER_MAX_HEALTH,
   moveSpeed: 235,
@@ -91,7 +136,8 @@ function clamp(value, min, max) {
 }
 
 function getXpRequiredForLevel(level) {
-  return Math.round(14 + Math.pow(Math.max(0, level - 1), 1.1) * 7);
+  const safeLevel = Math.max(1, Math.round(Number(level) || 1));
+  return Math.round(30 + Math.pow(Math.max(0, safeLevel - 1), 1.65) * 18);
 }
 
 function rarityForTier(tierIndex) {
@@ -118,6 +164,78 @@ function flatLabel(value) {
 
 function createFamilyDefinition(config) {
   return { ...config, cards: [] };
+}
+
+function getSoulCount(player) {
+  return Math.max(0, Math.round(Number(player?.soul_count) || 0));
+}
+
+function getSoulTierForCount(soulCount) {
+  const souls = Math.max(0, Math.round(Number(soulCount) || 0));
+  let tier = SOUL_TIER_RULES[0];
+  let tierIndex = 0;
+
+  for (let i = 0; i < SOUL_TIER_RULES.length; i += 1) {
+    if (souls < SOUL_TIER_RULES[i].threshold) {
+      break;
+    }
+    tier = SOUL_TIER_RULES[i];
+    tierIndex = i;
+  }
+
+  return {
+    ...tier,
+    index: tierIndex,
+    souls,
+  };
+}
+
+function getSoulDominionBonuses(soulCount) {
+  const souls = Math.max(0, Math.round(Number(soulCount) || 0));
+
+  return {
+    bonusMaxHealth: Math.min(150, Math.round(souls * 1.5 + Math.max(0, souls - 24) * 0.35)),
+    moveSpeedMultiplier: 1 + Math.min(0.28, souls * 0.0032),
+    jumpVelocityMultiplier: 1 + Math.min(0.13, souls * 0.0016),
+    damageReductionBonus: Math.min(0.2, souls * 0.0025),
+    xpGainMultiplier: 1 + Math.min(0.24, souls * 0.00024),
+    soulMagnetMultiplier: 1 + Math.min(0.65, souls * 0.01),
+    soulHealMultiplier: 1 + Math.min(0.55, souls * 0.0065),
+    regainPerSecondBonus: Math.min(4.4, souls * 0.052),
+    fireballDamageMultiplier: 1 + Math.min(1.18, souls * 0.016),
+    fireballExplosionRadiusMultiplier: 1 + Math.min(0.34, souls * 0.0038),
+    fireballExplosionDamageMultiplier: 1 + Math.min(0.28, souls * 0.0032),
+    fireballCritChanceBonus: Math.min(0.18, souls * 0.0019),
+    fireballCritMultiplierBonus: Math.min(0.45, souls * 0.0042),
+    fireballRangeMultiplier: 1 + Math.min(0.18, souls * 0.0022),
+    fireballSpeedMultiplier: 1 + Math.min(0.18, souls * 0.0021),
+    attackDurationMultiplier: 1 - Math.min(0.28, souls * 0.0034),
+  };
+}
+
+function getSoulDominionPayload(player) {
+  const souls = getSoulCount(player);
+  const tier = getSoulTierForCount(souls);
+  const nextTier = SOUL_TIER_RULES[tier.index + 1] || null;
+  const bonuses = getSoulDominionBonuses(souls);
+  const previousThreshold = tier.threshold;
+  const nextThreshold = nextTier ? nextTier.threshold : null;
+  const progressToNext = nextThreshold
+    ? Math.max(0, Math.min(1, (souls - previousThreshold) / Math.max(1, nextThreshold - previousThreshold)))
+    : 1;
+
+  return {
+    souls,
+    tierIndex: tier.index,
+    title: tier.title,
+    shortTitle: tier.shortTitle,
+    accent: tier.accent,
+    aura: tier.aura,
+    currentThreshold: previousThreshold,
+    nextThreshold,
+    progressToNext,
+    powerScore: Math.round((bonuses.fireballDamageMultiplier - 1) * 100),
+  };
 }
 
 function buildUpgradeCatalog() {
@@ -437,7 +555,30 @@ function ensurePlayerProgression(player) {
 }
 
 function getPlayerRunStats(player) {
-  return ensurePlayerProgression(player).runStats;
+  const progression = ensurePlayerProgression(player);
+  const baseStats = progression.runStats || cloneBaseStats();
+  const souls = getSoulCount(player);
+  const bonuses = getSoulDominionBonuses(souls);
+
+  return {
+    ...baseStats,
+    maxHealth: Math.max(1, Math.round(baseStats.maxHealth + bonuses.bonusMaxHealth)),
+    moveSpeed: baseStats.moveSpeed * bonuses.moveSpeedMultiplier,
+    jumpVelocity: baseStats.jumpVelocity * bonuses.jumpVelocityMultiplier,
+    damageReduction: clamp(baseStats.damageReduction + bonuses.damageReductionBonus, 0, 0.82),
+    xpGainMultiplier: baseStats.xpGainMultiplier * bonuses.xpGainMultiplier,
+    soulMagnetMultiplier: baseStats.soulMagnetMultiplier * bonuses.soulMagnetMultiplier,
+    soulHealMultiplier: baseStats.soulHealMultiplier * bonuses.soulHealMultiplier,
+    regainPerSecond: Math.max(0, baseStats.regainPerSecond + bonuses.regainPerSecondBonus),
+    fireballDamage: baseStats.fireballDamage * bonuses.fireballDamageMultiplier,
+    fireballExplosionRadius: baseStats.fireballExplosionRadius * bonuses.fireballExplosionRadiusMultiplier,
+    fireballExplosionDamageMultiplier: baseStats.fireballExplosionDamageMultiplier * bonuses.fireballExplosionDamageMultiplier,
+    fireballCritChance: clamp(baseStats.fireballCritChance + bonuses.fireballCritChanceBonus, 0, 0.92),
+    fireballCritMultiplier: baseStats.fireballCritMultiplier + bonuses.fireballCritMultiplierBonus,
+    fireballRange: baseStats.fireballRange * bonuses.fireballRangeMultiplier,
+    fireballSpeedMultiplier: baseStats.fireballSpeedMultiplier * bonuses.fireballSpeedMultiplier,
+    attackDuration: Math.max(0.22, baseStats.attackDuration * bonuses.attackDurationMultiplier),
+  };
 }
 
 function getCurrentCardForFamily(progression, family) {
@@ -635,7 +776,7 @@ function collectAchievementReward(player, achievementId) {
 
 function consumeAggroUnlockNotification(player) {
   const progression = ensurePlayerProgression(player);
-  if (progression.level <= 5 || progression.meta.flags.enemyAggroUnlocked) {
+  if (progression.level < 5 || progression.meta.flags.enemyAggroUnlocked) {
     return null;
   }
 
@@ -712,6 +853,7 @@ function applyUpgradeSelection(player, cardId) {
 
 function getPlayerProgressionPayload(player) {
   const progression = ensurePlayerProgression(player);
+  const derivedRunStats = getPlayerRunStats(player);
   const achievements = progression.meta.achievementOrder
     .map((achievementId) => {
       const rule = ACHIEVEMENT_RULES.find((entry) => entry.id === achievementId);
@@ -741,8 +883,9 @@ function getPlayerProgressionPayload(player) {
     achievements: achievements.slice(-20),
     unreadAchievementCount: progression.meta.unreadAchievementIds.length,
     runStats: {
-      ...progression.runStats,
+      ...derivedRunStats,
     },
+    soulDominion: getSoulDominionPayload(player),
   };
 }
 
@@ -763,6 +906,8 @@ module.exports = {
   createPlayerProgression,
   gainPlayerXp,
   getPlayerLevel,
+  getSoulDominionPayload,
+  getSoulTierForCount,
   getPlayerProgressionPayload,
   getPlayerRunStats,
   getXpRequiredForLevel,

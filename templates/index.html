@@ -249,10 +249,25 @@
             font-variant-numeric: tabular-nums;
         }
         .souls-name {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            gap: 1px;
+        }
+        .souls-name-primary {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
             color: #f8efd9;
+        }
+        .souls-name-title {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.68rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(173, 209, 255, 0.82);
         }
         .souls-count {
             font-variant-numeric: tabular-nums;
@@ -283,6 +298,18 @@
             letter-spacing: 0.12em;
             text-transform: uppercase;
             font-size: 0.78rem;
+        }
+        .run-hud-badge-copy {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            gap: 5px;
+        }
+        .run-soul-badge {
+            font-size: 0.62rem;
+            letter-spacing: 0.16em;
+            color: #8ac7ff;
+            opacity: 0.92;
         }
         .run-hud-level {
             color: #f6e2b4;
@@ -321,11 +348,61 @@
                 linear-gradient(90deg, rgba(96, 145, 255, 0.98), rgba(56, 103, 240, 0.98) 56%, rgba(31, 53, 128, 0.98));
             box-shadow: 0 0 18px rgba(91, 149, 255, 0.34);
         }
-        .run-bar-fill::after {
+        .run-bar-fill.soul {
+            background:
+                linear-gradient(90deg, rgba(74, 188, 255, 0.94), rgba(57, 116, 255, 0.98) 30%, rgba(34, 47, 98, 0.98) 62%, rgba(255, 179, 71, 0.98) 100%);
+            box-shadow:
+                0 0 16px rgba(74, 188, 255, 0.4),
+                0 0 28px rgba(57, 116, 255, 0.34),
+                0 0 42px rgba(255, 179, 71, 0.22);
+            animation: soulBarPulse 1.8s ease-in-out infinite;
+        }
+        .run-bar-fill.soul::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(105deg, rgba(255,255,255,0) 12%, rgba(164, 228, 255, 0.3) 42%, rgba(255, 223, 149, 0.4) 52%, rgba(255,255,255,0) 72%),
+                repeating-linear-gradient(135deg, rgba(7, 14, 27, 0.16) 0 7px, rgba(118, 195, 255, 0.08) 7px 14px);
+            mix-blend-mode: screen;
+            animation: soulBarSweep 2.8s linear infinite;
+        }
+        .run-bar-fill.soul::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.02) 45%, rgba(0,0,0,0.16)),
+                radial-gradient(circle at 82% 50%, rgba(255, 205, 112, 0.28), transparent 26%);
+            box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.12);
+        }
+        .run-bar-fill.hp::after,
+        .run-bar-fill.xp::after {
             content: '';
             position: absolute;
             inset: 0;
             background: linear-gradient(180deg, rgba(255,255,255,0.2), rgba(255,255,255,0));
+        }
+        @keyframes soulBarPulse {
+            0%, 100% {
+                filter: brightness(0.96) saturate(1);
+            }
+            50% {
+                filter: brightness(1.16) saturate(1.16);
+            }
+        }
+        @keyframes soulBarSweep {
+            0% {
+                transform: translateX(-18%);
+                opacity: 0.42;
+            }
+            50% {
+                opacity: 0.72;
+            }
+            100% {
+                transform: translateX(18%);
+                opacity: 0.42;
+            }
         }
         .run-bar-label {
             position: absolute;
@@ -348,7 +425,7 @@
         #progression-feed {
             position: fixed;
             left: 14px;
-            top: 200px;
+            top: 246px;
             z-index: 230;
             display: flex;
             flex-direction: column;
@@ -2076,7 +2153,7 @@
 
             #progression-feed {
                 left: 10px;
-                top: 122px;
+                top: 172px;
                 width: min(340px, var(--adaptive-feed-width), calc(100vw - 20px));
             }
 
@@ -3250,7 +3327,13 @@
     <canvas id="glCanvas" style="display: none;"></canvas>
     <div id="dynamic-light-glows"></div>
     <div id="run-hud" aria-live="polite">
-        <div class="run-hud-badge in-game-frame in-game-frame-blue"><span id="run-player-badge" data-custom-alphabet="label">Player</span><strong id="run-level-badge" class="run-hud-level" data-custom-alphabet="dynamic">Lvl. 1</strong></div>
+        <div class="run-hud-badge in-game-frame in-game-frame-blue">
+            <div class="run-hud-badge-copy">
+                <span id="run-player-badge" data-custom-alphabet="label">Player</span>
+                <span id="run-soul-badge" class="run-soul-badge" data-custom-alphabet="dynamic">Kindled - 0 souls</span>
+            </div>
+            <strong id="run-level-badge" class="run-hud-level" data-custom-alphabet="dynamic">Lvl. 1</strong>
+        </div>
         <div class="run-bar-shell in-game-frame in-game-frame-blue">
             <div class="run-bar-track">
                 <div id="run-hp-fill" class="run-bar-fill hp"></div>
@@ -3261,6 +3344,12 @@
             <div class="run-bar-track">
                 <div id="run-xp-fill" class="run-bar-fill xp"></div>
                 <div class="run-bar-label"><span data-custom-alphabet="label">XP</span><strong id="run-xp-value" class="run-bar-value" data-custom-alphabet="dynamic">0 / 30</strong></div>
+            </div>
+        </div>
+        <div class="run-bar-shell in-game-frame in-game-frame-blue">
+            <div class="run-bar-track">
+                <div id="run-soul-fill" class="run-bar-fill soul"></div>
+                <div class="run-bar-label"><span data-custom-alphabet="label">SOULS</span><strong id="run-soul-value" class="run-bar-value" data-custom-alphabet="dynamic">0 / 10</strong></div>
             </div>
         </div>
     </div>
@@ -3278,7 +3367,7 @@
         <div id="achievement-list"></div>
     </aside>
     <div id="souls-leaderboard" class="in-game-frame in-game-frame-blue" aria-live="polite">
-        <div class="souls-leaderboard-header" data-custom-alphabet="title">Soul Leaderboard</div>
+        <div class="souls-leaderboard-header" data-custom-alphabet="title">Soul Crown</div>
         <div id="souls-leaderboard-body" class="souls-leaderboard-body"></div>
     </div>
     <div id="upgrade-draft-overlay" aria-live="polite">
@@ -7507,7 +7596,7 @@
             const playerLightY = playerPos ? (playerPos.y - cameraY) * cameraZoom : canvas.height / 2;
             const dynamicLights = collectDynamicLights(nowMs, renderServerTimeMs, effectVisibleBounds);
             const processedLights = isLowQualityModeEnabled()
-                ? dynamicLights.slice(0, Math.min(dynamicLights.length, 4))
+                ? dynamicLights.slice(0, Math.min(dynamicLights.length, 5))
                 : dynamicLights;
 
             lowQualityLightingCtx.clearRect(0, 0, lowQualityLightingCanvas.width, lowQualityLightingCanvas.height);
@@ -7523,19 +7612,19 @@
                 Math.max(canvas.width, canvas.height) * 0.76
             );
             vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-            vignette.addColorStop(0.34, 'rgba(0, 0, 0, 0.18)');
-            vignette.addColorStop(0.56, 'rgba(0, 0, 0, 0.44)');
-            vignette.addColorStop(0.78, 'rgba(0, 0, 0, 0.76)');
-            vignette.addColorStop(1, 'rgba(0, 0, 0, 0.96)');
+            vignette.addColorStop(0.34, 'rgba(0, 0, 0, 0.12)');
+            vignette.addColorStop(0.56, 'rgba(0, 0, 0, 0.32)');
+            vignette.addColorStop(0.78, 'rgba(0, 0, 0, 0.58)');
+            vignette.addColorStop(1, 'rgba(0, 0, 0, 0.84)');
             lowQualityLightingCtx.fillStyle = vignette;
             lowQualityLightingCtx.fillRect(0, 0, lowQualityLightingCanvas.width, lowQualityLightingCanvas.height);
 
-            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 270, 206, 0.46);
-            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 128, 94, 1);
+            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 340, 252, 0.62);
+            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 168, 122, 1);
 
             processedLights.forEach((light) => {
-                const radius = Math.max(28, light.radius * 0.4);
-                const strength = clamp01(0.08 + light.strength * 0.42);
+                const radius = Math.max(36, light.radius * 0.5);
+                const strength = clamp01(0.12 + light.strength * 0.5);
                 punchLowQualityLightHole(lowQualityLightingCtx, light.x, light.y, radius, strength);
             });
 
@@ -7544,10 +7633,10 @@
             ctx.drawImage(lowQualityLightingCanvas, 0, 0);
 
             ctx.globalCompositeOperation = 'lighter';
-            drawLowQualityEllipseGlow(ctx, playerLightX, playerLightY, 118, 84, [255, 244, 228], [255, 154, 64], 0.62);
+            drawLowQualityEllipseGlow(ctx, playerLightX, playerLightY, 152, 108, [255, 244, 228], [255, 154, 64], 0.82);
             processedLights.forEach((light) => {
-                const glowRadius = Math.max(18, light.radius * 0.2);
-                drawLowQualityGlow(ctx, light.x, light.y, glowRadius, [255, 240, 220], [255, 126, 34], 0.18 + light.strength * 0.12);
+                const glowRadius = Math.max(24, light.radius * 0.24);
+                drawLowQualityGlow(ctx, light.x, light.y, glowRadius, [255, 240, 220], [255, 126, 34], 0.22 + light.strength * 0.15);
             });
             ctx.restore();
 
@@ -9451,10 +9540,13 @@
         const leaderboardBody = document.getElementById('souls-leaderboard-body');
         const runHudElement = document.getElementById('run-hud');
         const runPlayerBadgeElement = document.getElementById('run-player-badge');
+        const runSoulBadgeElement = document.getElementById('run-soul-badge');
         const runHpFillElement = document.getElementById('run-hp-fill');
         const runHpValueElement = document.getElementById('run-hp-value');
         const runXpFillElement = document.getElementById('run-xp-fill');
         const runXpValueElement = document.getElementById('run-xp-value');
+        const runSoulFillElement = document.getElementById('run-soul-fill');
+        const runSoulValueElement = document.getElementById('run-soul-value');
         const runLevelBadgeElement = document.getElementById('run-level-badge');
         const progressionFeedElement = document.getElementById('progression-feed');
         const achievementToggleElement = document.getElementById('achievement-toggle');
@@ -9511,6 +9603,14 @@
         const SOUL_PICKUP_GLOW_DURATION_MS = 140;
         const playerSoulGlowUntilMs = {};
         const MAX_LEADERBOARD_ROWS = 8;
+        const SOUL_TIER_META = [
+            { threshold: 0, title: 'Kindled', shortTitle: 'Kindled', accent: '#d2c1a1', aura: 'rgba(212, 193, 161, 0.22)' },
+            { threshold: 30, title: 'Soulbound', shortTitle: 'Soulbound', accent: '#74d7d2', aura: 'rgba(116, 215, 210, 0.26)' },
+            { threshold: 120, title: 'Feared Vessel', shortTitle: 'Feared', accent: '#58a7ff', aura: 'rgba(88, 167, 255, 0.32)' },
+            { threshold: 320, title: 'Soul Tyrant', shortTitle: 'Tyrant', accent: '#4d79ff', aura: 'rgba(77, 121, 255, 0.38)' },
+            { threshold: 1000, title: 'Crownbearer', shortTitle: 'Crown', accent: '#ffb347', aura: 'rgba(255, 179, 71, 0.44)' },
+            { threshold: 2500, title: 'Soul Sovereign', shortTitle: 'Sovereign', accent: '#ff6f61', aura: 'rgba(255, 111, 97, 0.52)' }
+        ];
         const upgradeArtLabels = {
             fireball: 'FB',
             explosion: 'AOE',
@@ -9539,7 +9639,8 @@
             totalCards: 0,
             achievements: [],
             unreadAchievementCount: 0,
-            runStats: null
+            runStats: null,
+            soulDominion: null
         };
         let achievementPanelOpen = false;
         let upgradeSelectionPending = false;
@@ -9549,7 +9650,7 @@
         let lastRenderedUpgradeDraftLocked = false;
         let upgradeDraftShownAt = 0;
         let upgradeDraftInteractionUnlockAt = 0;
-        const UPGRADE_DRAFT_REVEAL_LOCK_MS = 650;
+        let upgradeDraftPressedCardId = '';
         const progressionToasts = [];
         
         // Fireball system
@@ -9973,6 +10074,46 @@
             currentMouseClientX = e.clientX;
             currentMouseClientY = e.clientY;
         });
+        function getSoulMetaForCount(soulCount) {
+            const souls = Math.max(0, Math.round(Number(soulCount) || 0));
+            let tier = SOUL_TIER_META[0];
+            let tierIndex = 0;
+
+            for (let i = 0; i < SOUL_TIER_META.length; i += 1) {
+                if (souls < SOUL_TIER_META[i].threshold) {
+                    break;
+                }
+                tier = SOUL_TIER_META[i];
+                tierIndex = i;
+            }
+
+            const nextTier = SOUL_TIER_META[tierIndex + 1] || null;
+            const progressToNext = nextTier
+                ? Math.max(0, Math.min(1, (souls - tier.threshold) / Math.max(1, nextTier.threshold - tier.threshold)))
+                : 1;
+
+            return {
+                ...tier,
+                souls,
+                tierIndex,
+                nextThreshold: nextTier ? nextTier.threshold : null,
+                progressToNext
+            };
+        }
+
+        function getSoulMetaForPlayerState(state) {
+            const fallbackMeta = getSoulMetaForCount(state?.soul_count);
+            return {
+                ...fallbackMeta,
+                title: String(state?.soul_title || fallbackMeta.title),
+                shortTitle: String(state?.soul_short_title || fallbackMeta.shortTitle),
+                tierIndex: Number.isFinite(state?.soul_tier_index) ? state.soul_tier_index : fallbackMeta.tierIndex,
+                nextThreshold: Number.isFinite(state?.soul_next_threshold) ? state.soul_next_threshold : fallbackMeta.nextThreshold,
+                progressToNext: Number.isFinite(state?.soul_aura_strength) ? Math.max(0, Math.min(1, state.soul_aura_strength)) : fallbackMeta.progressToNext,
+                accent: typeof state?.soul_accent === 'string' && state.soul_accent ? state.soul_accent : fallbackMeta.accent
+            };
+        }
+
         function updateSoulsLeaderboard(players = {}) {
             if (!leaderboardElement || !leaderboardBody) {
                 return;
@@ -9982,7 +10123,8 @@
                 .map(([sid, state]) => ({
                     sid,
                     name: String(state?.name || `P${sid.slice(0, 4)}`),
-                    soulCount: Math.max(0, Math.round(Number(state?.soul_count) || 0))
+                    soulCount: Math.max(0, Math.round(Number(state?.soul_count) || 0)),
+                    soulMeta: getSoulMetaForPlayerState(state)
                 }))
                 .sort((a, b) => {
                     if (b.soulCount !== a.soulCount) return b.soulCount - a.soulCount;
@@ -9997,12 +10139,10 @@
 
             leaderboardElement.style.display = 'block';
             leaderboardBody.innerHTML = entries.slice(0, MAX_LEADERBOARD_ROWS).map((entry, index) => {
-                const safeName = entry.name
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
+                const safeName = escapeHtml(entry.name);
+                const safeTitle = escapeHtml(entry.soulMeta.shortTitle);
                 const meClass = entry.sid === socket.id ? ' souls-row--me' : '';
-                return `<div class="souls-row${meClass}"><span class="souls-rank">#${index + 1}</span><span class="souls-name">${safeName}</span><span class="souls-count">${entry.soulCount}</span></div>`;
+                return `<div class="souls-row${meClass}"><span class="souls-rank">#${index + 1}</span><span class="souls-name"><span class="souls-name-primary">${safeName}</span><span class="souls-name-title">${safeTitle}</span></span><span class="souls-count">${entry.soulCount}</span></div>`;
             }).join('');
         }
 
@@ -10037,12 +10177,25 @@
             const xpToNext = Math.max(1, Number(localProgressionState?.xpToNext) || 1);
             const level = Math.max(1, Number(localProgressionState?.level) || 1);
             const playerName = String(me.name || 'Player').trim() || 'Player';
+            const soulMeta = localProgressionState?.soulDominion
+                ? {
+                    ...getSoulMetaForCount(localProgressionState.soulDominion.souls),
+                    title: String(localProgressionState.soulDominion.title || 'Kindled'),
+                    shortTitle: String(localProgressionState.soulDominion.shortTitle || localProgressionState.soulDominion.title || 'Kindled'),
+                    nextThreshold: Number.isFinite(localProgressionState.soulDominion.nextThreshold) ? localProgressionState.soulDominion.nextThreshold : null,
+                    progressToNext: Number.isFinite(localProgressionState.soulDominion.progressToNext) ? Math.max(0, Math.min(1, localProgressionState.soulDominion.progressToNext)) : getSoulMetaForCount(localProgressionState.soulDominion.souls).progressToNext,
+                }
+                : getSoulMetaForPlayerState(me);
+            const soulCount = Math.max(0, Number(localProgressionState?.soulDominion?.souls) || Number(me.soul_count) || 0);
 
             setCustomAlphabetText(runPlayerBadgeElement, playerName);
+            setCustomAlphabetText(runSoulBadgeElement, `${soulMeta.title} - ${Math.round(soulCount)} souls`);
             runHpFillElement.style.width = `${Math.max(0, Math.min(100, (health / maxHealth) * 100))}%`;
             setCustomAlphabetText(runHpValueElement, formatRunBarValue(health, maxHealth));
             runXpFillElement.style.width = `${Math.max(0, Math.min(100, (xp / xpToNext) * 100))}%`;
             setCustomAlphabetText(runXpValueElement, formatRunBarValue(xp, xpToNext));
+            runSoulFillElement.style.width = `${Math.max(0, Math.min(100, soulMeta.progressToNext * 100))}%`;
+            setCustomAlphabetText(runSoulValueElement, soulMeta.nextThreshold ? `${Math.round(soulCount)} / ${soulMeta.nextThreshold}` : `${Math.round(soulCount)} / MAX`);
             setCustomAlphabetText(runLevelBadgeElement, `Lvl. ${level}`);
         }
 
@@ -10140,6 +10293,7 @@
                 upgradeSelectionPending = false;
                 upgradeDraftShownAt = 0;
                 upgradeDraftInteractionUnlockAt = 0;
+                upgradeDraftPressedCardId = '';
                 lastRenderedUpgradeDraftKey = '';
                 lastRenderedUpgradeDraftPending = false;
                 lastRenderedUpgradeDraftLocked = false;
@@ -10149,7 +10303,8 @@
             upgradeDraftOverlay.classList.add('is-visible');
             if (draftKey !== lastRenderedUpgradeDraftKey) {
                 upgradeDraftShownAt = Date.now();
-                upgradeDraftInteractionUnlockAt = upgradeDraftShownAt + UPGRADE_DRAFT_REVEAL_LOCK_MS;
+                upgradeDraftInteractionUnlockAt = 0;
+                upgradeDraftPressedCardId = '';
             }
             setCustomAlphabetText(upgradeDraftSubtitleElement, `Level ${Math.max(1, Number(localProgressionState.level) || 1)} Soul${localProgressionState.pendingLevelUps > 1 ? ` - ${localProgressionState.pendingLevelUps} picks waiting` : ''}`);
             const cardsLocked = Date.now() < upgradeDraftInteractionUnlockAt;
@@ -10310,23 +10465,22 @@
             }
         }
 
-        upgradeDraftCardsElement?.addEventListener('click', (event) => {
+        upgradeDraftCardsElement?.addEventListener('pointerdown', (event) => {
             const cardButton = event.target.closest('.upgrade-card[data-card-id]');
-            if (!cardButton || upgradeSelectionPending) {
+            if (!cardButton || upgradeSelectionPending || Date.now() < upgradeDraftInteractionUnlockAt) {
                 return;
             }
-            if (Date.now() < upgradeDraftInteractionUnlockAt) {
-                return;
-            }
-
             const cardId = cardButton.getAttribute('data-card-id');
             if (!cardId) {
                 return;
             }
-
             upgradeSelectionPending = true;
             renderUpgradeDraft();
             socket.emit('select_upgrade', { cardId });
+        });
+
+        upgradeDraftCardsElement?.addEventListener('pointercancel', () => {
+            upgradeDraftPressedCardId = '';
         });
 
         achievementToggleElement?.addEventListener('click', (event) => {
@@ -12470,7 +12624,11 @@
         }
 
         function drawEntityHealthBar(ctx, entityX, entityY, health, maxHealth, cameraX, cameraY, yOffset = 70) {
-            if (!(maxHealth > 0) || health >= maxHealth) return;
+            if (!(maxHealth > 0)) return;
+
+            const clampedHealth = Math.max(0, Number(health) || 0);
+            const clampedMaxHealth = Math.max(1, Number(maxHealth) || 1);
+            if (clampedHealth >= clampedMaxHealth - 0.01) return;
 
             const barWidth = 50;
             const barHeight = 6;
@@ -12482,7 +12640,7 @@
             ctx.fillRect(barX - cameraX, barY - cameraY, barWidth, barHeight);
 
             // Health (green)
-            const healthPercent = Math.max(0, Math.min(1, health / maxHealth));
+            const healthPercent = Math.max(0, Math.min(1, clampedHealth / clampedMaxHealth));
             ctx.fillStyle = "rgba(0, 255, 0, 0.9)";
             ctx.fillRect(barX - cameraX, barY - cameraY, barWidth * healthPercent, barHeight);
 

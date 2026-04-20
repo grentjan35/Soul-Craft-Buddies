@@ -269,9 +269,10 @@ function broadcastState(input) {
   const playersPayload = {};
   for (const [sid, p] of input.state.players.entries()) {
     if (p.is_dying) continue;
+    const runStats = getPlayerRunStats(p);
     playersPayload[sid] = {
       name: p.name,
-      level: Math.max(1, Math.round(getPlayerProgressionPayload(p).level || 1)),
+      level: Math.max(1, getPlayerLevel(p)),
       x: round1(p.x),
       y: round1(p.y),
       vy: round1(p.vy),
@@ -280,7 +281,7 @@ function broadcastState(input) {
       on_ground: p.on_ground,
       character: p.character,
       health: p.health,
-      max_health: Math.max(1, Math.round(getPlayerRunStats(p).maxHealth || PLAYER_MAX_HEALTH)),
+      max_health: Math.max(1, Math.round(runStats.maxHealth || PLAYER_MAX_HEALTH)),
       is_attacking: p.is_attacking,
       attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
       soul_count: Math.max(0, Math.round(p.soul_count || 0)),
