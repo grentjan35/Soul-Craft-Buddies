@@ -313,7 +313,7 @@ function broadcastState(input) {
 
   /** @type {Record<string, any>} */
   const explosionsPayload = {};
-  const nowSec = Date.now() / 1000;
+  const nowSec = ts / 1000;
   for (const [id, e] of input.state.explosions.entries()) {
     if (!e.active) continue;
     explosionsPayload[id] = {

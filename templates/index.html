@@ -4504,7 +4504,11 @@
 
         function setCustomAlphabetText(element, text) {
             if (!element) return;
-            element.dataset.customAlphabetText = String(text ?? '');
+            const nextText = String(text ?? '');
+            if (element.dataset.customAlphabetText === nextText) {
+                return;
+            }
+            element.dataset.customAlphabetText = nextText;
             applyCustomAlphabetToElement(element, element.dataset.customAlphabet === 'title'
                 ? { scale: 1.22, letterSpacing: -1, wordSpacing: 4 }
                 : element.dataset.customAlphabet === 'label'
@@ -8471,6 +8475,8 @@
         let PLATFORMS = [];
         let currentMap = null;
         let currentMapDecorFireCount = 0;
+        let currentMapFireDecor = [];
+        let currentMapSortedBackgrounds = [];
         let tilesetImage = null;
         let backgroundImage = null;
         let backgroundImageCache = {};
@@ -8494,16 +8500,32 @@
         function refreshCurrentMapDecorStats() {
             if (!currentMap || !Array.isArray(currentMap.decor)) {
                 currentMapDecorFireCount = 0;
+                currentMapFireDecor = [];
+                currentMapSortedBackgrounds = Array.isArray(currentMap?.backgrounds)
+                    ? currentMap.backgrounds
+                        .filter((placement) => placement)
+                        .slice()
+                        .sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0))
+                    : [];
                 return;
             }
 
             let fireCount = 0;
+            const fireDecor = [];
             for (const decor of currentMap.decor) {
                 if (DECOR_FIRE_TYPES.has(decor?.type)) {
                     fireCount += 1;
+                    fireDecor.push(decor);
                 }
             }
             currentMapDecorFireCount = fireCount;
+            currentMapFireDecor = fireDecor;
+            currentMapSortedBackgrounds = Array.isArray(currentMap.backgrounds)
+                ? currentMap.backgrounds
+                    .filter((placement) => placement)
+                    .slice()
+                    .sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0))
+                : [];
         }
         const BACKGROUND_SEAM_BRIDGE_WIDTH = 220;
 
@@ -8804,9 +8826,7 @@
             }
 
             const sortedPlacements = placements
-                .filter((placement) => resolveBitmap(placement))
-                .slice()
-                .sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0));
+                .filter((placement) => resolveBitmap(placement));
 
             for (let i = 0; i < sortedPlacements.length - 1; i++) {
                 const leftPlacement = sortedPlacements[i];
@@ -8926,7 +8946,7 @@
                 return;
             }
 
-            const backgrounds = Array.isArray(currentMap.backgrounds) ? currentMap.backgrounds : [];
+            const backgrounds = currentMapSortedBackgrounds;
             const visibleBounds = getVisibleWorldBounds(160);
             backgrounds.forEach((placement) => {
                 const foregroundBitmap = placement?.foregroundBitmap;
@@ -9097,6 +9117,7 @@
         let mapChunkQueuedKeys = new Set();
         let mapChunkBuildFrameId = 0;
         let mapChunkGeneration = 0;
+        let mapChunkBuildQueueSorted = true;
 
         function getMapChunkKey(chunkX, chunkY) {
             return `${chunkX},${chunkY}`;
@@ -9110,6 +9131,7 @@
             foregroundEffectLayerCache = new WeakMap();
             seamBridgeCache.clear();
             mapChunkGeneration += 1;
+            mapChunkBuildQueueSorted = true;
             if (mapChunkBuildFrameId) {
                 cancelAnimationFrame(mapChunkBuildFrameId);
                 mapChunkBuildFrameId = 0;
@@ -9117,15 +9139,20 @@
         }
 
         function trimChunkCache() {
-            if (tileCache.size <= MAX_CACHED_MAP_CHUNKS) {
-                return;
-            }
-
-            const entries = Array.from(tileCache.entries())
-                .sort((a, b) => (a[1].lastUsedAt || 0) - (b[1].lastUsedAt || 0));
-            const overflow = tileCache.size - MAX_CACHED_MAP_CHUNKS;
-            for (let i = 0; i < overflow; i++) {
-                tileCache.delete(entries[i][0]);
+            while (tileCache.size > MAX_CACHED_MAP_CHUNKS) {
+                let oldestKey = '';
+                let oldestLastUsedAt = Infinity;
+                for (const [key, cachedChunk] of tileCache.entries()) {
+                    const lastUsedAt = Number(cachedChunk?.lastUsedAt) || 0;
+                    if (lastUsedAt < oldestLastUsedAt) {
+                        oldestLastUsedAt = lastUsedAt;
+                        oldestKey = key;
+                    }
+                }
+                if (!oldestKey) {
+                    break;
+                }
+                tileCache.delete(oldestKey);
             }
         }
 
@@ -9175,7 +9202,7 @@
                 }
             }
 
-            const backgrounds = Array.isArray(currentMap.backgrounds) ? currentMap.backgrounds : [];
+            const backgrounds = currentMapSortedBackgrounds;
             backgrounds.forEach((placement) => {
                 const bitmap = backgroundImageCache[placement.asset];
                 if (!bitmap) {
@@ -9256,12 +9283,18 @@
             if (!currentMap || !tilesetImage) {
                 mapChunkBuildQueue = [];
                 mapChunkQueuedKeys.clear();
+                mapChunkBuildQueueSorted = true;
                 return;
+            }
+
+            if (!mapChunkBuildQueueSorted) {
+                mapChunkBuildQueue.sort((a, b) => b.priority - a.priority);
+                mapChunkBuildQueueSorted = true;
             }
 
             const startedAt = performance.now();
             while (mapChunkBuildQueue.length > 0 && performance.now() - startedAt < MAP_CHUNK_BUILD_BUDGET_MS) {
-                const nextChunk = mapChunkBuildQueue.shift();
+                const nextChunk = mapChunkBuildQueue.pop();
                 mapChunkQueuedKeys.delete(nextChunk.key);
 
                 if (nextChunk.generation !== mapChunkGeneration || tileCache.has(nextChunk.key)) {
@@ -9309,7 +9342,7 @@
                 priority,
                 generation: mapChunkGeneration
             });
-            mapChunkBuildQueue.sort((a, b) => a.priority - b.priority);
+            mapChunkBuildQueueSorted = false;
             scheduleMapChunkBuild();
         }
 
@@ -9343,7 +9376,7 @@
             }
         }
 
-        function drawChunkedMap(targetCtx, visibleWorldX, visibleWorldY, visibleWorldW, visibleWorldH) {
+        function drawChunkedMap(targetCtx, visibleWorldX, visibleWorldY, visibleWorldW, visibleWorldH, frameNowTs = performance.now()) {
             if (!currentMap || !tilesetImage) {
                 return false;
             }
@@ -9369,7 +9402,7 @@
                     const cachedChunk = tileCache.get(key);
 
                     if (cachedChunk?.canvas) {
-                        cachedChunk.lastUsedAt = performance.now();
+                        cachedChunk.lastUsedAt = frameNowTs;
                         targetCtx.drawImage(
                             cachedChunk.canvas,
                             worldX - visibleWorldX,
@@ -9652,6 +9685,8 @@
         let upgradeDraftInteractionUnlockAt = 0;
         let upgradeDraftPressedCardId = '';
         const progressionToasts = [];
+        let lastRenderedLeaderboardSignature = '';
+        let lastRunHudSignature = '';
         
         // Fireball system
         let fireballs = {};
@@ -10133,17 +10168,30 @@
 
             if (!entries.length) {
                 leaderboardElement.style.display = 'none';
-                leaderboardBody.innerHTML = '';
+                if (lastRenderedLeaderboardSignature !== '__empty__') {
+                    leaderboardBody.innerHTML = '';
+                    lastRenderedLeaderboardSignature = '__empty__';
+                }
                 return;
             }
 
             leaderboardElement.style.display = 'block';
-            leaderboardBody.innerHTML = entries.slice(0, MAX_LEADERBOARD_ROWS).map((entry, index) => {
+            const visibleEntries = entries.slice(0, MAX_LEADERBOARD_ROWS);
+            const nextSignature = visibleEntries
+                .map((entry, index) => `${index}|${entry.sid}|${entry.name}|${entry.soulCount}|${entry.soulMeta.shortTitle}`)
+                .join('||');
+
+            if (nextSignature === lastRenderedLeaderboardSignature) {
+                return;
+            }
+
+            leaderboardBody.innerHTML = visibleEntries.map((entry, index) => {
                 const safeName = escapeHtml(entry.name);
                 const safeTitle = escapeHtml(entry.soulMeta.shortTitle);
                 const meClass = entry.sid === socket.id ? ' souls-row--me' : '';
                 return `<div class="souls-row${meClass}"><span class="souls-rank">#${index + 1}</span><span class="souls-name"><span class="souls-name-primary">${safeName}</span><span class="souls-name-title">${safeTitle}</span></span><span class="souls-count">${entry.soulCount}</span></div>`;
             }).join('');
+            lastRenderedLeaderboardSignature = nextSignature;
         }
 
         function isUpgradeDraftActive() {
@@ -10167,10 +10215,10 @@
             const me = playerState[socket.id] || authoritativePlayerState[socket.id];
             if (!me) {
                 runHudElement.style.display = 'none';
+                lastRunHudSignature = '';
                 return;
             }
 
-            runHudElement.style.display = 'block';
             const maxHealth = Math.max(1, Number(me.max_health) || PLAYER_MAX_HEALTH);
             const health = Math.max(0, Number(me.health) || 0);
             const xp = Math.max(0, Number(localProgressionState?.xp) || 0);
@@ -10187,6 +10235,24 @@
                 }
                 : getSoulMetaForPlayerState(me);
             const soulCount = Math.max(0, Number(localProgressionState?.soulDominion?.souls) || Number(me.soul_count) || 0);
+            const nextHudSignature = [
+                playerName,
+                soulMeta.title,
+                Math.round(soulCount),
+                Math.round(health),
+                Math.round(maxHealth),
+                Math.round(xp),
+                Math.round(xpToNext),
+                level,
+                soulMeta.nextThreshold ?? 'MAX',
+                Math.round(soulMeta.progressToNext * 1000)
+            ].join('|');
+
+            runHudElement.style.display = 'block';
+            if (nextHudSignature === lastRunHudSignature) {
+                return;
+            }
+            lastRunHudSignature = nextHudSignature;
 
             setCustomAlphabetText(runPlayerBadgeElement, playerName);
             setCustomAlphabetText(runSoulBadgeElement, `${soulMeta.title} - ${Math.round(soulCount)} souls`);
@@ -12364,26 +12430,29 @@
             const renderTs = renderNowTs - renderDelayMs;
 
             for (const sid in authoritativePlayerState) {
+                const authoritativeState = authoritativePlayerState[sid];
                 const sampled = sampleSnapshots(playerSnapshots[sid], renderTs);
                 if (!sampled) continue;
 
-                playerState[sid] = {
-                    ...authoritativePlayerState[sid],
-                    x: sampled.x,
-                    y: sampled.y,
-                    vy: typeof sampled.vy === 'number' ? sampled.vy : authoritativePlayerState[sid].vy,
-                    action: sampled.action ?? authoritativePlayerState[sid].action,
-                    direction: sampled.direction ?? authoritativePlayerState[sid].direction,
-                    on_ground: typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativePlayerState[sid].on_ground,
-                    character: sampled.character ?? authoritativePlayerState[sid].character,
-                    name: sampled.name ?? authoritativePlayerState[sid].name,
-                    level: typeof sampled.level === 'number' ? sampled.level : authoritativePlayerState[sid].level,
-                    health: sampled.health ?? authoritativePlayerState[sid].health,
-                    max_health: sampled.max_health ?? authoritativePlayerState[sid].max_health,
-                    is_attacking: typeof sampled.is_attacking === 'boolean' ? sampled.is_attacking : authoritativePlayerState[sid].is_attacking,
-                    attack_start_time_ms: typeof sampled.attack_start_time_ms === 'number' ? sampled.attack_start_time_ms : authoritativePlayerState[sid].attack_start_time_ms,
-                    soul_count: typeof sampled.soul_count === 'number' ? sampled.soul_count : authoritativePlayerState[sid].soul_count
-                };
+                const nextState = playerState[sid] || {};
+                Object.assign(nextState, authoritativeState);
+                nextState.x = sampled.x;
+                nextState.y = sampled.y;
+                nextState.vy = typeof sampled.vy === 'number' ? sampled.vy : authoritativeState.vy;
+                nextState.action = sampled.action ?? authoritativeState.action;
+                nextState.direction = sampled.direction ?? authoritativeState.direction;
+                nextState.on_ground = typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativeState.on_ground;
+                nextState.character = sampled.character ?? authoritativeState.character;
+                nextState.name = sampled.name ?? authoritativeState.name;
+                nextState.level = typeof sampled.level === 'number' ? sampled.level : authoritativeState.level;
+                nextState.health = sampled.health ?? authoritativeState.health;
+                nextState.max_health = sampled.max_health ?? authoritativeState.max_health;
+                nextState.is_attacking = typeof sampled.is_attacking === 'boolean' ? sampled.is_attacking : authoritativeState.is_attacking;
+                nextState.attack_start_time_ms = typeof sampled.attack_start_time_ms === 'number'
+                    ? sampled.attack_start_time_ms
+                    : authoritativeState.attack_start_time_ms;
+                nextState.soul_count = typeof sampled.soul_count === 'number' ? sampled.soul_count : authoritativeState.soul_count;
+                playerState[sid] = nextState;
             }
         }
 
@@ -12399,32 +12468,21 @@
                 });
                 if (!sampled) continue;
 
-                enemyState[enemyId] = {
-                    ...authoritativeState,
-                    x: sampled.x,
-                    y: sampled.y,
-                    vx: typeof sampled.vx === 'number' ? sampled.vx : authoritativeState.vx,
-                    vy: typeof sampled.vy === 'number' ? sampled.vy : authoritativeState.vy,
-                    action: authoritativeState.action,
-                    direction: authoritativeState.direction,
-                    on_ground: authoritativeState.on_ground,
-                    health: authoritativeState.health,
-                    max_health: authoritativeState.max_health,
-                    alive: authoritativeState.alive,
-                    brain_state: authoritativeState.brain_state,
-                    state_started_at_ms: authoritativeState.state_started_at_ms,
-                    death_time_ms: authoritativeState.death_time_ms,
-                    despawn_at_ms: authoritativeState.despawn_at_ms,
-                    respawn_at_ms: authoritativeState.respawn_at_ms,
-                    target_sid: authoritativeState.target_sid ?? null,
-                    stealth_broken: Boolean(authoritativeState.stealth_broken)
-                };
+                const nextState = enemyState[enemyId] || {};
+                Object.assign(nextState, authoritativeState);
+                nextState.x = sampled.x;
+                nextState.y = sampled.y;
+                nextState.vx = typeof sampled.vx === 'number' ? sampled.vx : authoritativeState.vx;
+                nextState.vy = typeof sampled.vy === 'number' ? sampled.vy : authoritativeState.vy;
+                nextState.target_sid = authoritativeState.target_sid ?? null;
+                nextState.stealth_broken = Boolean(authoritativeState.stealth_broken);
+                enemyState[enemyId] = nextState;
             }
         }
 
         function updateInterpolatedFairies(renderNowTs) {
             const renderTs = renderNowTs - renderDelayMs;
-            const nextFairies = [];
+            let fairyCount = 0;
 
             for (const fairyId in authoritativeFairyState) {
                 const sampled = sampleSnapshots(fairySnapshots[fairyId], renderTs, {
@@ -12434,17 +12492,18 @@
                 const fairyMeta = authoritativeFairyState[fairyId];
                 if (!sampled || !fairyMeta) continue;
 
-                nextFairies.push({
-                    id: fairyMeta.id,
-                    x: sampled.x,
-                    y: sampled.y,
-                    vx: typeof sampled.vx === 'number' ? sampled.vx : fairyMeta.vx,
-                    vy: typeof sampled.vy === 'number' ? sampled.vy : fairyMeta.vy,
-                    color: sampled.color ?? fairyMeta.color
-                });
+                const fairy = fairies[fairyCount] || {};
+                fairy.id = fairyMeta.id;
+                fairy.x = sampled.x;
+                fairy.y = sampled.y;
+                fairy.vx = typeof sampled.vx === 'number' ? sampled.vx : fairyMeta.vx;
+                fairy.vy = typeof sampled.vy === 'number' ? sampled.vy : fairyMeta.vy;
+                fairy.color = sampled.color ?? fairyMeta.color;
+                fairies[fairyCount] = fairy;
+                fairyCount += 1;
             }
 
-            fairies = nextFairies;
+            fairies.length = fairyCount;
         }
 
         function sampleFireballAtServerTime(fireball, renderServerTimeMs) {
@@ -12478,8 +12537,7 @@
             };
         }
 
-        function updateInterpolatedFireballs(renderNowTs) {
-            const renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs;
+        function updateInterpolatedFireballs(renderNowTs, renderServerTimeMs) {
             for (const id in authoritativeFireballs) {
                 const fireballMeta = authoritativeFireballs[id];
                 const cappedRenderTimeMs =
@@ -12531,8 +12589,9 @@
                 if (!lastTrailPoint || renderNowTs - lastTrailPoint.time >= currentEffectProfile.fireballTrailSampleIntervalMs) {
                     fireballs[id].trail.push({ x: fireballs[id].x, y: fireballs[id].y, time: renderNowTs });
                 }
-                while (fireballs[id].trail.length > currentEffectProfile.fireballTrailMaxPoints) {
-                    fireballs[id].trail.shift();
+                const overflow = fireballs[id].trail.length - currentEffectProfile.fireballTrailMaxPoints;
+                if (overflow > 0) {
+                    fireballs[id].trail.splice(0, overflow);
                 }
             }
 
@@ -12546,12 +12605,14 @@
             }
         }
 
-        function updateInterpolatedRenderState(renderNowTs) {
+        function updateInterpolatedRenderState(renderNowTs, renderServerTimeMs) {
             updateInterpolatedPlayerStates(renderNowTs);
             updateInterpolatedEnemyStates(renderNowTs);
             updateInterpolatedFairies(renderNowTs);
-            updateInterpolatedFireballs(renderNowTs);
+            updateInterpolatedFireballs(renderNowTs, renderServerTimeMs);
         }
+
+        const activeFireAudioBurnIds = new Set();
 
         function updateSpatialFireballAudio() {
             if (!fireballAudio) {
@@ -12571,31 +12632,26 @@
                 fireballAudio.updateLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport);
             }
 
-            const activeBurnIds = new Set();
+            activeFireAudioBurnIds.clear();
             for (const mark of burnMarks) {
-                activeBurnIds.add(mark.id);
+                activeFireAudioBurnIds.add(mark.id);
                 fireballAudio.startBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport, 0.34);
                 fireballAudio.updateBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport);
             }
 
-            if (currentMap && Array.isArray(currentMap.decor)) {
-                currentMap.decor.forEach((decor, index) => {
-                    if (!isFireDecorType(decor?.type)) {
-                        return;
-                    }
-
-                    const x = Number(decor.x) || 0;
-                    const y = Number(decor.y) || 0;
-                    const decorLoopId = `decor_fire_${decor.id ?? index}`;
-                    const decorStyle = getDecorFireStyle(decor?.type);
-                    activeBurnIds.add(decorLoopId);
-                    fireballAudio.startBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport, decorStyle.loopVolume);
-                    fireballAudio.updateBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport);
-                });
+            for (let index = 0; index < currentMapFireDecor.length; index += 1) {
+                const decor = currentMapFireDecor[index];
+                const x = Number(decor?.x) || 0;
+                const y = Number(decor?.y) || 0;
+                const decorLoopId = `decor_fire_${decor.id ?? index}`;
+                const decorStyle = getDecorFireStyle(decor?.type);
+                activeFireAudioBurnIds.add(decorLoopId);
+                fireballAudio.startBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport, decorStyle.loopVolume);
+                fireballAudio.updateBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport);
             }
 
-            for (const staleId of Array.from(fireballAudio.activeBurnLoopIds?.() ?? [])) {
-                if (!activeBurnIds.has(staleId)) {
+            for (const staleId of fireballAudio.activeBurnLoopIds?.() ?? []) {
+                if (!activeFireAudioBurnIds.has(staleId)) {
                     fireballAudio.stopBurnLoop(staleId);
                 }
             }
@@ -12779,8 +12835,10 @@
                 const ambientState = enemyAmbientAudioState[enemyId] || {
                     nextAt: nowMs + 1800 + Math.random() * 2200
                 };
+                const dxToListener = listenerState ? currentState.x - listenerState.x : 0;
+                const dyToListener = listenerState ? currentState.y - listenerState.y : 0;
                 const distanceToListener = listenerState
-                    ? Math.hypot(currentState.x - listenerState.x, currentState.y - listenerState.y)
+                    ? Math.hypot(dxToListener, dyToListener)
                     : Infinity;
                 const enemyIsThreatening =
                     currentState.alive &&
@@ -12795,9 +12853,7 @@
 
                 if (enemyIsThreatening) {
                     combatMusicActive = true;
-                    const dxToListener = currentState.x - listenerState.x;
-                    const dyToListener = currentState.y - listenerState.y;
-                    const threatDistance = Math.hypot(dxToListener, dyToListener);
+                    const threatDistance = distanceToListener;
                     const threatMaxDistance = audibleViewport
                         ? Math.max(audibleViewport.width * 0.9, audibleViewport.height * 1.05, 860)
                         : 860;
@@ -14007,37 +14063,41 @@
         }
 
         function updateDustParticles(dt) {
-            for (let i = window.dustParticles.length - 1; i >= 0; i--) {
-                const particle = window.dustParticles[i];
-                
-                // Update particle physics
+            const particles = window.dustParticles;
+            let writeIndex = 0;
+            for (let readIndex = 0; readIndex < particles.length; readIndex += 1) {
+                const particle = particles[readIndex];
+
                 particle.x += particle.vx * dt;
                 particle.y += particle.vy * dt;
-                particle.vy += 50 * dt; // Light gravity
+                particle.vy += 50 * dt;
                 particle.age += dt;
-                
-                // Fade out
                 particle.alpha = Math.max(0, 0.7 * (1 - particle.age / particle.lifetime));
-                
-                // Remove dead particles
-                if (particle.age >= particle.lifetime) {
-                    window.dustParticles.splice(i, 1);
+
+                if (particle.age < particle.lifetime) {
+                    particles[writeIndex] = particle;
+                    writeIndex += 1;
                 }
             }
+            particles.length = writeIndex;
         }
 
         function updateSlimeParticles(dt) {
-            for (let i = window.slimeParticles.length - 1; i >= 0; i--) {
-                const particle = window.slimeParticles[i];
+            const particles = window.slimeParticles;
+            let writeIndex = 0;
+            for (let readIndex = 0; readIndex < particles.length; readIndex += 1) {
+                const particle = particles[readIndex];
                 particle.x += particle.vx * dt;
                 particle.y += particle.vy * dt;
                 particle.vy += 90 * dt;
                 particle.age += dt;
                 particle.alpha = Math.max(0, 0.8 * (1 - particle.age / particle.lifetime));
-                if (particle.age >= particle.lifetime) {
-                    window.slimeParticles.splice(i, 1);
+                if (particle.age < particle.lifetime) {
+                    particles[writeIndex] = particle;
+                    writeIndex += 1;
                 }
             }
+            particles.length = writeIndex;
         }
 
         function maybeSpawnAmbientSlimeDrip(enemyStateRef, nowMs) {
@@ -14298,14 +14358,10 @@
         }
 
         function drawSouls(now = Date.now(), visibleBounds = null) {
-            const souls = Object.values(soulState);
-            if (!souls.length) {
-                return;
-            }
-
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
-            for (const soul of souls) {
+            for (const soulId in soulState) {
+                const soul = soulState[soulId];
                 const soulValue = Math.max(1, Number(soul.value) || 1);
                 const drawSize = 7.2 * (typeof soul.size === 'number' ? soul.size : 1) * (1 + Math.max(0, soulValue - 1) * 0.07);
                 if (visibleBounds && !isWorldRectVisible(soul.x - 48, soul.y - 48, 96, 96, 48, visibleBounds)) {
@@ -14315,8 +14371,16 @@
                 soul.render_y = Number.isFinite(soul.render_y) ? lerp(soul.render_y, soul.y, 0.34) : soul.y;
 
                 const age = (now - (soul.spawn_time_ms || now)) / 1000;
-                const pulse = 0.92 + Math.sin(age * 5.8 + stableStringNoise(`soul:${soul.id}`) * 10) * 0.14;
-                const hover = Math.sin(age * 3.3 + stableStringNoise(`hover:${soul.id}`) * 12) * 2.6;
+                const pulseSeed = Number.isFinite(soul.renderPulseSeed)
+                    ? soul.renderPulseSeed
+                    : stableStringNoise(`soul:${soul.id}`) * 10;
+                const hoverSeed = Number.isFinite(soul.renderHoverSeed)
+                    ? soul.renderHoverSeed
+                    : stableStringNoise(`hover:${soul.id}`) * 12;
+                soul.renderPulseSeed = pulseSeed;
+                soul.renderHoverSeed = hoverSeed;
+                const pulse = 0.92 + Math.sin(age * 5.8 + pulseSeed) * 0.14;
+                const hover = Math.sin(age * 3.3 + hoverSeed) * 2.6;
                 const drawX = soul.render_x - cameraX;
                 const drawY = soul.render_y - cameraY + hover;
                 const palette = getSoulPalette(soul.tint);
@@ -14802,11 +14866,7 @@
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
-            currentMap.decor.forEach((decor, index) => {
-                if (!isFireDecorType(decor?.type)) {
-                    return;
-                }
-
+            currentMapFireDecor.forEach((decor, index) => {
                 const x = Number(decor.x) || 0;
                 const y = Number(decor.y) || 0;
                 if (visibleBounds && !isWorldRectVisible(x - 60, y - 86, 120, 120, 48, visibleBounds)) {
@@ -14861,9 +14921,34 @@
             ctx.restore();
         }
 
+        function pushDynamicLight(lights, maxLights, x, y, radius, strength) {
+            if (maxLights <= 0 || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(radius) || !Number.isFinite(strength) || radius <= 0 || strength <= 0) {
+                return;
+            }
+
+            const score = radius * strength;
+            let insertIndex = lights.length;
+            while (insertIndex > 0 && score > lights[insertIndex - 1].score) {
+                insertIndex -= 1;
+            }
+            if (insertIndex >= maxLights) {
+                return;
+            }
+
+            lights.splice(insertIndex, 0, { x, y, radius, strength, score });
+            if (lights.length > maxLights) {
+                lights.length = maxLights;
+            }
+        }
+
         function collectDynamicLights(now = Date.now(), renderServerTimeMs = Date.now() - renderDelayMs - serverClockOffsetMs, visibleBounds = null) {
-            const lights = [];
             const profile = currentEffectProfile;
+            const maxLights = Math.max(0, Number(profile.dynamicLights) || 0);
+            if (maxLights <= 0) {
+                return [];
+            }
+
+            const lights = [];
 
             for (const id in explosions) {
                 const explosion = explosions[id];
@@ -14881,12 +14966,14 @@
 
                 const progress = age / EXPLOSION_DURATION;
                 const pulse = 0.92 + Math.sin(now * 0.028 + stableStringNoise(id) * 12) * 0.08;
-                lights.push({
-                    x: (explosion.x - cameraX) * cameraZoom,
-                    y: (explosion.y - cameraY) * cameraZoom,
-                    radius: (320 + (1 - progress) * 180 + progress * 120) * cameraZoom,
-                    strength: Math.max(0.58, (1 - progress * 0.35) * 1.22 * pulse)
-                });
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (explosion.x - cameraX) * cameraZoom,
+                    (explosion.y - cameraY) * cameraZoom,
+                    (320 + (1 - progress) * 180 + progress * 120) * cameraZoom,
+                    Math.max(0.58, (1 - progress * 0.35) * 1.22 * pulse)
+                );
             }
 
             for (const id in fireballs) {
@@ -14894,12 +14981,7 @@
                 if (visibleBounds && !isWorldRectVisible(fireball.x - 260, fireball.y - 260, 520, 520, 120, visibleBounds)) {
                     continue;
                 }
-                lights.push({
-                    x: (fireball.x - cameraX) * cameraZoom,
-                    y: (fireball.y - cameraY) * cameraZoom,
-                    radius: 250,
-                    strength: 0.88
-                });
+                pushDynamicLight(lights, maxLights, (fireball.x - cameraX) * cameraZoom, (fireball.y - cameraY) * cameraZoom, 250, 0.88);
             }
 
             for (const mark of burnMarks) {
@@ -14912,49 +14994,55 @@
                 }
 
                 const progress = age / mark.duration;
-                lights.push({
-                    x: (mark.x - cameraX) * cameraZoom,
-                    y: (mark.y - cameraY) * cameraZoom,
-                    radius: 190 * (1 - progress * 0.18),
-                    strength: 0.54 * (1 - progress)
-                });
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (mark.x - cameraX) * cameraZoom,
+                    (mark.y - cameraY) * cameraZoom,
+                    190 * (1 - progress * 0.18),
+                    0.54 * (1 - progress)
+                );
             }
 
-            if (currentMap && Array.isArray(currentMap.decor)) {
-                currentMap.decor.forEach((decor, index) => {
-                    if (!isFireDecorType(decor?.type)) {
-                        return;
-                    }
+            for (let index = 0; index < currentMapFireDecor.length; index += 1) {
+                const decor = currentMapFireDecor[index];
+                const x = Number(decor?.x) || 0;
+                const y = Number(decor?.y) || 0;
+                if (visibleBounds && !isWorldRectVisible(x - 90, y - 120, 180, 180, 90, visibleBounds)) {
+                    continue;
+                }
 
-                    const x = Number(decor.x) || 0;
-                    const y = Number(decor.y) || 0;
-                    if (visibleBounds && !isWorldRectVisible(x - 90, y - 120, 180, 180, 90, visibleBounds)) {
-                        return;
-                    }
-
-                    const pulse = 0.92 + Math.sin(now * 0.012 + index * 1.7) * 0.08;
-                    const decorStyle = getDecorFireStyle(decor?.type);
-                    lights.push({
-                        x: (x - cameraX) * cameraZoom,
-                        y: (y - 12 - cameraY) * cameraZoom,
-                        radius: 120 * pulse,
-                        strength: decorStyle.lightStrength * pulse
-                    });
-                });
+                const pulse = 0.92 + Math.sin(now * 0.012 + index * 1.7) * 0.08;
+                const decorStyle = getDecorFireStyle(decor?.type);
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (x - cameraX) * cameraZoom,
+                    (y - 12 - cameraY) * cameraZoom,
+                    120 * pulse,
+                    decorStyle.lightStrength * pulse
+                );
             }
 
-            for (const soul of Object.values(soulState)) {
+            for (const soulId in soulState) {
+                const soul = soulState[soulId];
                 if (visibleBounds && !isWorldRectVisible(soul.x - 140, soul.y - 140, 280, 280, 60, visibleBounds)) {
                     continue;
                 }
                 const age = (now - (soul.spawn_time_ms || now)) / 1000;
-                const pulse = 0.88 + Math.sin(age * 5.4 + stableStringNoise(`light:${soul.id}`) * 11) * 0.12;
-                lights.push({
-                    x: (soul.x - cameraX) * cameraZoom,
-                    y: (soul.y - cameraY) * cameraZoom,
-                    radius: (104 + pulse * 42) * cameraZoom,
-                    strength: 0.62 + pulse * 0.28
-                });
+                const lightSeed = Number.isFinite(soul.renderLightSeed)
+                    ? soul.renderLightSeed
+                    : stableStringNoise(`light:${soul.id}`) * 11;
+                soul.renderLightSeed = lightSeed;
+                const pulse = 0.88 + Math.sin(age * 5.4 + lightSeed) * 0.12;
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (soul.x - cameraX) * cameraZoom,
+                    (soul.y - cameraY) * cameraZoom,
+                    (104 + pulse * 42) * cameraZoom,
+                    0.62 + pulse * 0.28
+                );
             }
 
             for (const effect of soulPickupEffects) {
@@ -14968,16 +15056,17 @@
                 const targetY = (targetState?.y ?? effect.targetY ?? effect.y) - 18;
                 const worldX = effect.x + (targetX - effect.x) * progress;
                 const worldY = effect.y + (targetY - effect.y) * progress;
-                lights.push({
-                    x: (worldX - cameraX) * cameraZoom,
-                    y: (worldY - cameraY) * cameraZoom,
-                    radius: (120 - progress * 48) * cameraZoom,
-                    strength: 0.78 * (1 - progress * 0.4)
-                });
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (worldX - cameraX) * cameraZoom,
+                    (worldY - cameraY) * cameraZoom,
+                    (120 - progress * 48) * cameraZoom,
+                    0.78 * (1 - progress * 0.4)
+                );
             }
 
-            lights.sort((a, b) => (b.strength * b.radius) - (a.strength * a.radius));
-            return lights.slice(0, profile.dynamicLights);
+            return lights;
         }
 
         function drawChargingFireballs(renderServerTimeMs, visibleBounds = null) {
@@ -15486,9 +15575,9 @@
 
             // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
             if (ctx && canvas) {
-                updateInterpolatedRenderState(currentTime);
                 const nowMs = Date.now();
                 const renderServerTimeMs = nowMs - renderDelayMs - serverClockOffsetMs;
+                updateInterpolatedRenderState(currentTime, renderServerTimeMs);
 
                 // Clear main canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -15552,7 +15641,7 @@
                     const visibleW = canvas.width / cameraZoom;
                     const visibleH = canvas.height / cameraZoom;
                     drawForegroundBackdrops(ctx, cameraX, cameraY);
-                    drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH);
+                    drawChunkedMap(ctx, cameraX, cameraY, visibleW, visibleH, currentTime);
                     drawMapDecor(nowMs, visibleBounds);
                     drawBurnMarks(nowMs, visibleBounds);
                     drawChargingFireballs(renderServerTimeMs, visibleBounds);

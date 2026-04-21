@@ -287,7 +287,7 @@ function updateSouls(input) {
 
     let nearestSid = null;
     let nearestPlayer = null;
-    let nearestDistance = Number.POSITIVE_INFINITY;
+    let nearestDistanceSq = Number.POSITIVE_INFINITY;
 
     for (const [sid, player] of input.state.players.entries()) {
       if (!player || player.is_dying) {
@@ -295,15 +295,18 @@ function updateSouls(input) {
       }
       const dx = player.x - soul.x;
       const dy = (player.y - 18) - soul.y;
-      const distance = Math.hypot(dx, dy);
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
+      const distanceSq = dx * dx + dy * dy;
+      if (distanceSq < nearestDistanceSq) {
+        nearestDistanceSq = distanceSq;
         nearestSid = sid;
         nearestPlayer = player;
       }
     }
 
     const nearestStats = nearestPlayer ? getPlayerRunStats(nearestPlayer) : null;
+    const nearestDistance = Number.isFinite(nearestDistanceSq)
+      ? Math.sqrt(nearestDistanceSq)
+      : Number.POSITIVE_INFINITY;
     const magnetMultiplier = nearestStats ? Math.max(0.6, Number(nearestStats.soulMagnetMultiplier) || 1) : 1;
     const healMultiplier = nearestStats ? Math.max(0.5, Number(nearestStats.soulHealMultiplier) || 1) : 1;
     const attractRadius = SOUL_ATTRACT_RADIUS * magnetMultiplier;

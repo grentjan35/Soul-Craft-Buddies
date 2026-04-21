@@ -131,6 +131,15 @@ const ACHIEVEMENT_RULES = Object.freeze([
   },
 ]);
 
+const ACHIEVEMENT_RULES_BY_ID = new Map();
+const ACHIEVEMENT_RULES_BY_METRIC = new Map();
+for (const rule of ACHIEVEMENT_RULES) {
+  ACHIEVEMENT_RULES_BY_ID.set(rule.id, rule);
+  const metricRules = ACHIEVEMENT_RULES_BY_METRIC.get(rule.metric) || [];
+  metricRules.push(rule);
+  ACHIEVEMENT_RULES_BY_METRIC.set(rule.metric, metricRules);
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -458,9 +467,10 @@ function buildUpgradeCatalog() {
 }
 
 const UPGRADE_CATALOG = buildUpgradeCatalog();
+const UPGRADE_CARD_BY_ID = new Map(UPGRADE_CATALOG.allCards.map((card) => [card.id, card]));
 
 function cloneBaseStats() {
-  return JSON.parse(JSON.stringify(BASE_PLAYER_RUN_STATS));
+  return { ...BASE_PLAYER_RUN_STATS };
 }
 
 function createProgressionMeta() {
@@ -491,8 +501,19 @@ function createPlayerProgression() {
     selectedCards: [],
     upgradeLevels: {},
     runStats: cloneBaseStats(),
+    runStatsVersion: 0,
+    cachedDerivedRunStats: null,
     meta: createProgressionMeta(),
   };
+}
+
+function markRunStatsDirty(progression) {
+  if (!progression || typeof progression !== 'object') {
+    return;
+  }
+
+  progression.runStatsVersion = Math.max(0, Math.round(Number(progression.runStatsVersion) || 0)) + 1;
+  progression.cachedDerivedRunStats = null;
 }
 
 function resetPlayerProgression(player) {
@@ -520,12 +541,17 @@ function ensurePlayerProgression(player) {
   }
   if (!player.progression.runStats) {
     player.progression.runStats = cloneBaseStats();
+    player.progression.runStatsVersion = 0;
+    player.progression.cachedDerivedRunStats = null;
   }
   if (!player.progression.upgradeLevels) {
     player.progression.upgradeLevels = {};
   }
   if (!Array.isArray(player.progression.selectedCards)) {
     player.progression.selectedCards = [];
+  }
+  if (!Number.isFinite(player.progression.runStatsVersion)) {
+    player.progression.runStatsVersion = 0;
   }
   if (!Number.isFinite(player.progression.xpToNext)) {
     player.progression.xpToNext = getXpRequiredForLevel(player.progression.level || 1);
@@ -558,9 +584,17 @@ function getPlayerRunStats(player) {
   const progression = ensurePlayerProgression(player);
   const baseStats = progression.runStats || cloneBaseStats();
   const souls = getSoulCount(player);
+  const cached = progression.cachedDerivedRunStats;
+  if (
+    cached &&
+    cached.souls === souls &&
+    cached.runStatsVersion === progression.runStatsVersion
+  ) {
+    return cached.value;
+  }
   const bonuses = getSoulDominionBonuses(souls);
 
-  return {
+  const derivedStats = {
     ...baseStats,
     maxHealth: Math.max(1, Math.round(baseStats.maxHealth + bonuses.bonusMaxHealth)),
     moveSpeed: baseStats.moveSpeed * bonuses.moveSpeedMultiplier,
@@ -579,6 +613,14 @@ function getPlayerRunStats(player) {
     fireballSpeedMultiplier: baseStats.fireballSpeedMultiplier * bonuses.fireballSpeedMultiplier,
     attackDuration: Math.max(0.22, baseStats.attackDuration * bonuses.attackDurationMultiplier),
   };
+
+  progression.cachedDerivedRunStats = {
+    souls,
+    runStatsVersion: progression.runStatsVersion,
+    value: derivedStats,
+  };
+
+  return derivedStats;
 }
 
 function getCurrentCardForFamily(progression, family) {
@@ -700,17 +742,15 @@ function recordProgressionMetric(player, metric, amount = 1) {
   const progression = ensurePlayerProgression(player);
   const metrics = progression.meta.metrics;
   const nextAmount = Math.max(0, Number(amount) || 0);
-  if (!Object.prototype.hasOwnProperty.call(metrics, metric) || nextAmount <= 0) {
+  const metricRules = ACHIEVEMENT_RULES_BY_METRIC.get(metric);
+  if (!Object.prototype.hasOwnProperty.call(metrics, metric) || nextAmount <= 0 || !metricRules) {
     return [];
   }
 
   metrics[metric] = Math.max(0, Math.round(Number(metrics[metric]) || 0)) + nextAmount;
   const unlocked = [];
 
-  for (const rule of ACHIEVEMENT_RULES) {
-    if (rule.metric !== metric) {
-      continue;
-    }
+  for (const rule of metricRules) {
     if (progression.meta.achievements[rule.id]) {
       continue;
     }
@@ -747,7 +787,7 @@ function getAchievementRewardXp(rule) {
 
 function collectAchievementReward(player, achievementId) {
   const progression = ensurePlayerProgression(player);
-  const rule = ACHIEVEMENT_RULES.find((entry) => entry.id === achievementId);
+  const rule = ACHIEVEMENT_RULES_BY_ID.get(achievementId);
   if (!rule) {
     return { ok: false, reason: 'Achievement missing' };
   }
@@ -795,7 +835,7 @@ function getPlayerLevel(player) {
 }
 
 function findCardById(cardId) {
-  return UPGRADE_CATALOG.allCards.find((card) => card.id === cardId) || null;
+  return UPGRADE_CARD_BY_ID.get(cardId) || null;
 }
 
 function clampPlayerHealthToMax(player, healDelta = 0) {
@@ -829,6 +869,7 @@ function applyUpgradeSelection(player, cardId) {
   progression.runStats.fireballGravityScale = Math.max(0.25, progression.runStats.fireballGravityScale);
   progression.runStats.fireballProjectileCount = Math.max(1, Math.round(progression.runStats.fireballProjectileCount));
   progression.runStats.regainPerSecond = Math.max(0, progression.runStats.regainPerSecond);
+  markRunStatsDirty(progression);
   progression.upgradeLevels[card.family] = (progression.upgradeLevels[card.family] || 0) + 1;
   progression.selectedCards.push({
     id: card.id,
@@ -856,7 +897,7 @@ function getPlayerProgressionPayload(player) {
   const derivedRunStats = getPlayerRunStats(player);
   const achievements = progression.meta.achievementOrder
     .map((achievementId) => {
-      const rule = ACHIEVEMENT_RULES.find((entry) => entry.id === achievementId);
+      const rule = ACHIEVEMENT_RULES_BY_ID.get(achievementId);
       if (!rule) {
         return null;
       }

@@ -2018,6 +2018,7 @@ function syncEnemyDirector(state, io) {
   broadcastEnemySummonMilestones(state, io, worldThreatLevel);
 
   const occupiedSpawns = [];
+  const existingCountsByType = new Map();
   for (const enemy of state.enemies.values()) {
     if (!enemy || !enemy.alive) {
       continue;
@@ -2027,6 +2028,7 @@ function syncEnemyDirector(state, io) {
       continue;
     }
     occupiedSpawns.push({ x: enemy.x, y: enemy.y, definition });
+    existingCountsByType.set(enemy.type, (existingCountsByType.get(enemy.type) || 0) + 1);
   }
 
   const anchorPlayer = getDynamicSpawnAnchorPlayer(state);
@@ -2038,7 +2040,7 @@ function syncEnemyDirector(state, io) {
       continue;
     }
 
-    const existingCount = Array.from(state.enemies.values()).filter((enemy) => enemy?.type === enemyType).length;
+    const existingCount = existingCountsByType.get(enemyType) || 0;
     for (let index = existingCount; index < targetCount; index += 1) {
       const position = pickEnemySpawnPosition(state, definition, occupiedSpawns, { anchorPlayer });
       if (!position) {
@@ -2057,6 +2059,7 @@ function syncEnemyDirector(state, io) {
       state.enemies.set(enemy.id, enemy);
       state.enemySpawns.push(spawn);
       occupiedSpawns.push({ x: position.x, y: position.y, definition: enemy.runtime_definition || definition });
+      existingCountsByType.set(enemyType, (existingCountsByType.get(enemyType) || 0) + 1);
     }
   }
 }
