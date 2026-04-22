@@ -3684,9 +3684,11 @@
             sfxVolume: 1,
             musicVolume: 1,
             lowQualityMode: false,
-            showMobileControls: isMobile
+            showMobileControls: isMobile,
+            autoGraphicsPreferenceDetected: false
         };
         let menuSettings = loadMenuSettings();
+        applyInitialDeviceGraphicsPreference();
         const INPUT_SEND_INTERVAL_MS = 33;
         let lastInputSendTime = 0;
         let scheduledInputFlush = null;
@@ -3709,7 +3711,8 @@
                     sfxVolume: clamp01(Number.isFinite(parsed?.sfxVolume) ? parsed.sfxVolume : defaultMenuSettings.sfxVolume),
                     musicVolume: clamp01(Number.isFinite(parsed?.musicVolume) ? parsed.musicVolume : defaultMenuSettings.musicVolume),
                     lowQualityMode: parsed?.lowQualityMode === true,
-                    showMobileControls: isMobile ? (parsed?.showMobileControls !== false) : false
+                    showMobileControls: isMobile ? (parsed?.showMobileControls !== false) : false,
+                    autoGraphicsPreferenceDetected: parsed?.autoGraphicsPreferenceDetected === true
                 };
             } catch (_error) {
                 return { ...defaultMenuSettings };
@@ -3734,6 +3737,73 @@
 
         function isLowQualityModeEnabled() {
             return menuSettings.lowQualityMode === true;
+        }
+
+        function getDetectedGpuRenderer() {
+            try {
+                const probeCanvas = document.createElement('canvas');
+                const probeGl = probeCanvas.getContext('webgl') || probeCanvas.getContext('experimental-webgl');
+                if (!probeGl) {
+                    return '';
+                }
+
+                const debugInfo = probeGl.getExtension('WEBGL_debug_renderer_info');
+                const renderer = debugInfo
+                    ? probeGl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+                    : probeGl.getParameter(probeGl.RENDERER);
+
+                probeGl.getExtension('WEBGL_lose_context')?.loseContext();
+                return typeof renderer === 'string' ? renderer : '';
+            } catch (_error) {
+                return '';
+            }
+        }
+
+        function shouldAutoEnableLowQualityMode() {
+            const deviceMemory = Number(navigator.deviceMemory);
+            const hardwareConcurrency = Number(navigator.hardwareConcurrency);
+            const gpuRenderer = getDetectedGpuRenderer().toLowerCase();
+            let lowEndScore = 0;
+
+            if (isMobile) {
+                lowEndScore += 2;
+            }
+
+            if (Number.isFinite(deviceMemory)) {
+                if (deviceMemory <= 2) {
+                    lowEndScore += 3;
+                } else if (deviceMemory <= 4) {
+                    lowEndScore += 1;
+                }
+            }
+
+            if (Number.isFinite(hardwareConcurrency)) {
+                if (hardwareConcurrency <= 2) {
+                    lowEndScore += 3;
+                } else if (hardwareConcurrency <= 4) {
+                    lowEndScore += 1;
+                }
+            }
+
+            if (/swiftshader|microsoft basic render|software adapter|llvmpipe|softpipe/.test(gpuRenderer)) {
+                lowEndScore += 4;
+            } else if (/intel\(r\) hd graphics|intel\(r\) uhd graphics|intel iris plus|mali-|adreno \(tm\) 5|adreno \(tm\) 6/.test(gpuRenderer)) {
+                lowEndScore += 2;
+            }
+
+            return lowEndScore >= 4;
+        }
+
+        function applyInitialDeviceGraphicsPreference() {
+            if (menuSettings.autoGraphicsPreferenceDetected === true) {
+                return;
+            }
+
+            menuSettings.autoGraphicsPreferenceDetected = true;
+            if (!menuSettings.lowQualityMode && shouldAutoEnableLowQualityMode()) {
+                menuSettings.lowQualityMode = true;
+            }
+            saveMenuSettings();
         }
 
         function getInputSignature(nextInputs) {
