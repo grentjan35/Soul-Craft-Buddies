@@ -35,6 +35,54 @@ function registerSocketHandlers(input) {
   const groupManager = new GroupManager(state);
   const healingSystem = new HealingSystem(state);
 
+  function queueOrStartProjectileAttack(player, payload) {
+    const runStats = getPlayerRunStats(player);
+    const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
+    const queueWindow = Math.min(0.1, attackDuration * 0.35);
+    const nowMs = Date.now();
+    const now = nowMs / 1000;
+    const requestedDx = Number(payload?.dx);
+    const requestedDy = Number(payload?.dy);
+    const requestedDistance = Number(payload?.distance);
+    const maxRange = Math.max(96, Math.min(Number(runStats.fireballRange) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE));
+    const targetDistance = Number.isFinite(requestedDistance)
+      ? Math.max(48, Math.min(requestedDistance, maxRange))
+      : maxRange;
+    const fallbackAngle = typeof payload?.angle === 'number' ? payload.angle : 0;
+    const targetDx = Number.isFinite(requestedDx) ? requestedDx : Math.cos(fallbackAngle) * targetDistance;
+    const targetDy = Number.isFinite(requestedDy) ? requestedDy : Math.sin(fallbackAngle) * targetDistance;
+    const angle = Math.atan2(targetDy, targetDx);
+    const direction = targetDx >= 0 ? 'right' : 'left';
+    const distanceRatio = Math.max(0, Math.min(1, targetDistance / FIREBALL_MAX_DISTANCE));
+    const speedScale = Math.max(0.35, Number(runStats.fireballSpeedMultiplier) || 1);
+    const referenceSpeed = (FIREBALL_POWER_MIN + (FIREBALL_POWER_MAX - FIREBALL_POWER_MIN) * distanceRatio) * speedScale;
+    const effectiveSpeed = referenceSpeed * 2.35;
+    const flightTime = Math.max(0.16, Math.min(targetDistance / Math.max(220, effectiveSpeed), 0.62));
+    const gravityPerSecond = GRAVITY * 60 * Math.max(0.25, Number(runStats.fireballGravityScale) || 1);
+    const vx = targetDx / flightTime;
+    const vy = (targetDy - 0.5 * gravityPerSecond * flightTime * flightTime) / flightTime;
+
+    if (player.is_attacking && now - (player.attack_start_time ?? 0) < attackDuration) {
+      const elapsed = Math.max(0, now - (player.attack_start_time ?? 0));
+      const remaining = Math.max(0, attackDuration - elapsed);
+      if (remaining <= queueWindow) {
+        player.queued_projectile_angle = angle;
+        player.queued_projectile_vx = vx;
+        player.queued_projectile_vy = vy;
+        player.queued_projectile_direction = direction;
+      }
+      return;
+    }
+
+    player.is_attacking = true;
+    player.attack_start_time = now;
+    player.action = 'attack';
+    player.direction = direction;
+    player.pending_projectile_angle = angle;
+    player.pending_projectile_vx = vx;
+    player.pending_projectile_vy = vy;
+  }
+
   handleConnect({ socket, io, state });
 
   socket.on('disconnect', () => {
@@ -154,44 +202,7 @@ function registerSocketHandlers(input) {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
     if (isPlayerDrafting(player)) return;
-
-    const runStats = getPlayerRunStats(player);
-    const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
-
-    const nowMs = Date.now();
-    const now = nowMs / 1000;
-    if (player.is_attacking && now - (player.attack_start_time ?? 0) < attackDuration) {
-      return;
-    }
-
-    player.is_attacking = true;
-    player.attack_start_time = now;
-    player.action = 'attack';
-
-    const requestedDx = Number(data?.dx);
-    const requestedDy = Number(data?.dy);
-    const requestedDistance = Number(data?.distance);
-    const maxRange = Math.max(96, Math.min(Number(runStats.fireballRange) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE));
-    const targetDistance = Number.isFinite(requestedDistance)
-      ? Math.max(48, Math.min(requestedDistance, maxRange))
-      : maxRange;
-    const fallbackAngle = typeof data?.angle === 'number' ? data.angle : 0;
-    const targetDx = Number.isFinite(requestedDx) ? requestedDx : Math.cos(fallbackAngle) * targetDistance;
-    const targetDy = Number.isFinite(requestedDy) ? requestedDy : Math.sin(fallbackAngle) * targetDistance;
-    const angle = Math.atan2(targetDy, targetDx);
-    player.direction = targetDx >= 0 ? 'right' : 'left';
-
-    const distanceRatio = Math.max(0, Math.min(1, targetDistance / FIREBALL_MAX_DISTANCE));
-    const speedScale = Math.max(0.35, Number(runStats.fireballSpeedMultiplier) || 1);
-    const referenceSpeed = (FIREBALL_POWER_MIN + (FIREBALL_POWER_MAX - FIREBALL_POWER_MIN) * distanceRatio) * speedScale;
-    const effectiveSpeed = referenceSpeed * 2.35;
-    const flightTime = Math.max(0.16, Math.min(targetDistance / Math.max(220, effectiveSpeed), 0.62));
-    const gravityPerSecond = GRAVITY * 60 * Math.max(0.25, Number(runStats.fireballGravityScale) || 1);
-    const vx = targetDx / flightTime;
-    const vy = (targetDy - 0.5 * gravityPerSecond * flightTime * flightTime) / flightTime;
-    player.pending_projectile_angle = angle;
-    player.pending_projectile_vx = vx;
-    player.pending_projectile_vy = vy;
+    queueOrStartProjectileAttack(player, data);
   });
 
   socket.on('select_upgrade', (data) => {
@@ -600,6 +611,10 @@ function handleConnect(input) {
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
+    queued_projectile_angle: null,
+    queued_projectile_vx: 0,
+    queued_projectile_vy: 0,
+    queued_projectile_direction: null,
     soul_count: 0,
     progression: createPlayerProgression(),
   });
@@ -703,6 +718,10 @@ function respawnPlayer(input) {
   player.pending_projectile_angle = null;
   player.pending_projectile_vx = 0;
   player.pending_projectile_vy = 0;
+  player.queued_projectile_angle = null;
+  player.queued_projectile_vx = 0;
+  player.queued_projectile_vy = 0;
+  player.queued_projectile_direction = null;
   player.soul_count = 0;
 }
 

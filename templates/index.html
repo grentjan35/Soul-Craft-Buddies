@@ -8,6 +8,7 @@
     <script src="/socket.io/socket.io.min.js"></script>
     <style>
         :root {
+            --mobile-ui-scale: 1;
             --mobile-controls-height: 184px;
             --mobile-edge-gap: 20px;
             --mobile-action-size: 86px;
@@ -210,6 +211,8 @@
             border-radius: 0;
             backdrop-filter: blur(4px);
             overflow: hidden;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: top right;
         }
         .souls-leaderboard-header {
             position: relative;
@@ -287,6 +290,8 @@
             display: none;
             flex-direction: column;
             gap: var(--adaptive-hud-gap);
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: top left;
         }
         .run-hud-badge {
             display: inline-flex;
@@ -433,6 +438,8 @@
             gap: var(--adaptive-feed-gap);
             width: min(420px, var(--adaptive-feed-width), calc(100vw - 28px));
             pointer-events: none;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: top left;
         }
         #achievement-toggle {
             position: fixed;
@@ -454,6 +461,8 @@
             font: 700 0.9rem/1 "Cinzel", "Times New Roman", serif;
             letter-spacing: 0.08em;
             text-transform: uppercase;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: top right;
         }
         #achievement-toggle.in-game {
             display: inline-flex;
@@ -502,13 +511,14 @@
                 inset 0 0 0 4px rgba(243, 213, 157, 0.14),
                 0 18px 46px rgba(0, 0, 0, 0.38);
             opacity: 0;
-            transform: translateX(18px);
+            transform: translateX(18px) scale(var(--mobile-ui-scale));
+            transform-origin: top right;
             pointer-events: none;
             transition: opacity 180ms ease, transform 180ms ease;
         }
         #achievement-panel.is-open {
             opacity: 1;
-            transform: translateX(0);
+            transform: translateX(0) scale(var(--mobile-ui-scale));
             pointer-events: auto;
         }
         .achievement-panel-header {
@@ -722,6 +732,8 @@
             flex-direction: column;
             align-items: center;
             gap: 18px;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: center center;
         }
         .upgrade-draft-header {
             text-align: center;
@@ -2317,6 +2329,8 @@
             touch-action: manipulation;
             flex-direction: column;
             align-items: flex-end;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: bottom right;
         }
 
         #chat-box {
@@ -2693,6 +2707,8 @@
             text-rendering: optimizeSpeed;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: bottom left;
         }
 
         .group-button:hover {
@@ -2717,6 +2733,8 @@
             text-rendering: optimizeSpeed;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: bottom left;
         }
 
         .group-panel[aria-hidden="false"] {
@@ -3105,6 +3123,8 @@
             box-sizing: border-box;
             pointer-events: none;
             touch-action: none;
+            transform: scale(var(--mobile-ui-scale));
+            transform-origin: bottom left;
         }
 
         .mobile-control-cluster {
@@ -3699,6 +3719,26 @@
             return Math.max(0, Math.min(1, value));
         }
 
+        function hexToRgb(color, fallback = [126, 201, 255]) {
+            if (typeof color !== 'string') {
+                return fallback;
+            }
+
+            const match = /^#([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(color.trim());
+            if (!match) {
+                return fallback;
+            }
+
+            const normalized = match[1].length === 3
+                ? match[1].split('').map((part) => part + part).join('')
+                : match[1];
+            return [
+                parseInt(normalized.slice(0, 2), 16),
+                parseInt(normalized.slice(2, 4), 16),
+                parseInt(normalized.slice(4, 6), 16)
+            ];
+        }
+
         function loadMenuSettings() {
             try {
                 const raw = localStorage.getItem(MENU_SETTINGS_STORAGE_KEY);
@@ -3989,6 +4029,30 @@
 
             currentEffectQuality = nextQuality;
             currentEffectProfile = EFFECT_QUALITY_PROFILES[nextQuality];
+        }
+
+        function applyInitialRuntimePerformanceProfile() {
+            const prefersLowQuality = isLowQualityModeEnabled() || shouldAutoEnableLowQualityMode();
+            if (prefersLowQuality) {
+                setEffectQuality('low');
+                isLowEnd = true;
+                fpsCap = 30;
+                frameInterval = 1000 / fpsCap;
+                return;
+            }
+
+            if (isMobile) {
+                setEffectQuality('medium');
+                isLowEnd = false;
+                fpsCap = 60;
+                frameInterval = 1000 / fpsCap;
+                return;
+            }
+
+            setEffectQuality('high');
+            isLowEnd = false;
+            fpsCap = 120;
+            frameInterval = 1000 / fpsCap;
         }
 
         function getCurrentEffectLoadScore() {
@@ -4752,6 +4816,7 @@
         // Mobile Controls Setup
         const VIEW_ZOOM_STORAGE_KEY = 'soulcraft_view_zoom_v1';
         const VIEW_ZOOM_MIN = 0.85;
+        const MOBILE_VIEW_ZOOM_MIN = 0.55;
         const VIEW_ZOOM_MAX = 1.35;
         let mobileControls = null;
         let joystickThumb = null;
@@ -4765,7 +4830,8 @@
         let mobileControlsInitialized = false;
 
         function clampViewZoom(value) {
-            return Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, value));
+            const minZoom = isMobile ? MOBILE_VIEW_ZOOM_MIN : VIEW_ZOOM_MIN;
+            return Math.max(minZoom, Math.min(VIEW_ZOOM_MAX, value));
         }
 
         function loadViewZoomPreference() {
@@ -7918,6 +7984,7 @@
             const mobileActionGap = Math.round(
                 Math.min(isMobile ? 12 : 14, Math.max(8, displayWidth * (isMobile ? 0.018 : 0.01)))
             );
+            const mobileUiScale = isMobile ? sharedViewZoom : 1;
 
             document.documentElement.style.setProperty('--adaptive-chat-width', `${chatWidth}px`);
             document.documentElement.style.setProperty('--adaptive-chat-expanded-height', `${chatExpandedHeight}px`);
@@ -7945,6 +8012,7 @@
             document.documentElement.style.setProperty('--mobile-controls-height', `${mobileControlsHeight}px`);
             document.documentElement.style.setProperty('--mobile-edge-gap', `${mobileEdgeGap}px`);
             document.documentElement.style.setProperty('--mobile-action-gap', `${mobileActionGap}px`);
+            document.documentElement.style.setProperty('--mobile-ui-scale', String(mobileUiScale));
             
             if (glCanvas) {
                 glCanvas.width = renderWidth;
@@ -9613,6 +9681,7 @@
         }
 
         initializeZoomControls();
+        applyInitialRuntimePerformanceProfile();
         initWebGL();
         resizeCanvas();
         applyLowQualityMode();
@@ -9620,6 +9689,14 @@
         window.addEventListener('orientationchange', () => {
             requestAnimationFrame(resizeCanvas);
             setTimeout(resizeCanvas, 250);
+        });
+        window.addEventListener('focus', () => {
+            resetRenderSmoothingState();
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                resetRenderSmoothingState();
+            }
         });
         window.visualViewport?.addEventListener('resize', resizeCanvas);
         canvas.addEventListener('wheel', handleCanvasWheelZoom, { passive: false });
@@ -9707,12 +9784,12 @@
         const playerSoulGlowUntilMs = {};
         const MAX_LEADERBOARD_ROWS = 8;
         const SOUL_TIER_META = [
-            { threshold: 0, title: 'Kindled', shortTitle: 'Kindled', accent: '#d2c1a1', aura: 'rgba(212, 193, 161, 0.22)' },
-            { threshold: 30, title: 'Soulbound', shortTitle: 'Soulbound', accent: '#74d7d2', aura: 'rgba(116, 215, 210, 0.26)' },
-            { threshold: 120, title: 'Feared Vessel', shortTitle: 'Feared', accent: '#58a7ff', aura: 'rgba(88, 167, 255, 0.32)' },
-            { threshold: 320, title: 'Soul Tyrant', shortTitle: 'Tyrant', accent: '#4d79ff', aura: 'rgba(77, 121, 255, 0.38)' },
-            { threshold: 1000, title: 'Crownbearer', shortTitle: 'Crown', accent: '#ffb347', aura: 'rgba(255, 179, 71, 0.44)' },
-            { threshold: 2500, title: 'Soul Sovereign', shortTitle: 'Sovereign', accent: '#ff6f61', aura: 'rgba(255, 111, 97, 0.52)' }
+            { threshold: 0, title: 'Kindled', shortTitle: 'Kindled', accent: '#d9edf8', aura: 'rgba(196, 232, 255, 0)' },
+            { threshold: 60, title: 'Soulbound', shortTitle: 'Soulbound', accent: '#74d7d2', aura: 'rgba(116, 215, 210, 0.18)' },
+            { threshold: 220, title: 'Feared Vessel', shortTitle: 'Feared', accent: '#7ec9ff', aura: 'rgba(126, 201, 255, 0.24)' },
+            { threshold: 700, title: 'Soul Tyrant', shortTitle: 'Tyrant', accent: '#8fd8ff', aura: 'rgba(143, 216, 255, 0.32)' },
+            { threshold: 1600, title: 'Crownbearer', shortTitle: 'Crown', accent: '#a9e7ff', aura: 'rgba(169, 231, 255, 0.42)' },
+            { threshold: 3000, title: 'Soul Sovereign', shortTitle: 'Sovereign', accent: '#d6f7ff', aura: 'rgba(214, 247, 255, 0.58)' }
         ];
         const upgradeArtLabels = {
             fireball: 'FB',
@@ -10216,8 +10293,85 @@
                 tierIndex: Number.isFinite(state?.soul_tier_index) ? state.soul_tier_index : fallbackMeta.tierIndex,
                 nextThreshold: Number.isFinite(state?.soul_next_threshold) ? state.soul_next_threshold : fallbackMeta.nextThreshold,
                 progressToNext: Number.isFinite(state?.soul_aura_strength) ? Math.max(0, Math.min(1, state.soul_aura_strength)) : fallbackMeta.progressToNext,
-                accent: typeof state?.soul_accent === 'string' && state.soul_accent ? state.soul_accent : fallbackMeta.accent
+                accent: typeof state?.soul_accent === 'string' && state.soul_accent ? state.soul_accent : fallbackMeta.accent,
+                aura: typeof state?.soul_aura === 'string' && state.soul_aura ? state.soul_aura : fallbackMeta.aura
             };
+        }
+
+        function drawSoulAuraForPlayer(sid, state, renderDims, nowMs, visibleBounds = null) {
+            if (!state || !renderDims) {
+                return;
+            }
+
+            const soulMeta = getSoulMetaForPlayerState(state);
+            const soulCount = Math.max(0, Number(state.soul_count) || 0);
+            const auraStrength = clamp01(soulMeta.progressToNext ?? (soulCount / 3000));
+            if (auraStrength <= 0.015) {
+                return;
+            }
+
+            const centerX = state.x;
+            const centerY = state.y - renderDims.height * 0.08;
+            const maxRadius = Math.max(renderDims.width, renderDims.height) * (0.8 + auraStrength * 1.7);
+            if (
+                visibleBounds &&
+                !isWorldRectVisible(centerX - maxRadius * 1.4, centerY - maxRadius * 1.5, maxRadius * 2.8, maxRadius * 3, 80, visibleBounds)
+            ) {
+                return;
+            }
+
+            const accentRgb = hexToRgb(soulMeta.accent, [126, 201, 255]);
+            const coolRgb = [214, 247, 255];
+            const deepRgb = [78, 165, 255];
+            const speed = Math.hypot(Number(state.vx) || 0, Number(state.vy) || 0);
+            const motionStrength = clamp01(speed / 250);
+            const noiseBase = stableStringNoise(`aura:${sid}`);
+            const flickerTime = nowMs * 0.00155 + noiseBase * Math.PI * 2;
+            const sway = Math.sin(flickerTime * 1.9) * (3 + auraStrength * 7) + (Number(state.vx) || 0) * 0.012;
+            const lean = clamp01(Math.abs(Number(state.vx) || 0) / 220) * Math.sign(Number(state.vx) || 0);
+            const rise = Math.abs(Math.cos(flickerTime * 1.6)) * (5 + auraStrength * 10) + motionStrength * 5;
+            const baseX = centerX - cameraX + sway * 0.18;
+            const baseY = centerY - cameraY + rise * 0.08;
+            const auraPulse = 0.92 + Math.sin(flickerTime * 2.7) * 0.08;
+            const outerRadius = maxRadius * (1.02 + auraPulse * 0.12);
+            const innerRadiusX = renderDims.width * (0.72 + auraStrength * 0.85);
+            const innerRadiusY = renderDims.height * (0.82 + auraStrength * 1.18);
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+
+            drawLowQualityGlow(ctx, baseX, baseY, outerRadius, coolRgb, accentRgb, 0.18 + auraStrength * 0.34);
+            drawLowQualityEllipseGlow(
+                ctx,
+                baseX + lean * 8,
+                baseY + 4,
+                innerRadiusX,
+                innerRadiusY,
+                coolRgb,
+                deepRgb,
+                0.16 + auraStrength * 0.28
+            );
+
+            const crestCount = 2 + Math.min(3, Math.floor(auraStrength * 4));
+            for (let i = 0; i < crestCount; i += 1) {
+                const t = crestCount === 1 ? 0.5 : i / (crestCount - 1);
+                const side = (t - 0.5) * 2;
+                const flameRadius = Math.max(9, renderDims.height * (0.14 + auraStrength * 0.12) * (0.92 + Math.sin(flickerTime * 2.4 + i * 0.9) * 0.08));
+                const flameX = centerX + side * renderDims.width * (0.26 + auraStrength * 0.34) + sway * (0.22 + Math.abs(side) * 0.35) - lean * 6;
+                const flameY = centerY + renderDims.height * 0.12 - Math.abs(side) * renderDims.height * 0.06 - rise * (0.42 + i * 0.08);
+                drawPixelFlameBody(flameX, flameY, -Math.PI / 2 + side * 0.22 - lean * 0.16, flameRadius, 0.18 + auraStrength * 0.42, flickerTime + i * 0.7, {
+                    cellScale: 0.16,
+                    tailLength: 0.8,
+                    noseLength: 0.24,
+                    width: 0.34,
+                    alpha: 0.7,
+                    emberChance: 0.02 + auraStrength * 0.02,
+                    extraCellSize: 0,
+                    palette: ['#0c1b36', '#17477a', '#2d7fca', '#8ddcff', '#d6f7ff']
+                });
+            }
+
+            ctx.restore();
         }
 
         function updateSoulsLeaderboard(players = {}) {
@@ -12389,6 +12543,15 @@
                 MIN_INTERPOLATION_DELAY_MS,
                 Math.min(MAX_INTERPOLATION_DELAY_MS, lerp(renderDelayMs, targetDelay, 0.2))
             );
+        }
+
+        function resetRenderSmoothingState() {
+            const now = performance.now();
+            packetReceiveTimes.length = 0;
+            renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+            lastFrameTime = now;
+            lastPerformanceCheck = now;
+            frameCount = 0;
         }
 
         function appendSnapshot(store, id, snapshot) {
@@ -15200,6 +15363,28 @@
                 );
             }
 
+            for (const sid in playerState) {
+                const state = playerState[sid];
+                if (!state) {
+                    continue;
+                }
+
+                const soulMeta = getSoulMetaForPlayerState(state);
+                const auraStrength = clamp01(soulMeta.progressToNext ?? 0);
+                if (auraStrength <= 0.015) {
+                    continue;
+                }
+
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (state.x - cameraX) * cameraZoom,
+                    (state.y - 10 - cameraY) * cameraZoom,
+                    (96 + auraStrength * 220) * cameraZoom,
+                    (sid === socket.id ? 0.14 : 0.11) + auraStrength * (sid === socket.id ? 0.34 : 0.26)
+                );
+            }
+
             return lights;
         }
 
@@ -16030,6 +16215,7 @@
                             playerRenderDimensions[sid] = renderDims;
                             const flashAlpha = getHitFlashAlpha(playerHitFlashUntilMs[sid], now);
                             const soulGlowRemaining = Math.max(0, (playerSoulGlowUntilMs[sid] || 0) - nowMs);
+                            drawSoulAuraForPlayer(sid, state, renderDims, nowMs, visibleBounds);
                             if (soulGlowRemaining > 0) {
                                 const soulGlowAlpha = clamp01(soulGlowRemaining / SOUL_PICKUP_GLOW_DURATION_MS);
                                 const glowX = pos.x - cameraX;

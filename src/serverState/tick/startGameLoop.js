@@ -35,6 +35,7 @@ const {
   consumeAggroUnlockNotification,
   gainPlayerXp,
   getPlayerLevel,
+  getSoulDominionPayload,
   getPlayerProgressionPayload,
   getPlayerRunStats,
   isPlayerDrafting,
@@ -153,6 +154,10 @@ function updateDeathsAndRespawns(input) {
     p.pending_projectile_angle = null;
     p.pending_projectile_vx = 0;
     p.pending_projectile_vy = 0;
+    p.queued_projectile_angle = null;
+    p.queued_projectile_vx = 0;
+    p.queued_projectile_vy = 0;
+    p.queued_projectile_direction = null;
     p.soul_count = 0;
 
     input.io.emit('player_respawned', { sid });
@@ -270,6 +275,7 @@ function broadcastState(input) {
   for (const [sid, p] of input.state.players.entries()) {
     if (p.is_dying) continue;
     const runStats = getPlayerRunStats(p);
+    const soulDominion = getSoulDominionPayload(p);
     playersPayload[sid] = {
       name: p.name,
       level: Math.max(1, getPlayerLevel(p)),
@@ -285,6 +291,13 @@ function broadcastState(input) {
       is_attacking: p.is_attacking,
       attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
       soul_count: Math.max(0, Math.round(p.soul_count || 0)),
+      soul_title: soulDominion.title,
+      soul_short_title: soulDominion.shortTitle,
+      soul_tier_index: soulDominion.tierIndex,
+      soul_next_threshold: soulDominion.nextThreshold,
+      soul_aura_strength: soulDominion.auraStrength,
+      soul_accent: soulDominion.accent,
+      soul_aura: soulDominion.aura,
     };
   }
 
@@ -636,7 +649,6 @@ function updateGameState(input) {
       const attackStart = p.attack_start_time ?? 0;
       const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
       if (nowSec - attackStart >= attackDuration) {
-        p.is_attacking = false;
         if (typeof p.pending_projectile_angle === 'number') {
           spawnPlayerFireball({
             state: input.state,
@@ -650,6 +662,24 @@ function updateGameState(input) {
           p.pending_projectile_angle = null;
           p.pending_projectile_vx = 0;
           p.pending_projectile_vy = 0;
+        }
+
+        if (typeof p.queued_projectile_angle === 'number') {
+          p.is_attacking = true;
+          p.attack_start_time = nowSec;
+          p.action = 'attack';
+          if (p.queued_projectile_direction === 'left' || p.queued_projectile_direction === 'right') {
+            p.direction = p.queued_projectile_direction;
+          }
+          p.pending_projectile_angle = p.queued_projectile_angle;
+          p.pending_projectile_vx = Number.isFinite(p.queued_projectile_vx) ? p.queued_projectile_vx : 0;
+          p.pending_projectile_vy = Number.isFinite(p.queued_projectile_vy) ? p.queued_projectile_vy : 0;
+          p.queued_projectile_angle = null;
+          p.queued_projectile_vx = 0;
+          p.queued_projectile_vy = 0;
+          p.queued_projectile_direction = null;
+        } else {
+          p.is_attacking = false;
         }
       } else {
         p.action = 'attack';
@@ -1183,11 +1213,6 @@ function applyExplosionDamage(input) {
     player.vy = Math.min(player.vy, -(verticalLaunch + upwardBias * horizontalKnockback * 0.22) + Math.min(0, impulseY) * 80);
     player.on_ground = false;
     player.jumps_remaining = 0;
-    player.is_attacking = false;
-    player.attack_start_time = 0;
-    player.pending_projectile_angle = null;
-    player.pending_projectile_vx = 0;
-    player.pending_projectile_vy = 0;
     const reduction = Math.max(0, Math.min(0.72, Number(getPlayerRunStats(player).damageReduction) || 0));
     const reducedDamage = Math.max(1, Math.round(damage * (1 - reduction)));
     player.health -= reducedDamage;
