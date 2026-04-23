@@ -8,6 +8,7 @@ const {
 } = require('../state/constants');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
 const { dropSoulsForEnemyDeath, dropSoulsForPlayerDeath } = require('../state/souls/soulSystem');
+const { emitToNearbyPlayers } = require('../replication/nearby');
 const {
   consumeAggroUnlockNotification,
   gainPlayerXp,
@@ -21,7 +22,7 @@ function secondsFromMs(ms) {
   return ms / 1000;
 }
 
-const MIN_ENEMY_RESPAWN_DELAY_SECONDS = 60;
+const MIN_ENEMY_RESPAWN_DELAY_SECONDS = 18;
 const ENEMY_DEATH_HOLD_SECONDS = 10;
 const ENEMY_PLATFORM_INSET = 10;
 const ENEMY_SPAWN_EDGE_PADDING_X = 32;
@@ -45,37 +46,41 @@ const ENEMY_LEVEL_SOFT_CAP = 10;
 const ENEMY_LEVEL_HARD_CAP = 1000;
 const SAFE_PLAYER_LEVEL_CAP = 4;
 const ENEMY_SPAWN_GRACE_MS = 700;
+const ENEMY_PRESSURE_ALERT_RADIUS_X = 1800;
+const ENEMY_PRESSURE_ALERT_RADIUS_Y = 1200;
+const ENEMY_EFFECT_RADIUS_X = 1750;
+const ENEMY_EFFECT_RADIUS_Y = 1200;
 
-const ENEMY_SUMMON_MILESTONES = Object.freeze([
-  {
-    unlockLevel: 3,
-    type: 'summon',
-    title: 'Bat Swarm Alerted',
-    caption: 'Danger Rising',
-    message: 'The sky stirs. A bat swarm has been summoned nearby.',
-  },
-  {
-    unlockLevel: 6,
+const ENEMY_PRESSURE_ALERTS = Object.freeze({
+  bat: {
     type: 'danger',
-    title: 'Spider Brood Stirring',
-    caption: 'Danger Rising',
-    message: 'A fast spider brood is crawling into the world.',
+    title: 'Bats Are Swarming',
+    caption: 'Threat Nearby',
+    message: 'You stirred the bats. A swarm is gathering nearby.',
+    cooldownMs: 45000,
   },
-  {
-    unlockLevel: 9,
+  spider: {
     type: 'danger',
-    title: 'Gargoyle Hunters Awaken',
-    caption: 'Danger Rising',
-    message: 'Stone wings crack open. Gargoyles are now joining the hunt.',
+    title: 'Spiders Turn Hostile',
+    caption: 'Threat Nearby',
+    message: 'You made the spiders angry. A brood is rushing in nearby.',
+    cooldownMs: 45000,
   },
-  {
-    unlockLevel: 12,
+  gargoyle: {
     type: 'danger',
-    title: 'Striker Descends',
-    caption: 'Danger Rising',
-    message: 'A striker has entered the world. Stay moving.',
+    title: 'Gargoyles Are Hunting',
+    caption: 'Threat Nearby',
+    message: 'Stone hunters are circling above. Gargoyles are closing in.',
+    cooldownMs: 55000,
   },
-]);
+  striker: {
+    type: 'danger',
+    title: 'A Striker Is Diving In',
+    caption: 'Threat Nearby',
+    message: 'A striker has locked onto the fight nearby. Keep moving.',
+    cooldownMs: 60000,
+  },
+});
 
 function isFlyingEnemy(definition) {
   return definition?.behavior?.movementMode === 'flying';
@@ -504,51 +509,47 @@ function ensureEnemyDirector(state) {
     state.enemyDirector = {
       lastSyncAtMs: 0,
       lastThreatLevel: 1,
-      announcedMilestones: {},
-      summonedEnemyTypes: {},
+      lastPressureAlertAtByType: {},
     };
   }
-  if (!state.enemyDirector.announcedMilestones || typeof state.enemyDirector.announcedMilestones !== 'object') {
-    state.enemyDirector.announcedMilestones = {};
-  }
-  if (!state.enemyDirector.summonedEnemyTypes || typeof state.enemyDirector.summonedEnemyTypes !== 'object') {
-    state.enemyDirector.summonedEnemyTypes = {};
+  if (!state.enemyDirector.lastPressureAlertAtByType || typeof state.enemyDirector.lastPressureAlertAtByType !== 'object') {
+    state.enemyDirector.lastPressureAlertAtByType = {};
   }
   return state.enemyDirector;
 }
 
-function isEnemyTypeSummoned(state, enemyType) {
-  if (enemyType !== 'striker') {
-    return true;
-  }
-  const director = ensureEnemyDirector(state);
-  return Boolean(director.summonedEnemyTypes?.[enemyType]);
-}
-
-function broadcastEnemySummonMilestones(state, io, worldThreatLevel) {
-  const director = ensureEnemyDirector(state);
-  if (!io) {
+function maybeBroadcastEnemyPressureAlert(state, io, enemyType, spawnInfo) {
+  const alert = ENEMY_PRESSURE_ALERTS[enemyType];
+  if (!alert || !io || !spawnInfo) {
     return;
   }
 
-  for (const milestone of ENEMY_SUMMON_MILESTONES) {
-    if (worldThreatLevel < milestone.unlockLevel || director.announcedMilestones[milestone.unlockLevel]) {
-      continue;
-    }
-
-    director.announcedMilestones[milestone.unlockLevel] = true;
-    if (milestone.unlockLevel === getEnemyTypeUnlockLevel('striker')) {
-      director.summonedEnemyTypes.striker = true;
-    }
-    io.emit('progression_notification', {
-      type: milestone.type,
-      title: milestone.title,
-      caption: milestone.caption,
-      message: milestone.message,
-      xp: 0,
-      timestamp: Date.now(),
-    });
+  const director = ensureEnemyDirector(state);
+  const nowMs = Date.now();
+  const lastAlertAtMs = Number(director.lastPressureAlertAtByType?.[enemyType]) || 0;
+  if (nowMs - lastAlertAtMs < alert.cooldownMs) {
+    return;
   }
+
+  director.lastPressureAlertAtByType[enemyType] = nowMs;
+  emitToNearbyPlayers({
+    io,
+    state,
+    x: spawnInfo.x,
+    y: spawnInfo.y,
+    radiusX: ENEMY_PRESSURE_ALERT_RADIUS_X,
+    radiusY: ENEMY_PRESSURE_ALERT_RADIUS_Y,
+    event: 'progression_notification',
+    payload: {
+      type: alert.type,
+      title: alert.title,
+      caption: alert.caption,
+      message: alert.message,
+      xp: 0,
+      timestamp: nowMs,
+    },
+    includeSids: typeof spawnInfo.anchorSid === 'string' ? [spawnInfo.anchorSid] : [],
+  });
 }
 
 function getPlayerHitbox(player) {
@@ -1634,30 +1635,49 @@ function triggerStrikerEnvironmentAttack(state, enemy, targetPlayer, nowSec) {
   return true;
 }
 
-function emitSlimeSplatter(io, x, y, targetSid = null, radius = SLIME_SPLAT_RADIUS) {
-  if (!io || !Number.isFinite(x) || !Number.isFinite(y)) {
+function emitSlimeSplatter(state, io, x, y, targetSid = null, radius = SLIME_SPLAT_RADIUS) {
+  if (!state || !io || !Number.isFinite(x) || !Number.isFinite(y)) {
     return;
   }
 
-  io.emit('slime_splatter', {
+  emitToNearbyPlayers({
+    io,
+    state,
     x,
     y,
-    radius,
-    target_sid: typeof targetSid === 'string' ? targetSid : null,
+    radiusX: ENEMY_EFFECT_RADIUS_X,
+    radiusY: ENEMY_EFFECT_RADIUS_Y,
+    event: 'slime_splatter',
+    payload: {
+      x,
+      y,
+      radius,
+      target_sid: typeof targetSid === 'string' ? targetSid : null,
+    },
+    includeSids: typeof targetSid === 'string' ? [targetSid] : [],
   });
 }
 
-function emitStrikerGroundImpact(io, enemy, impactSpeed = 0) {
-  if (!io || !enemy) {
+function emitStrikerGroundImpact(state, io, enemy, impactSpeed = 0) {
+  if (!state || !io || !enemy) {
     return;
   }
 
-  io.emit('striker_ground_impact', {
-    enemy_id: enemy.id,
+  emitToNearbyPlayers({
+    io,
+    state,
     x: enemy.x,
     y: enemy.y,
-    impact_speed: Math.round(Math.abs(Number(impactSpeed) || 0)),
-    at_ms: Date.now(),
+    radiusX: ENEMY_EFFECT_RADIUS_X,
+    radiusY: ENEMY_EFFECT_RADIUS_Y,
+    event: 'striker_ground_impact',
+    payload: {
+      enemy_id: enemy.id,
+      x: enemy.x,
+      y: enemy.y,
+      impact_speed: Math.round(Math.abs(Number(impactSpeed) || 0)),
+      at_ms: Date.now(),
+    },
   });
 }
 
@@ -1822,9 +1842,6 @@ function getEnemyTargetCount(state, enemyType, worldThreatLevel = 1) {
   if (worldThreatLevel < getEnemyTypeUnlockLevel(enemyType)) {
     return 0;
   }
-  if (!isEnemyTypeSummoned(state, enemyType)) {
-    return 0;
-  }
 
   const tileArea = getMapTileArea(state);
   const platformCount = Array.isArray(state.platforms) ? state.platforms.length : 0;
@@ -1856,10 +1873,11 @@ function getEnemyTargetCount(state, enemyType, worldThreatLevel = 1) {
   return clamp(Math.round(tileArea / 150) + Math.floor(progressionBonus / 4), 1, 12);
 }
 
-function getDynamicSpawnAnchorPlayer(state) {
+function getDynamicSpawnAnchor(state) {
   let anchorPlayer = null;
+  let anchorSid = null;
   let anchorThreat = -1;
-  for (const player of state.players.values()) {
+  for (const [sid, player] of state.players.entries()) {
     if (!player || player.is_dying || !player.is_ready) {
       continue;
     }
@@ -1867,9 +1885,10 @@ function getDynamicSpawnAnchorPlayer(state) {
     if (threat > anchorThreat) {
       anchorThreat = threat;
       anchorPlayer = player;
+      anchorSid = sid;
     }
   }
-  return anchorPlayer;
+  return anchorPlayer ? { sid: anchorSid, player: anchorPlayer } : null;
 }
 
 function sortPlatformsForSpawn(platforms, anchorPlayer) {
@@ -1953,7 +1972,8 @@ function createProceduralEnemySpawns(state) {
   const nextSpawns = [];
   const occupiedSpawns = [];
   const worldThreatLevel = getWorldThreatLevel(state);
-  const anchorPlayer = getDynamicSpawnAnchorPlayer(state);
+  const anchor = getDynamicSpawnAnchor(state);
+  const anchorPlayer = anchor?.player ?? null;
 
   for (const enemyType of enemyTypes) {
     const definition = getEnemyDefinition(state, enemyType);
@@ -2015,23 +2035,27 @@ function syncEnemyDirector(state, io) {
   director.lastSyncAtMs = nowMs;
   const worldThreatLevel = getWorldThreatLevel(state);
   director.lastThreatLevel = worldThreatLevel;
-  broadcastEnemySummonMilestones(state, io, worldThreatLevel);
 
   const occupiedSpawns = [];
   const existingCountsByType = new Map();
   for (const enemy of state.enemies.values()) {
-    if (!enemy || !enemy.alive) {
+    if (!enemy) {
       continue;
     }
-    const definition = enemy.runtime_definition || getEnemyDefinition(state, enemy.type);
-    if (!definition) {
-      continue;
-    }
-    occupiedSpawns.push({ x: enemy.x, y: enemy.y, definition });
     existingCountsByType.set(enemy.type, (existingCountsByType.get(enemy.type) || 0) + 1);
+
+    if (enemy.alive) {
+      const definition = enemy.runtime_definition || getEnemyDefinition(state, enemy.type);
+      if (!definition) {
+        continue;
+      }
+      occupiedSpawns.push({ x: enemy.x, y: enemy.y, definition });
+    }
   }
 
-  const anchorPlayer = getDynamicSpawnAnchorPlayer(state);
+  const anchor = getDynamicSpawnAnchor(state);
+  const anchorPlayer = anchor?.player ?? null;
+  const spawnedByType = new Map();
   for (const enemyType of Object.keys(state.enemyDefinitions ?? {})) {
     const definition = getEnemyDefinition(state, enemyType);
     const targetCount = getEnemyTargetCount(state, enemyType, worldThreatLevel);
@@ -2053,14 +2077,31 @@ function syncEnemyDirector(state, io) {
         level: rollEnemySpawnLevel(worldThreatLevel, enemyType),
         x: position.x,
         y: position.y,
-        spawned_for_sid: anchorPlayer?.id ?? null,
+        spawned_for_sid: anchor?.sid ?? null,
       };
       const enemy = buildEnemyInstance(spawn, definition);
       state.enemies.set(enemy.id, enemy);
       state.enemySpawns.push(spawn);
       occupiedSpawns.push({ x: position.x, y: position.y, definition: enemy.runtime_definition || definition });
       existingCountsByType.set(enemyType, (existingCountsByType.get(enemyType) || 0) + 1);
+
+      if (!spawnedByType.has(enemyType)) {
+        spawnedByType.set(enemyType, {
+          count: 0,
+          x: position.x,
+          y: position.y,
+          anchorSid: anchor?.sid ?? null,
+        });
+      }
+      const spawnInfo = spawnedByType.get(enemyType);
+      spawnInfo.count += 1;
+      spawnInfo.x = position.x;
+      spawnInfo.y = position.y;
     }
+  }
+
+  for (const [enemyType, spawnInfo] of spawnedByType.entries()) {
+    maybeBroadcastEnemyPressureAlert(state, io, enemyType, spawnInfo);
   }
 }
 
@@ -2709,7 +2750,7 @@ function latchSlimeToPlayer(state, enemy, player, sid, nowSec, definition, io) {
   enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
   enemy.x = player.x + enemy.attached_offset_x;
   enemy.y = player.y + enemy.attached_offset_y;
-  emitSlimeSplatter(io, enemy.x, enemy.y, sid, SLIME_SPLAT_RADIUS);
+  emitSlimeSplatter(state, io, enemy.x, enemy.y, sid, SLIME_SPLAT_RADIUS);
 }
 
 function detachSlime(enemy, nowSec) {
@@ -2767,7 +2808,7 @@ function updateAttachedSlime(input) {
       effect: 'slime',
       skipKnockback: true,
     });
-    emitSlimeSplatter(io, enemy.x, enemy.y, targetSid, SLIME_SPLAT_RADIUS);
+    emitSlimeSplatter(state, io, enemy.x, enemy.y, targetSid, SLIME_SPLAT_RADIUS);
     enemy.attack_cooldown_until = nowSec + secondsFromMs(definition.behavior.attackCooldownMs);
   }
 
@@ -2809,7 +2850,7 @@ function maybeStickSlimeToSurface(state, enemy, definition, nowSec, io) {
     return;
   }
 
-  emitSlimeSplatter(io, enemy.x, enemy.y, null, SLIME_SPLAT_RADIUS);
+  emitSlimeSplatter(state, io, enemy.x, enemy.y, null, SLIME_SPLAT_RADIUS);
   enemy.surface_stick_until = nowSec + SLIME_WALL_STICK_SECONDS;
   enemy.vx = 0;
   enemy.vy = 0;
@@ -3029,7 +3070,7 @@ function damageEnemy(input) {
   const nowSec = Date.now() / 1000;
   const wasAttachedSlime = isSlimeEnemy(definition) && enemy.attached_sid;
   if (wasAttachedSlime) {
-    emitSlimeSplatter(input.io, enemy.x, enemy.y, enemy.attached_sid, SLIME_SPLAT_RADIUS);
+    emitSlimeSplatter(input.state, input.io, enemy.x, enemy.y, enemy.attached_sid, SLIME_SPLAT_RADIUS);
     detachSlime(enemy, nowSec);
   }
   if (isGargoyleEnemy(definition)) {
@@ -3126,7 +3167,7 @@ function respawnEnemy(state, enemy, definition) {
   }
 
   const nextSpawn = pickEnemySpawnPosition(state, definition, occupiedSpawns, {
-    anchorPlayer: getDynamicSpawnAnchorPlayer(state),
+    anchorPlayer: getDynamicSpawnAnchor(state)?.player ?? null,
   });
   if (nextSpawn) {
     enemy.spawn_x = nextSpawn.x;
@@ -3558,7 +3599,7 @@ function updateAliveEnemy(input) {
     applyEnemyPhysics(state, enemy, definition, dt, desiredVelocityX);
     maybeStickSlimeToSurface(state, enemy, definition, nowSec, input.io);
     if (isStrikerEnemy(definition) && !wasOnGroundBeforePhysics && enemy.on_ground) {
-      emitStrikerGroundImpact(input.io, enemy, prePhysicsVy);
+      emitStrikerGroundImpact(state, input.io, enemy, prePhysicsVy);
     }
     if (isStrikerEnemy(definition) && enemy.brain_state === 'lunge' && enemy.on_ground) {
       enemy.striker_slam_impacted_at = nowSec;

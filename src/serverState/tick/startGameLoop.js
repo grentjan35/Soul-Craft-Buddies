@@ -15,6 +15,7 @@ const {
   PLAYER_MAX_HEALTH,
 } = require('../state/constants');
 const { HealingSystem } = require('../healing/healingSystem');
+const { emitToNearbyPlayers } = require('../replication/nearby');
 const { getNearbyPlatforms } = require('../state/platformGrid/buildPlatformGrid');
 const {
   checkFireballEnemyCollision,
@@ -49,6 +50,10 @@ const ENEMY_WAKE_RADIUS_X = 1200;
 const ENEMY_WAKE_RADIUS_Y = 850;
 const ENEMY_SEND_RADIUS_X = 1500;
 const ENEMY_SEND_RADIUS_Y = 1000;
+const FIREBALL_SEND_RADIUS_X = 1750;
+const FIREBALL_SEND_RADIUS_Y = 1200;
+const EXPLOSION_SEND_RADIUS_X = 1800;
+const EXPLOSION_SEND_RADIUS_Y = 1250;
 const ENEMY_FULL_SYNC_INTERVAL_MS = 750;
 const ENEMY_STICKY_FIELD_EXTRA_SENDS = 3;
 const ENEMY_STICKY_FIELDS = new Set([
@@ -301,46 +306,6 @@ function broadcastState(input) {
     };
   }
 
-  /** @type {Record<string, any>} */
-  const fireballsPayload = {};
-  for (const [id, f] of input.state.fireballs.entries()) {
-    if (!f.active) continue;
-    fireballsPayload[id] = {
-      owner_sid: f.owner_sid,
-      owner_type: f.owner_type ?? 'player',
-      owner_enemy_id: f.owner_enemy_id ?? null,
-      x: round1(f.x),
-      y: round1(f.y),
-      vx: round1(f.vx),
-      vy: round1(f.vy),
-      start_x: round1(f.start_x),
-      start_y: round1(f.start_y),
-      initial_vx: round1(f.initial_vx ?? f.vx),
-      initial_vy: round1(f.initial_vy ?? f.vy),
-      spawn_time_ms: f.spawn_time_ms ?? Math.round((f.spawn_time ?? 0) * 1000),
-      render_scale: f.render_scale ?? 1,
-      radius_scale: f.radius_scale ?? 1,
-      gravity_scale: f.gravity_scale ?? 1,
-    };
-  }
-
-  /** @type {Record<string, any>} */
-  const explosionsPayload = {};
-  const nowSec = ts / 1000;
-  for (const [id, e] of input.state.explosions.entries()) {
-    if (!e.active) continue;
-    explosionsPayload[id] = {
-      x: e.x,
-      y: e.y,
-      radius: e.radius,
-      age: round3(nowSec - e.spawn_time),
-      spawn_time_ms: e.spawn_time_ms ?? Math.round((e.spawn_time ?? 0) * 1000),
-      owner_type: e.owner_type ?? 'player',
-      owner_enemy_id: e.owner_enemy_id ?? null,
-      owner_enemy_type: e.owner_enemy_type ?? null,
-    };
-  }
-
   const fairiesPayload = input.includeFairies
     ? input.state.fairies.map((fairy) => ({
         id: fairy.id,
@@ -357,8 +322,6 @@ function broadcastState(input) {
     seq: input.state.stateSeq,
     players: playersPayload,
     fairies: fairiesPayload,
-    fireballs: fireballsPayload,
-    explosions: explosionsPayload,
     souls: soulsPayload,
     world_sleeping: Boolean(input.worldSleeping),
   };
@@ -367,6 +330,8 @@ function broadcastState(input) {
     input.io.volatile.emit('state', {
       ...basePayload,
       enemies: {},
+      fireballs: {},
+      explosions: {},
       enemies_full: true,
     });
     return;
@@ -387,17 +352,109 @@ function broadcastState(input) {
       radiusX: ENEMY_SEND_RADIUS_X,
       radiusY: ENEMY_SEND_RADIUS_Y,
     });
+    const fireballsPayload = serializeFireballsForState(input.state, {
+      centerX: player.x,
+      centerY: player.y,
+      radiusX: FIREBALL_SEND_RADIUS_X,
+      radiusY: FIREBALL_SEND_RADIUS_Y,
+    });
+    const explosionsPayload = serializeExplosionsForState(input.state, ts, {
+      centerX: player.x,
+      centerY: player.y,
+      radiusX: EXPLOSION_SEND_RADIUS_X,
+      radiusY: EXPLOSION_SEND_RADIUS_Y,
+    });
 
     socket.volatile.emit('state', {
       ...basePayload,
       self: {
         progression: getPlayerProgressionPayload(player),
       },
+      fireballs: fireballsPayload,
+      explosions: explosionsPayload,
       enemies: enemyReplication.enemies,
       enemies_full: enemyReplication.full,
       enemy_removed: enemyReplication.removed,
     });
   }
+}
+
+function serializeFireballsForState(state, options = {}) {
+  /** @type {Record<string, any>} */
+  const payload = {};
+  const centerX = Number(options.centerX);
+  const centerY = Number(options.centerY);
+  const radiusX = Math.max(0, Number(options.radiusX) || 0);
+  const radiusY = Math.max(0, Number(options.radiusY) || 0);
+  const useFilter = Number.isFinite(centerX) && Number.isFinite(centerY) && radiusX > 0 && radiusY > 0;
+
+  for (const [id, f] of state.fireballs.entries()) {
+    if (!f.active) {
+      continue;
+    }
+    if (
+      useFilter &&
+      (Math.abs(f.x - centerX) > radiusX || Math.abs(f.y - centerY) > radiusY)
+    ) {
+      continue;
+    }
+
+    payload[id] = {
+      owner_sid: f.owner_sid,
+      owner_type: f.owner_type ?? 'player',
+      owner_enemy_id: f.owner_enemy_id ?? null,
+      x: round1(f.x),
+      y: round1(f.y),
+      vx: round1(f.vx),
+      vy: round1(f.vy),
+      start_x: round1(f.start_x),
+      start_y: round1(f.start_y),
+      initial_vx: round1(f.initial_vx ?? f.vx),
+      initial_vy: round1(f.initial_vy ?? f.vy),
+      spawn_time_ms: f.spawn_time_ms ?? Math.round((f.spawn_time ?? 0) * 1000),
+      render_scale: f.render_scale ?? 1,
+      radius_scale: f.radius_scale ?? 1,
+      gravity_scale: f.gravity_scale ?? 1,
+    };
+  }
+
+  return payload;
+}
+
+function serializeExplosionsForState(state, ts, options = {}) {
+  /** @type {Record<string, any>} */
+  const payload = {};
+  const centerX = Number(options.centerX);
+  const centerY = Number(options.centerY);
+  const radiusX = Math.max(0, Number(options.radiusX) || 0);
+  const radiusY = Math.max(0, Number(options.radiusY) || 0);
+  const useFilter = Number.isFinite(centerX) && Number.isFinite(centerY) && radiusX > 0 && radiusY > 0;
+  const nowSec = ts / 1000;
+
+  for (const [id, e] of state.explosions.entries()) {
+    if (!e.active) {
+      continue;
+    }
+    if (
+      useFilter &&
+      (Math.abs(e.x - centerX) > radiusX || Math.abs(e.y - centerY) > radiusY)
+    ) {
+      continue;
+    }
+
+    payload[id] = {
+      x: e.x,
+      y: e.y,
+      radius: e.radius,
+      age: round3(nowSec - e.spawn_time),
+      spawn_time_ms: e.spawn_time_ms ?? Math.round((e.spawn_time ?? 0) * 1000),
+      owner_type: e.owner_type ?? 'player',
+      owner_enemy_id: e.owner_enemy_id ?? null,
+      owner_enemy_type: e.owner_enemy_type ?? null,
+    };
+  }
+
+  return payload;
 }
 
 /**
@@ -778,27 +835,37 @@ function spawnFireball(input) {
     active: true,
   });
 
-  input.io.emit('projectile_created', {
-    id: fireballId,
-    owner_sid: input.ownerSid ?? null,
-    owner_type: input.ownerType ?? 'player',
-    owner_enemy_id: input.ownerEnemyId ?? null,
+  emitToNearbyPlayers({
+    io: input.io,
+    state: input.state,
     x: input.x,
     y: input.y,
-    vx: input.vx,
-    vy: input.vy,
-    start_x: input.x,
-    start_y: input.y,
-    initial_vx: input.vx,
-    initial_vy: input.vy,
-    spawn_time_ms: nowMs,
-    render_scale: Math.max(0.2, Number(input.renderScale) || 1),
-    radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
-    gravity_scale: Math.max(0.25, Number(input.gravityScale) || 1),
-    max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
-    explosion_radius: Math.max(12, Number(input.explosionRadius) || EXPLOSION_RADIUS),
-    explosion_damage_multiplier: Math.max(0.2, Number(input.explosionDamageMultiplier) || 1),
-    crit: Boolean(input.crit),
+    radiusX: FIREBALL_SEND_RADIUS_X,
+    radiusY: FIREBALL_SEND_RADIUS_Y,
+    event: 'projectile_created',
+    payload: {
+      id: fireballId,
+      owner_sid: input.ownerSid ?? null,
+      owner_type: input.ownerType ?? 'player',
+      owner_enemy_id: input.ownerEnemyId ?? null,
+      x: input.x,
+      y: input.y,
+      vx: input.vx,
+      vy: input.vy,
+      start_x: input.x,
+      start_y: input.y,
+      initial_vx: input.vx,
+      initial_vy: input.vy,
+      spawn_time_ms: nowMs,
+      render_scale: Math.max(0.2, Number(input.renderScale) || 1),
+      radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
+      gravity_scale: Math.max(0.25, Number(input.gravityScale) || 1),
+      max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
+      explosion_radius: Math.max(12, Number(input.explosionRadius) || EXPLOSION_RADIUS),
+      explosion_damage_multiplier: Math.max(0.2, Number(input.explosionDamageMultiplier) || 1),
+      crit: Boolean(input.crit),
+    },
+    includeSids: typeof input.ownerSid === 'string' ? [input.ownerSid] : [],
   });
 }
 
@@ -1136,11 +1203,21 @@ function updateFireballs(input) {
     if (input.state.fireballs.has(id)) {
       const fireball = input.state.fireballs.get(id);
       input.state.fireballs.delete(id);
-      input.io.emit('projectile_destroyed', {
-        id,
-        destroy_time_ms: Date.now(),
-        x: fireball?.x,
-        y: fireball?.y,
+      emitToNearbyPlayers({
+        io: input.io,
+        state: input.state,
+        x: Number(fireball?.x),
+        y: Number(fireball?.y),
+        radiusX: FIREBALL_SEND_RADIUS_X,
+        radiusY: FIREBALL_SEND_RADIUS_Y,
+        event: 'projectile_destroyed',
+        payload: {
+          id,
+          destroy_time_ms: Date.now(),
+          x: fireball?.x,
+          y: fireball?.y,
+        },
+        includeSids: typeof fireball?.owner_sid === 'string' ? [fireball.owner_sid] : [],
       });
     }
   }
@@ -1165,8 +1242,19 @@ function updateExplosions(input) {
 
   for (const id of toRemove) {
     if (input.state.explosions.has(id)) {
+      const explosion = input.state.explosions.get(id);
       input.state.explosions.delete(id);
-      input.io.emit('explosion_destroyed', { id, destroy_time_ms: nowMs });
+      emitToNearbyPlayers({
+        io: input.io,
+        state: input.state,
+        x: Number(explosion?.x),
+        y: Number(explosion?.y),
+        radiusX: EXPLOSION_SEND_RADIUS_X,
+        radiusY: EXPLOSION_SEND_RADIUS_Y,
+        event: 'explosion_destroyed',
+        payload: { id, destroy_time_ms: nowMs },
+        includeSids: typeof explosion?.owner_sid === 'string' ? [explosion.owner_sid] : [],
+      });
     }
   }
 }
@@ -1342,19 +1430,30 @@ function createExplosion(input) {
     spawn_time: nowSec,
     spawn_time_ms: nowMs,
     active: true,
+    owner_sid: input.ownerSid ?? null,
     owner_type: input.ownerType ?? 'player',
     owner_enemy_id: input.ownerEnemyId ?? null,
     owner_enemy_type: ownerEnemyType,
   });
-  input.io.emit('explosion_created', {
-    id,
+  emitToNearbyPlayers({
+    io: input.io,
+    state: input.state,
     x: input.x,
     y: input.y,
-    radius,
-    spawn_time_ms: nowMs,
-    owner_type: input.ownerType ?? 'player',
-    owner_enemy_id: input.ownerEnemyId ?? null,
-    owner_enemy_type: ownerEnemyType,
+    radiusX: EXPLOSION_SEND_RADIUS_X,
+    radiusY: EXPLOSION_SEND_RADIUS_Y,
+    event: 'explosion_created',
+    payload: {
+      id,
+      x: input.x,
+      y: input.y,
+      radius,
+      spawn_time_ms: nowMs,
+      owner_type: input.ownerType ?? 'player',
+      owner_enemy_id: input.ownerEnemyId ?? null,
+      owner_enemy_type: ownerEnemyType,
+    },
+    includeSids: typeof input.ownerSid === 'string' ? [input.ownerSid] : [],
   });
   applyExplosionDamage(input);
 }

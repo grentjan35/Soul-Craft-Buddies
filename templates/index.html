@@ -3895,7 +3895,11 @@
         };
         let menuSettings = loadMenuSettings();
         applyInitialDeviceGraphicsPreference();
-        const INPUT_SEND_INTERVAL_MS = 33;
+        let lastCommittedLowQualityMode = menuSettings.lowQualityMode === true;
+        const HIGH_END_INPUT_SEND_INTERVAL_MS = 16;
+        const MOBILE_INPUT_SEND_INTERVAL_MS = 25;
+        const LOW_END_INPUT_SEND_INTERVAL_MS = 33;
+        let inputSendIntervalMs = isMobile ? MOBILE_INPUT_SEND_INTERVAL_MS : HIGH_END_INPUT_SEND_INTERVAL_MS;
         let lastInputSendTime = 0;
         let scheduledInputFlush = null;
         let lastSentInputsSignature = '';
@@ -4052,8 +4056,8 @@
             }
 
             const elapsed = now - lastInputSendTime;
-            if (!force && elapsed < INPUT_SEND_INTERVAL_MS) {
-                scheduledInputFlush = setTimeout(() => flushInputState(false), INPUT_SEND_INTERVAL_MS - elapsed);
+            if (!force && elapsed < inputSendIntervalMs) {
+                scheduledInputFlush = setTimeout(() => flushInputState(false), inputSendIntervalMs - elapsed);
                 return;
             }
 
@@ -4135,13 +4139,21 @@
         });
 
         // Frame Rate Configuration
-        let fpsCap = 120; // Default for high-end
+        const HIGH_END_FPS_CAP = 240;
+        const LOW_END_FPS_CAP = 30;
+        const MOBILE_FPS_CAP = 60;
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 16;
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 24;
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 40;
+        const MAX_INTERPOLATION_DELAY_MS = 200;
+        let fpsCap = HIGH_END_FPS_CAP; // Default for high-end
         let isLowEnd = false;
         let frameCount = 0;
         let lastPerformanceCheck = performance.now();
         const PERFORMANCE_CHECK_INTERVAL = 2000; // Check every 2 seconds
         const EFFECT_QUALITY_PROFILES = {
             high: {
+                renderScale: 1,
                 fireballTrailSampleIntervalMs: 40,
                 fireballTrailMaxPoints: 6,
                 fireballTrailStep: 1,
@@ -4163,6 +4175,7 @@
                 spatialAudioIntervalMs: 33
             },
             medium: {
+                renderScale: 0.9,
                 fireballTrailSampleIntervalMs: 55,
                 fireballTrailMaxPoints: 4,
                 fireballTrailStep: 2,
@@ -4184,6 +4197,7 @@
                 spatialAudioIntervalMs: 50
             },
             low: {
+                renderScale: 0.78,
                 fireballTrailSampleIntervalMs: 70,
                 fireballTrailMaxPoints: 3,
                 fireballTrailStep: 3,
@@ -4207,6 +4221,48 @@
         };
         let currentEffectQuality = 'high';
         let currentEffectProfile = EFFECT_QUALITY_PROFILES.high;
+        let currentRenderScale = 1;
+        let currentRenderViewportWidth = 1600;
+        let currentRenderViewportHeight = 900;
+        let renderResolutionDirty = true;
+        let currentMinInterpolationDelayMs = isMobile ? MOBILE_MIN_INTERPOLATION_DELAY_MS : DESKTOP_MIN_INTERPOLATION_DELAY_MS;
+        let renderDelayMs = currentMinInterpolationDelayMs;
+
+        function syncResponsivenessProfile() {
+            if (isLowEnd || isLowQualityModeEnabled()) {
+                inputSendIntervalMs = LOW_END_INPUT_SEND_INTERVAL_MS;
+                currentMinInterpolationDelayMs = LOW_END_MIN_INTERPOLATION_DELAY_MS;
+            } else if (isMobile) {
+                inputSendIntervalMs = MOBILE_INPUT_SEND_INTERVAL_MS;
+                currentMinInterpolationDelayMs = MOBILE_MIN_INTERPOLATION_DELAY_MS;
+            } else {
+                inputSendIntervalMs = HIGH_END_INPUT_SEND_INTERVAL_MS;
+                currentMinInterpolationDelayMs = DESKTOP_MIN_INTERPOLATION_DELAY_MS;
+            }
+
+            renderDelayMs = Math.max(
+                currentMinInterpolationDelayMs,
+                Math.min(renderDelayMs, MAX_INTERPOLATION_DELAY_MS)
+            );
+        }
+
+        function getPreferredGameRenderScale() {
+            let scale = clampNumber(currentEffectProfile?.renderScale, 0.68, 1, 1);
+            if (isLowQualityModeEnabled()) {
+                scale = Math.min(scale, isMobile ? 0.74 : 0.78);
+            } else if (isMobile) {
+                scale = Math.min(scale, 0.92);
+            }
+
+            return clampNumber(scale, 0.68, 1, 1);
+        }
+
+        function syncRenderScaleWithProfile() {
+            currentRenderScale = getPreferredGameRenderScale();
+            currentRenderViewportWidth = Math.max(1, Math.round(GAME_VIEWPORT_WIDTH * currentRenderScale));
+            currentRenderViewportHeight = Math.max(1, Math.round(GAME_VIEWPORT_HEIGHT * currentRenderScale));
+            renderResolutionDirty = false;
+        }
 
         function setEffectQuality(nextQuality) {
             if (!EFFECT_QUALITY_PROFILES[nextQuality] || currentEffectQuality === nextQuality) {
@@ -4215,30 +4271,37 @@
 
             currentEffectQuality = nextQuality;
             currentEffectProfile = EFFECT_QUALITY_PROFILES[nextQuality];
+            renderResolutionDirty = true;
         }
 
         function applyInitialRuntimePerformanceProfile() {
-            const prefersLowQuality = isLowQualityModeEnabled() || shouldAutoEnableLowQualityMode();
+            const prefersLowQuality = isLowQualityModeEnabled();
             if (prefersLowQuality) {
                 setEffectQuality('low');
                 isLowEnd = true;
-                fpsCap = 30;
+                fpsCap = LOW_END_FPS_CAP;
                 frameInterval = 1000 / fpsCap;
+                syncResponsivenessProfile();
+                syncRenderScaleWithProfile();
                 return;
             }
 
             if (isMobile) {
                 setEffectQuality('medium');
                 isLowEnd = false;
-                fpsCap = 60;
+                fpsCap = MOBILE_FPS_CAP;
                 frameInterval = 1000 / fpsCap;
+                syncResponsivenessProfile();
+                syncRenderScaleWithProfile();
                 return;
             }
 
             setEffectQuality('high');
             isLowEnd = false;
-            fpsCap = 120;
+            fpsCap = HIGH_END_FPS_CAP;
             frameInterval = 1000 / fpsCap;
+            syncResponsivenessProfile();
+            syncRenderScaleWithProfile();
         }
 
         function getCurrentEffectLoadScore() {
@@ -5479,9 +5542,11 @@
         let menuTextureFrameId = 0;
         let menuRenderFrameId = 0;
         let menuUiFrameId = 0;
+        let menuRenderQueued = false;
 
         function stopMenuRendering() {
             menuLoopsActive = false;
+            menuRenderQueued = false;
             if (menuTextureFrameId) {
                 cancelAnimationFrame(menuTextureFrameId);
                 menuTextureFrameId = 0;
@@ -5577,15 +5642,13 @@
             
             // Mouse tracking
             let mouseX = 0, mouseY = 0;
-            window.addEventListener('mousemove', (e) => {
-                mouseX = (e.clientX / window.innerWidth - 0.5);
-                mouseY = (e.clientY / window.innerHeight - 0.5);
-            });
-            
-            function render() {
+            function renderMenuFrame() {
                 if (!menuLoopsActive) {
                     return;
                 }
+
+                menuRenderQueued = false;
+
                 // Resize canvas if needed
                 if (menuCanvas.width !== window.innerWidth || menuCanvas.height !== window.innerHeight) {
                     menuCanvas.width = window.innerWidth;
@@ -5602,12 +5665,27 @@
                 menuGL.clearColor(0.02, 0.02, 0.03, 1.0);
                 menuGL.clear(menuGL.COLOR_BUFFER_BIT);
                 menuGL.drawArrays(menuGL.TRIANGLES, 0, 6);
-                
-                menuRenderFrameId = requestAnimationFrame(render);
             }
-            
-            // Start render loop
-            render();
+
+            function queueMenuRender() {
+                if (!menuLoopsActive || menuRenderQueued) {
+                    return;
+                }
+
+                menuRenderQueued = true;
+                menuRenderFrameId = requestAnimationFrame(renderMenuFrame);
+            }
+
+            window.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth - 0.5);
+                mouseY = (e.clientY / window.innerHeight - 0.5);
+                queueMenuRender();
+            }, { passive: true });
+            window.addEventListener('resize', queueMenuRender, { passive: true });
+            window.visualViewport?.addEventListener('resize', queueMenuRender, { passive: true });
+
+            // Draw the menu once immediately, then only refresh when interaction changes it.
+            queueMenuRender();
         }
 
         // Start Screen Logic
@@ -5663,6 +5741,7 @@
             window.addEventListener('mousemove', (e) => {
                 targetX = (e.clientX / window.innerWidth - 0.5);
                 targetY = (e.clientY / window.innerHeight - 0.5);
+                animateUI();
             });
 
             function animateUI() {
@@ -5679,8 +5758,6 @@
                 if (ui) {
                     ui.style.transform = '';
                 }
-
-                menuUiFrameId = requestAnimationFrame(animateUI);
             }
             animateUI();
             
@@ -5741,6 +5818,12 @@
                 saveMenuSettings();
                 updateSettingsValueLabels();
                 applyMobileControlsVisibility();
+                const lowQualityMode = isLowQualityModeEnabled();
+                if (lastCommittedLowQualityMode !== lowQualityMode) {
+                    lastCommittedLowQualityMode = lowQualityMode;
+                    applyInitialRuntimePerformanceProfile();
+                    resizeCanvas();
+                }
                 applyLowQualityMode();
             }
 
@@ -7869,9 +7952,7 @@
                     openSettingsBtn.classList.add('in-game');
                 }
                 // Add in-game class to achievement toggle button to show it
-                if (achievementToggleElement) {
-                    achievementToggleElement.classList.add('in-game');
-                }
+                document.getElementById('achievement-toggle')?.classList.add('in-game');
                 setTimeout(() => {
                     stopMenuRendering();
                     startScreen.style.display = 'none';
@@ -8232,6 +8313,9 @@
             const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
             const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
             const uiScale = isMobile ? mobileUiZoom : gameViewZoom;
+            if (renderResolutionDirty) {
+                syncRenderScaleWithProfile();
+            }
             pickActiveMobileLayoutPreset();
             const targetAspect = GAME_VIEWPORT_WIDTH / GAME_VIEWPORT_HEIGHT;
             let displayWidth = Math.max(1, viewportWidth);
@@ -8242,8 +8326,8 @@
                 displayWidth = Math.max(1, Math.round(displayHeight * targetAspect));
             }
 
-            const renderWidth = GAME_VIEWPORT_WIDTH;
-            const renderHeight = GAME_VIEWPORT_HEIGHT;
+            const renderWidth = currentRenderViewportWidth;
+            const renderHeight = currentRenderViewportHeight;
 
             canvas.width = renderWidth;
             canvas.height = renderHeight;
@@ -10049,8 +10133,10 @@
         }
 
         function computeAdaptiveCameraZoom() {
-            const zoomX = GAME_VIEWPORT_WIDTH / REFERENCE_VISIBLE_WORLD_WIDTH;
-            const zoomY = GAME_VIEWPORT_HEIGHT / REFERENCE_VISIBLE_WORLD_HEIGHT;
+            const renderWidth = currentRenderViewportWidth || GAME_VIEWPORT_WIDTH;
+            const renderHeight = currentRenderViewportHeight || GAME_VIEWPORT_HEIGHT;
+            const zoomX = renderWidth / REFERENCE_VISIBLE_WORLD_WIDTH;
+            const zoomY = renderHeight / REFERENCE_VISIBLE_WORLD_HEIGHT;
             const baseZoom = Math.min(CAMERA_ZOOM_BASE, zoomX, zoomY);
             return clampGameZoom(baseZoom * gameViewZoom);
         }
@@ -10148,12 +10234,9 @@
         const reusableActiveSoulIds = new Set();
         const reusableActiveFairyIds = new Set();
         const MAX_SNAPSHOT_AGE_MS = 1000;
-        const MIN_INTERPOLATION_DELAY_MS = 40;
-        const MAX_INTERPOLATION_DELAY_MS = 200;
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 80;
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
-        let renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
         const packetReceiveTimes = [];
         let serverClockOffsetMs = 0;
         // Store rendered dimensions for each player (aspect-ratio-preserving)
@@ -12974,7 +13057,7 @@
 
         function updateAdaptiveInterpolationDelay() {
             if (packetReceiveTimes.length < 3) {
-                renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+                renderDelayMs = currentMinInterpolationDelayMs;
                 return;
             }
 
@@ -12986,7 +13069,7 @@
             }
 
             if (intervalCount === 0) {
-                renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+                renderDelayMs = currentMinInterpolationDelayMs;
                 return;
             }
 
@@ -12999,10 +13082,10 @@
             }
             const variance = varianceSum / intervalCount;
             const jitterMs = Math.sqrt(variance);
-            const targetDelay = Math.max(MIN_INTERPOLATION_DELAY_MS, meanInterval) + jitterMs * 2.5;
+            const targetDelay = Math.max(currentMinInterpolationDelayMs, meanInterval) + jitterMs * 2.5;
 
             renderDelayMs = Math.max(
-                MIN_INTERPOLATION_DELAY_MS,
+                currentMinInterpolationDelayMs,
                 Math.min(MAX_INTERPOLATION_DELAY_MS, lerp(renderDelayMs, targetDelay, 0.2))
             );
         }
@@ -13010,7 +13093,7 @@
         function resetRenderSmoothingState() {
             const now = performance.now();
             packetReceiveTimes.length = 0;
-            renderDelayMs = MIN_INTERPOLATION_DELAY_MS;
+            renderDelayMs = currentMinInterpolationDelayMs;
             lastFrameTime = now;
             lastPerformanceCheck = now;
             frameCount = 0;
@@ -16336,7 +16419,19 @@
 
         function draw() {
             const currentTime = performance.now();
+            if (document.hidden) {
+                lastFrameTime = currentTime;
+                lastPerformanceCheck = currentTime;
+                requestAnimationFrame(draw);
+                return;
+            }
+
+            if (renderResolutionDirty) {
+                resizeCanvas();
+            }
+
             const deltaTime = currentTime - lastFrameTime;
+            const activeFrameInterval = allAssetsLoaded ? frameInterval : Math.max(frameInterval, 1000 / 20);
 
             // 1. Performance Detection
             frameCount++;
@@ -16350,18 +16445,23 @@
                     nextQuality = 'medium';
                 }
                 setEffectQuality(nextQuality);
+                if (renderResolutionDirty) {
+                    resizeCanvas();
+                }
                 
                 // If we consistently drop below 55 FPS on a 60Hz/120Hz target, 
                 // cap it to 30 to stabilize the physics and prevent stuttering.
                 if (actualFps < 50 && !isLowEnd) {
                     isLowEnd = true;
-                    fpsCap = 30; // Cap low-end to 30 FPS
+                    fpsCap = LOW_END_FPS_CAP; // Cap low-end to 30 FPS
                     frameInterval = 1000 / fpsCap;
+                    syncResponsivenessProfile();
                 } else if (actualFps > 58 && isLowEnd) {
                     // Optional: Recovery if performance improves
                     isLowEnd = false;
-                    fpsCap = 120;
+                    fpsCap = isMobile ? MOBILE_FPS_CAP : HIGH_END_FPS_CAP;
                     frameInterval = 1000 / fpsCap;
+                    syncResponsivenessProfile();
                 }
                 
                 frameCount = 0;
@@ -16369,13 +16469,13 @@
             }
 
             // 2. Frame Rate Limiter
-            if (deltaTime < frameInterval) {
+            if (deltaTime < activeFrameInterval) {
                 requestAnimationFrame(draw);
                 return;
             }
 
             // Update last frame time (with adjustment for drift)
-            lastFrameTime = currentTime - (deltaTime % frameInterval);
+            lastFrameTime = currentTime - (deltaTime % activeFrameInterval);
 
             // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
             if (ctx && canvas) {
