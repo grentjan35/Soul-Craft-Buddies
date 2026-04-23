@@ -946,20 +946,28 @@ function createAssetsRouter(deps) {
     });
   });
 
-  router.get('/api/character_card_grid', async (_req, res) => {
+  router.get('/api/character_card_grid', async (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
     const assetPath = path.join(deps.staticDir, 'assets', 'cards', 'grid.png');
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', 'grid.png'), 'grid.png')) {
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', 'grid.png'), 'grid.png', { protectedResponse: true })) {
       return;
     }
 
-    setPublicAssetCacheHeaders(res);
-    res.type('.png');
-    res.sendFile(assetPath);
+    sendProtectedBinaryFile({
+      res,
+      fullPath: assetPath,
+      downloadName: 'grid.png',
+    });
   });
 
   router.post('/api/request_character_card_token', (req, res) => {
@@ -1521,19 +1529,7 @@ function createAssetsRouter(deps) {
     }
 
     if (selection.slice) {
-      const assetPath = path.join(deps.staticDir, 'assets', 'cards', 'grid.png');
-      if (!fs.existsSync(assetPath)) {
-        res.status(404).send('<h1>Not Found</h1>');
-        return;
-      }
-
-      if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', 'grid.png'), 'grid.png')) {
-        return;
-      }
-
-      setPublicAssetCacheHeaders(res);
-      res.type('.png');
-      res.sendFile(assetPath);
+      res.status(403).send('<h1>Access Denied</h1>');
       return;
     }
 

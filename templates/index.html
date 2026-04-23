@@ -9,6 +9,7 @@
     <style>
         :root {
             --mobile-ui-scale: 1;
+            --mobile-controls-scale: 1;
             --mobile-controls-height: 184px;
             --mobile-edge-gap: 20px;
             --mobile-action-size: 86px;
@@ -27,6 +28,12 @@
             --leaderboard-top: 140px;
             --chat-right: 10px;
             --chat-bottom: calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 8px);
+            --group-toggle-left: 20px;
+            --group-toggle-right: auto;
+            --group-toggle-bottom: 10px;
+            --group-panel-left: 20px;
+            --group-panel-right: auto;
+            --group-panel-bottom: 70px;
             --game-scale-multiplier: 1;
             --game-display-left: 50%;
             --game-display-top: 50%;
@@ -2712,8 +2719,9 @@
         /* Group System Styling */
         .group-button {
             position: fixed;
-            bottom: 10px;
-            left: 20px;
+            bottom: var(--group-toggle-bottom);
+            left: var(--group-toggle-left);
+            right: var(--group-toggle-right);
             z-index: 100;
             padding: 8px 16px;
             font-family: 'EB Garamond', serif;
@@ -2737,8 +2745,9 @@
 
         .group-panel {
             position: fixed;
-            bottom: 70px;
-            left: 20px;
+            bottom: var(--group-panel-bottom);
+            left: var(--group-panel-left);
+            right: var(--group-panel-right);
             width: 300px;
             max-height: 400px;
             z-index: 100;
@@ -3142,7 +3151,7 @@
             box-sizing: border-box;
             pointer-events: none;
             touch-action: none;
-            transform: scale(var(--mobile-ui-scale));
+            transform: scale(var(--mobile-controls-scale));
             transform-origin: bottom left;
         }
 
@@ -3236,6 +3245,8 @@
             top: var(--jump-button-top);
             bottom: var(--jump-button-bottom);
             z-index: 101;
+            transform: scale(var(--mobile-controls-scale));
+            transform-origin: bottom right;
         }
 
         .mobile-action-button:active {
@@ -3804,9 +3815,15 @@
             rootStyle.setProperty('--leaderboard-top', `${Math.round(clampNumber(layout?.leaderboardY, 0, window.innerHeight, 140))}px`);
             rootStyle.setProperty('--chat-right', `${Math.round(clampNumber(layout?.chatRight, 0, window.innerWidth, 10))}px`);
             rootStyle.setProperty('--chat-bottom', `${Math.round(clampNumber(layout?.chatBottom, 0, window.innerHeight, 210))}px`);
+            rootStyle.setProperty('--group-toggle-left', `${Math.round(clampNumber(layout?.groupButtonX, 0, window.innerWidth, 20))}px`);
+            rootStyle.setProperty('--group-toggle-right', 'auto');
+            rootStyle.setProperty('--group-toggle-bottom', `${Math.round(clampNumber(layout?.groupButtonBottom, 0, window.innerHeight, 230))}px`);
+            rootStyle.setProperty('--group-panel-left', `${Math.round(clampNumber(layout?.groupPanelX, 0, window.innerWidth, 20))}px`);
+            rootStyle.setProperty('--group-panel-right', 'auto');
+            rootStyle.setProperty('--group-panel-bottom', `${Math.round(clampNumber(layout?.groupPanelBottom, 0, window.innerHeight, 300))}px`);
 
             if (Number.isFinite(Number(layout?.joystickSize))) {
-                rootStyle.setProperty('--adaptive-joystick-size', `${Math.round(clampNumber(layout.joystickSize, 52, 180, 110))}px`);
+                rootStyle.setProperty('--adaptive-joystick-size', `${Math.round(clampNumber(layout.joystickSize, 110, 180, 132))}px`);
             }
             if (Number.isFinite(Number(layout?.jumpSize))) {
                 rootStyle.setProperty('--mobile-action-size', `${Math.round(clampNumber(layout.jumpSize, 44, 140, 84))}px`);
@@ -3825,6 +3842,7 @@
             }
             if (mobileUiScaleOverride !== null) {
                 rootStyle.setProperty('--mobile-ui-scale', String(mobileUiScaleOverride));
+                rootStyle.setProperty('--mobile-controls-scale', String(Math.max(1, mobileUiScaleOverride)));
             }
         }
 
@@ -4945,16 +4963,20 @@
         }
 
         // Mobile Controls Setup
-        const VIEW_ZOOM_STORAGE_KEY = 'soulcraft_view_zoom_v1';
+        const GAME_VIEW_ZOOM_STORAGE_KEY = 'soulcraft_game_view_zoom_v1';
+        const MOBILE_UI_ZOOM_STORAGE_KEY = 'soulcraft_mobile_ui_zoom_v1';
         const VIEW_ZOOM_MIN = 0.85;
         const MOBILE_VIEW_ZOOM_MIN = 0.55;
         const VIEW_ZOOM_MAX = 1.35;
+        const MOBILE_UI_ZOOM_MIN = 0.75;
+        const MOBILE_UI_ZOOM_MAX = 1.6;
         let mobileControls = null;
         let joystickThumb = null;
         let jumpButton = null;
         let joystickActive = false;
         let joystickOrigin = { x: 0, y: 0 };
         let pinchZoomActive = false;
+        let pinchZoomMode = null;
         let pinchStartDistance = 0;
         let pinchStartViewZoom = 1;
         let suppressNextCanvasTap = false;
@@ -4965,9 +4987,13 @@
             return Math.max(minZoom, Math.min(VIEW_ZOOM_MAX, value));
         }
 
+        function clampMobileUiZoom(value) {
+            return Math.max(MOBILE_UI_ZOOM_MIN, Math.min(MOBILE_UI_ZOOM_MAX, value));
+        }
+
         function loadViewZoomPreference() {
             try {
-                const stored = Number(localStorage.getItem(VIEW_ZOOM_STORAGE_KEY));
+                const stored = Number(localStorage.getItem(GAME_VIEW_ZOOM_STORAGE_KEY));
                 return Number.isFinite(stored) ? clampViewZoom(stored) : 1;
             } catch (_error) {
                 return 1;
@@ -4976,10 +5002,55 @@
 
         function saveViewZoomPreference() {
             try {
-                localStorage.setItem(VIEW_ZOOM_STORAGE_KEY, String(sharedViewZoom));
+                localStorage.setItem(GAME_VIEW_ZOOM_STORAGE_KEY, String(gameViewZoom));
             } catch (_error) {
                 // Ignore storage issues.
             }
+        }
+
+        function loadMobileUiZoomPreference() {
+            try {
+                const stored = Number(localStorage.getItem(MOBILE_UI_ZOOM_STORAGE_KEY));
+                return Number.isFinite(stored) ? clampMobileUiZoom(stored) : 1;
+            } catch (_error) {
+                return 1;
+            }
+        }
+
+        function saveMobileUiZoomPreference() {
+            try {
+                localStorage.setItem(MOBILE_UI_ZOOM_STORAGE_KEY, String(mobileUiZoom));
+            } catch (_error) {
+                // Ignore storage issues.
+            }
+        }
+
+        function isElementWithinGameDisplay(target) {
+            return !!(target instanceof Element && target.closest('#gameCanvas-wrapper'));
+        }
+
+        function isElementWithinInteractiveUi(target) {
+            return !!(
+                target instanceof Element &&
+                !target.closest('#gameCanvas-wrapper') &&
+                target.closest(
+                    '#run-hud, #progression-feed, #achievement-toggle, #achievement-panel, #souls-leaderboard, #chat-container, #group-toggle, #group-panel, #upgrade-draft-overlay, #mobile-controls, #jump-button, #settings-modal, #modal-overlay'
+                )
+            );
+        }
+
+        function beginPinchZoom(mode, touches) {
+            if (!touches || touches.length < 2) {
+                return;
+            }
+
+            pinchZoomActive = true;
+            pinchZoomMode = mode;
+            pinchStartDistance = Math.hypot(
+                touches[0].clientX - touches[1].clientX,
+                touches[0].clientY - touches[1].clientY
+            );
+            pinchStartViewZoom = mode === 'ui' ? mobileUiZoom : gameViewZoom;
         }
 
         function applyMobileControlsVisibility() {
@@ -5026,6 +5097,10 @@
             jumpButton.addEventListener('touchcancel', handleJumpEnd, { passive: false });
             
             // Prevent default touch behaviors on game canvas
+            document.addEventListener('touchstart', handleDocumentTouchStart, { passive: false, capture: true });
+            document.addEventListener('touchmove', handleDocumentTouchMove, { passive: false, capture: true });
+            document.addEventListener('touchend', handleDocumentTouchEnd, { passive: false, capture: true });
+            document.addEventListener('touchcancel', handleDocumentTouchEnd, { passive: false, capture: true });
             const canvas = document.getElementById('gameCanvas');
             canvas.addEventListener('touchstart', handleCanvasTouchStart, { passive: false });
             canvas.addEventListener('touchmove', handleCanvasTouchMove, { passive: false });
@@ -5033,15 +5108,47 @@
             canvas.addEventListener('touchend', handleCanvasTouchRelease, { passive: false });
         }
 
+        function handleDocumentTouchStart(e) {
+            if (!isMobile || !allAssetsLoaded || e.touches.length !== 2) {
+                return;
+            }
+
+            if (isElementWithinGameDisplay(e.target) || !isElementWithinInteractiveUi(e.target)) {
+                return;
+            }
+
+            e.preventDefault();
+            beginPinchZoom('ui', e.touches);
+        }
+
+        function handleDocumentTouchMove(e) {
+            if (!isMobile || !pinchZoomActive || pinchZoomMode !== 'ui' || e.touches.length !== 2) {
+                return;
+            }
+
+            e.preventDefault();
+            const nextDistance = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            if (pinchStartDistance <= 0) {
+                return;
+            }
+
+            setMobileUiZoom(pinchStartViewZoom * (nextDistance / pinchStartDistance));
+        }
+
+        function handleDocumentTouchEnd(e) {
+            if (e.touches.length < 2 && pinchZoomMode === 'ui') {
+                pinchZoomActive = false;
+                pinchZoomMode = null;
+            }
+        }
+
         function handleCanvasTouchStart(e) {
             e.preventDefault();
             if (e.touches.length === 2) {
-                pinchZoomActive = true;
-                pinchStartDistance = Math.hypot(
-                    e.touches[0].clientX - e.touches[1].clientX,
-                    e.touches[0].clientY - e.touches[1].clientY
-                );
-                pinchStartViewZoom = sharedViewZoom;
+                beginPinchZoom('game', e.touches);
                 suppressNextCanvasTap = true;
             } else if (e.touches.length === 1 && !chatActive && allAssetsLoaded && !joystickActive) {
                 // Single touch - start auto-fire for shooting
@@ -5064,7 +5171,7 @@
         }
 
         function handleCanvasTouchMove(e) {
-            if (e.touches.length === 2 && pinchZoomActive) {
+            if (e.touches.length === 2 && pinchZoomActive && pinchZoomMode === 'game') {
                 e.preventDefault();
                 const nextDistance = Math.hypot(
                     e.touches[0].clientX - e.touches[1].clientX,
@@ -5074,7 +5181,7 @@
                     return;
                 }
 
-                setSharedViewZoom(pinchStartViewZoom * (nextDistance / pinchStartDistance));
+                setGameViewZoom(pinchStartViewZoom * (nextDistance / pinchStartDistance));
             } else if (e.touches.length === 1 && isTouchDown) {
                 // Single touch while holding - update shooting position to follow finger
                 const touch = e.touches[0];
@@ -5087,6 +5194,7 @@
         function handleCanvasTouchEnd(e) {
             if (e.touches.length < 2) {
                 pinchZoomActive = false;
+                pinchZoomMode = null;
                 window.setTimeout(() => {
                     suppressNextCanvasTap = false;
                 }, 120);
@@ -5110,8 +5218,8 @@
             }
 
             e.preventDefault();
-            const nextZoom = sharedViewZoom + (e.deltaY < 0 ? 0.08 : -0.08);
-            setSharedViewZoom(nextZoom);
+            const nextZoom = gameViewZoom + (e.deltaY < 0 ? 0.08 : -0.08);
+            setGameViewZoom(nextZoom);
         }
 
         function handleJoystickStart(e) {
@@ -5159,7 +5267,9 @@
             const deltaY = touchY - joystickOrigin.y;
             
             const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-            const maxDistance = 40; // Maximum joystick radius
+            const joystickBase = document.getElementById('joystick-base');
+            const baseRect = joystickBase?.getBoundingClientRect();
+            const maxDistance = Math.max(44, ((Math.min(baseRect?.width || 0, baseRect?.height || 0) || 120) * 0.34));
             
             let normalizedX = deltaX;
             let normalizedY = deltaY;
@@ -8081,6 +8191,7 @@
         function resizeCanvas() {
             const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
             const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
+            const uiScale = isMobile ? mobileUiZoom : gameViewZoom;
             pickActiveMobileLayoutPreset();
             const targetAspect = GAME_VIEWPORT_WIDTH / GAME_VIEWPORT_HEIGHT;
             let displayWidth = Math.max(1, viewportWidth);
@@ -8118,56 +8229,62 @@
             document.documentElement.style.setProperty('--leaderboard-top', '140px');
             document.documentElement.style.setProperty('--chat-right', '10px');
             document.documentElement.style.setProperty('--chat-bottom', 'calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 8px)');
+            document.documentElement.style.setProperty('--group-toggle-left', '20px');
+            document.documentElement.style.setProperty('--group-toggle-right', 'auto');
+            document.documentElement.style.setProperty('--group-toggle-bottom', '10px');
+            document.documentElement.style.setProperty('--group-panel-left', '20px');
+            document.documentElement.style.setProperty('--group-panel-right', 'auto');
+            document.documentElement.style.setProperty('--group-panel-bottom', '70px');
             const chatWidth = Math.round(
                 Math.min(
-                    isMobile ? 230 : 320,
-                    Math.max(isMobile ? 150 : 200, displayWidth * (isMobile ? 0.28 : 0.18)) * sharedViewZoom
+                    isMobile ? 260 : 320,
+                    Math.max(isMobile ? 170 : 200, displayWidth * (isMobile ? 0.28 : 0.18)) * uiScale
                 )
             );
             const chatExpandedHeight = Math.round(
                 Math.min(
-                    isMobile ? 150 : 190,
-                    Math.max(isMobile ? 90 : 112, displayHeight * (isMobile ? 0.22 : 0.17)) * sharedViewZoom
+                    isMobile ? 160 : 190,
+                    Math.max(isMobile ? 100 : 112, displayHeight * (isMobile ? 0.22 : 0.17)) * uiScale
                 )
             );
             const chatFontSize = Math.round(
-                Math.min(isMobile ? 15 : 18, Math.max(11, displayWidth * 0.018) * sharedViewZoom)
+                Math.min(isMobile ? 15 : 18, Math.max(11, displayWidth * 0.018) * uiScale)
             );
             const chatInputFontSize = Math.round(
-                Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02) * sharedViewZoom)
+                Math.min(isMobile ? 16 : 20, Math.max(12, displayWidth * 0.02) * uiScale)
             );
             const hudWidth = Math.round(
                 Math.min(
                     isMobile ? 300 : 420,
-                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22)) * sharedViewZoom
+                    Math.max(isMobile ? 180 : 260, displayWidth * (isMobile ? 0.3 : 0.22)) * uiScale
                 )
             );
             const hudGap = Math.round(
-                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)) * sharedViewZoom)
+                Math.min(isMobile ? 8 : 12, Math.max(6, displayWidth * (isMobile ? 0.01 : 0.008)) * uiScale)
             );
             const hudPanelPaddingY = Math.round(
-                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
+                Math.min(isMobile ? 11 : 16, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * uiScale)
             );
             const hudPanelPaddingX = Math.round(
-                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * uiScale)
             );
             const hudBarPaddingX = Math.round(
-                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)) * sharedViewZoom)
+                Math.min(isMobile ? 12 : 18, Math.max(9, displayWidth * (isMobile ? 0.016 : 0.011)) * uiScale)
             );
             const hudBarPaddingBottom = Math.round(
-                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)) * sharedViewZoom)
+                Math.min(isMobile ? 13 : 18, Math.max(9, displayHeight * (isMobile ? 0.014 : 0.015)) * uiScale)
             );
             const hudTrackHeight = Math.round(
-                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)) * sharedViewZoom)
+                Math.min(isMobile ? 28 : 34, Math.max(20, displayHeight * (isMobile ? 0.032 : 0.026)) * uiScale)
             );
             const hudLabelFontSize = Math.max(
                 0.72,
-                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)) * sharedViewZoom)
+                Math.min(isMobile ? 0.84 : 1.0, (displayWidth * (isMobile ? 0.00145 : 0.0009)) * uiScale)
             );
             const leaderboardWidth = Math.round(
                 Math.min(
                     isMobile ? 220 : 340,
-                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18)) * sharedViewZoom
+                    Math.max(isMobile ? 170 : 240, displayWidth * (isMobile ? 0.24 : 0.18)) * uiScale
                 )
             );
             const leaderboardTop = Math.round(
@@ -8176,35 +8293,35 @@
             const feedWidth = Math.round(
                 Math.min(
                     isMobile ? 360 : 560,
-                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32)) * sharedViewZoom
+                    Math.max(isMobile ? 240 : 320, displayWidth * (isMobile ? 0.42 : 0.32)) * uiScale
                 )
             );
             const toastWidth = Math.round(
                 Math.min(
                     isMobile ? 340 : 520,
-                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28)) * sharedViewZoom
+                    Math.max(isMobile ? 220 : 300, displayWidth * (isMobile ? 0.38 : 0.28)) * uiScale
                 )
             );
             const toastPaddingY = Math.round(
-                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * sharedViewZoom)
+                Math.min(isMobile ? 11 : 15, Math.max(8, displayHeight * (isMobile ? 0.012 : 0.014)) * uiScale)
             );
             const toastPaddingX = Math.round(
-                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * sharedViewZoom)
+                Math.min(isMobile ? 14 : 20, Math.max(10, displayWidth * (isMobile ? 0.018 : 0.012)) * uiScale)
             );
             const chatEdge = Math.round(
                 Math.min(isMobile ? 4 : 6, Math.max(2, displayWidth * (isMobile ? 0.004 : 0.0035)))
             );
             const mobileActionSize = Math.round(
-                Math.min(isMobile ? 76 : 86, Math.max(isMobile ? 52 : 64, displayWidth * (isMobile ? 0.085 : 0.05)) * sharedViewZoom)
+                Math.min(isMobile ? 92 : 86, Math.max(isMobile ? 72 : 64, displayWidth * (isMobile ? 0.1 : 0.05)))
             );
             const joystickSize = Math.round(
-                Math.min(isMobile ? 116 : 120, Math.max(isMobile ? 78 : 92, displayWidth * (isMobile ? 0.13 : 0.07)) * sharedViewZoom)
+                Math.min(isMobile ? 152 : 120, Math.max(isMobile ? 122 : 92, displayWidth * (isMobile ? 0.18 : 0.07)))
             );
             const joystickThumbSize = Math.round(
-                Math.min(isMobile ? 46 : 50, Math.max(isMobile ? 34 : 40, joystickSize * 0.42))
+                Math.min(isMobile ? 62 : 50, Math.max(isMobile ? 46 : 40, joystickSize * 0.42))
             );
             const mobileControlsHeight = Math.round(
-                Math.min(isMobile ? 168 : 184, Math.max(isMobile ? 116 : 132, displayHeight * (isMobile ? 0.22 : 0.18)) * sharedViewZoom)
+                Math.min(isMobile ? 220 : 184, Math.max(isMobile ? 170 : 132, displayHeight * (isMobile ? 0.26 : 0.18)))
             );
             const mobileEdgeGap = Math.round(
                 Math.min(isMobile ? 16 : 20, Math.max(8, displayWidth * (isMobile ? 0.02 : 0.012)))
@@ -8212,7 +8329,8 @@
             const mobileActionGap = Math.round(
                 Math.min(isMobile ? 12 : 14, Math.max(8, displayWidth * (isMobile ? 0.018 : 0.01)))
             );
-            const mobileUiScale = isMobile ? sharedViewZoom : 1;
+            const mobileUiScale = isMobile ? uiScale : 1;
+            const mobileControlsScale = isMobile ? Math.max(1, uiScale) : 1;
 
             document.documentElement.style.setProperty('--adaptive-chat-width', `${chatWidth}px`);
             document.documentElement.style.setProperty('--adaptive-chat-expanded-height', `${chatExpandedHeight}px`);
@@ -8242,6 +8360,11 @@
             document.documentElement.style.setProperty('--mobile-edge-gap', `${mobileEdgeGap}px`);
             document.documentElement.style.setProperty('--mobile-action-gap', `${mobileActionGap}px`);
             document.documentElement.style.setProperty('--mobile-ui-scale', String(mobileUiScale));
+            document.documentElement.style.setProperty('--mobile-controls-scale', String(mobileControlsScale));
+            if (isMobile) {
+                document.documentElement.style.setProperty('--group-toggle-bottom', `calc(var(--mobile-controls-height) + 14px)`);
+                document.documentElement.style.setProperty('--group-panel-bottom', `calc(var(--mobile-controls-height) + 74px)`);
+            }
             if (activeMobileLayoutPreset?.layout && isMobile) {
                 applyMobileLayoutCssVariables(activeMobileLayoutPreset.layout, displayWidth, displayHeight);
             }
@@ -9862,7 +9985,8 @@
         const REFERENCE_VISIBLE_WORLD_WIDTH = GAME_VIEWPORT_WIDTH / CAMERA_ZOOM_BASE;
         const REFERENCE_VISIBLE_WORLD_HEIGHT = GAME_VIEWPORT_HEIGHT / CAMERA_ZOOM_BASE;
         let cameraZoom = CAMERA_ZOOM_BASE;
-        let sharedViewZoom = loadViewZoomPreference();
+        let gameViewZoom = loadViewZoomPreference();
+        let mobileUiZoom = loadMobileUiZoomPreference();
         let targetCameraX = 0;
         let targetCameraY = 0;
         let lastCameraFocusWorldPos = null;
@@ -9888,7 +10012,7 @@
             const zoomX = GAME_VIEWPORT_WIDTH / REFERENCE_VISIBLE_WORLD_WIDTH;
             const zoomY = GAME_VIEWPORT_HEIGHT / REFERENCE_VISIBLE_WORLD_HEIGHT;
             const baseZoom = Math.min(CAMERA_ZOOM_BASE, zoomX, zoomY);
-            return clampGameZoom(baseZoom * sharedViewZoom);
+            return clampGameZoom(baseZoom * gameViewZoom);
         }
 
         function setAdaptiveCameraZoom() {
@@ -9901,14 +10025,21 @@
             targetCameraY = clampedTargetCamera.y;
         }
 
-        function setSharedViewZoom(nextZoom) {
-            sharedViewZoom = clampViewZoom(nextZoom);
+        function setGameViewZoom(nextZoom) {
+            gameViewZoom = clampViewZoom(nextZoom);
             saveViewZoomPreference();
             resizeCanvas();
         }
 
+        function setMobileUiZoom(nextZoom) {
+            mobileUiZoom = clampMobileUiZoom(nextZoom);
+            saveMobileUiZoomPreference();
+            resizeCanvas();
+        }
+
         function initializeZoomControls() {
-            sharedViewZoom = loadViewZoomPreference();
+            gameViewZoom = loadViewZoomPreference();
+            mobileUiZoom = loadMobileUiZoomPreference();
             setAdaptiveCameraZoom();
         }
 
