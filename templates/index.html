@@ -5472,55 +5472,27 @@
 
         const fsSource = `
             precision mediump float;
-            uniform sampler2D u_image;
             uniform vec2 u_resolution;
-            uniform vec2 u_mouse;
-            uniform vec2 u_videoResolution;
             varying vec2 v_texCoord;
 
-            float hash(vec2 p) {
-                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-            }
-
             void main() {
-                float videoAspect = u_videoResolution.x / u_videoResolution.y;
-                float screenAspect = u_resolution.x / u_resolution.y;
-                vec2 coord = v_texCoord;
+                vec2 uv = v_texCoord;
+                vec2 centered = uv - vec2(0.5, 0.5);
+                centered.x *= u_resolution.x / max(u_resolution.y, 1.0);
 
-                if (videoAspect > screenAspect) {
-                    float scale = screenAspect / videoAspect;
-                    coord.y = (coord.y - 0.5) / scale + 0.5;
-                } else {
-                    float scale = videoAspect / screenAspect;
-                    coord.x = (coord.x - 0.5) / scale + 0.5;
-                }
+                vec3 base = vec3(0.026, 0.03, 0.05);
+                vec3 topTint = vec3(0.035, 0.055, 0.09);
+                vec3 glowBlue = vec3(0.11, 0.2, 0.37);
+                vec3 glowGold = vec3(0.42, 0.25, 0.08);
 
-                float pixelSize = 4.0;
-                vec2 d = vec2(pixelSize) / u_resolution;
-                coord = d * floor(coord / d);
+                float centerGlow = smoothstep(0.85, 0.0, length(centered * vec2(1.0, 1.15)));
+                float lowerGlow = smoothstep(0.7, 0.0, length((uv - vec2(0.5, 0.9)) * vec2(1.35, 0.7)));
+                float vignette = smoothstep(1.15, 0.22, length(centered * vec2(0.9, 1.08)));
 
-                vec2 parallax = u_mouse * vec2(0.035, 0.025);
-                vec4 color = texture2D(u_image, coord + parallax);
-
-                float dist = distance(v_texCoord, vec2(0.5, 0.48));
-                float innerGlow = smoothstep(0.56, 0.08, dist);
-                float outerGlow = smoothstep(0.94, 0.24, dist);
-
-                vec3 inkBlue = vec3(0.10, 0.18, 0.34);
-                vec3 steelTint = vec3(0.22, 0.30, 0.42);
-                vec3 goldMist = vec3(0.34, 0.22, 0.08);
-
-                float edgeShade = smoothstep(0.18, 0.86, dist);
-                color.rgb = mix(color.rgb, color.rgb * steelTint, 0.24);
-                color.rgb += inkBlue * innerGlow * 0.18;
-                color.rgb += goldMist * smoothstep(0.88, 0.30, abs(v_texCoord.y - 0.86)) * 0.14;
-
-                float grain = hash(gl_FragCoord.xy * 0.85) * 0.045;
-                float scanline = sin(gl_FragCoord.y * 0.85) * 0.012;
-                vec3 finalColor = color.rgb * (0.26 + outerGlow * 0.42);
-                finalColor += vec3(grain + scanline);
-                finalColor *= (1.0 - edgeShade * 0.38);
-                finalColor += vec3(0.08, 0.12, 0.18) * innerGlow * 0.55;
+                vec3 finalColor = mix(base, topTint, 1.0 - uv.y);
+                finalColor += glowBlue * centerGlow * 0.42;
+                finalColor += glowGold * lowerGlow * 0.18;
+                finalColor *= 0.78 + vignette * 0.22;
 
                 gl_FragColor = vec4(finalColor, 1.0);
             }
@@ -5613,35 +5585,9 @@
             menuGL.enableVertexAttribArray(texCoordLocation);
             menuGL.vertexAttribPointer(texCoordLocation, 2, menuGL.FLOAT, false, 0, 0);
             
-            // Create static texture (homescreen video intentionally disabled for faster startup)
-            const texture = menuGL.createTexture();
-            menuGL.bindTexture(menuGL.TEXTURE_2D, texture);
-            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_S, menuGL.CLAMP_TO_EDGE);
-            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_WRAP_T, menuGL.CLAMP_TO_EDGE);
-            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MIN_FILTER, menuGL.LINEAR);
-            menuGL.texParameteri(menuGL.TEXTURE_2D, menuGL.TEXTURE_MAG_FILTER, menuGL.LINEAR);
-            menuGL.texImage2D(
-                menuGL.TEXTURE_2D,
-                0,
-                menuGL.RGBA,
-                1,
-                1,
-                0,
-                menuGL.RGBA,
-                menuGL.UNSIGNED_BYTE,
-                new Uint8Array([8, 12, 24, 255])
-            );
-            
             // Get uniform locations
             const resolutionLocation = menuGL.getUniformLocation(program, 'u_resolution');
-            const mouseLocation = menuGL.getUniformLocation(program, 'u_mouse');
-            const videoResolutionLocation = menuGL.getUniformLocation(program, 'u_videoResolution');
-            
-            // Static menu texture resolution
-            let videoResolution = { width: 1920, height: 1080 };
-            
-            // Mouse tracking
-            let mouseX = 0, mouseY = 0;
+
             function renderMenuFrame() {
                 if (!menuLoopsActive) {
                     return;
@@ -5658,8 +5604,6 @@
                 
                 // Set uniforms
                 menuGL.uniform2f(resolutionLocation, menuCanvas.width, menuCanvas.height);
-                menuGL.uniform2f(mouseLocation, mouseX, mouseY);
-                menuGL.uniform2f(videoResolutionLocation, videoResolution.width, videoResolution.height);
                 
                 // Clear and draw
                 menuGL.clearColor(0.02, 0.02, 0.03, 1.0);
@@ -5676,11 +5620,6 @@
                 menuRenderFrameId = requestAnimationFrame(renderMenuFrame);
             }
 
-            window.addEventListener('mousemove', (e) => {
-                mouseX = (e.clientX / window.innerWidth - 0.5);
-                mouseY = (e.clientY / window.innerHeight - 0.5);
-                queueMenuRender();
-            }, { passive: true });
             window.addEventListener('resize', queueMenuRender, { passive: true });
             window.visualViewport?.addEventListener('resize', queueMenuRender, { passive: true });
 
