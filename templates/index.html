@@ -181,6 +181,46 @@
             pointer-events: none !important;
         }
 
+        #run-hud,
+        #run-hud *,
+        #progression-feed,
+        #progression-feed *,
+        #achievement-toggle,
+        #achievement-toggle *,
+        #achievement-panel,
+        #achievement-panel *,
+        #souls-leaderboard,
+        #souls-leaderboard *,
+        #upgrade-draft-overlay,
+        #upgrade-draft-overlay *,
+        #chat-container,
+        #chat-container *,
+        #group-toggle,
+        #group-toggle *,
+        #group-panel,
+        #group-panel *,
+        #settings-modal,
+        #settings-modal *,
+        #modal-overlay,
+        #modal-overlay *,
+        #mobile-controls,
+        #mobile-controls *,
+        #jump-button,
+        #jump-button * {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #chat-input,
+        #chat-input *,
+        #settings-modal input,
+        #settings-modal textarea,
+        #settings-modal select,
+        #settings-modal [contenteditable="true"] {
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
         #info { position: absolute; top: 10px; left: 10px; color: white; z-index: 10; pointer-events: none; }
         .in-game-frame {
             position: relative;

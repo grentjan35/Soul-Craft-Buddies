@@ -78,8 +78,8 @@ const ENEMY_STICKY_FIELDS = new Set([
 function getPlayerKillXp(victim, killer = null) {
   const victimLevel = Math.max(1, getPlayerLevel(victim));
   const killerLevel = killer ? Math.max(1, getPlayerLevel(killer)) : 1;
-  const levelGapBonus = Math.max(0, victimLevel - killerLevel) * 3;
-  return Math.max(24, 20 + victimLevel * 4 + levelGapBonus);
+  const levelGapBonus = Math.max(0, victimLevel - killerLevel) * 4;
+  return Math.max(36, 28 + victimLevel * 6 + levelGapBonus);
 }
 
 /** @type {NodeJS.Timeout | null} */

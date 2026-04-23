@@ -3053,7 +3053,7 @@ function damageEnemy(input) {
     if (input.sourceSid) {
       const player = input.state.players.get(input.sourceSid);
       if (player) {
-        const xpGain = Math.max(10, 8 + Math.round((enemy.level || 1) * 2.8));
+        const xpGain = Math.max(18, 14 + Math.round((enemy.level || 1) * 4.5));
         const xpResult = gainPlayerXp(player, xpGain);
         const unlockedAggroWarning = consumeAggroUnlockNotification(player);
         const unlockedAchievements = recordProgressionMetric(player, 'enemyKills', 1);

@@ -146,7 +146,8 @@ function clamp(value, min, max) {
 
 function getXpRequiredForLevel(level) {
   const safeLevel = Math.max(1, Math.round(Number(level) || 1));
-  return Math.round(30 + Math.pow(Math.max(0, safeLevel - 1), 1.65) * 18);
+  // Keep early and mid-run level-ups snappy so upgrade drafts show up often enough to feel rewarding.
+  return Math.round(24 + Math.pow(Math.max(0, safeLevel - 1), 1.45) * 12);
 }
 
 function rarityForTier(tierIndex) {

@@ -19,6 +19,7 @@ const SOUL_IDLE_LIFETIME_MS = 45000;
 const SOUL_PLAYER_DROP_SPREAD_X = 18;
 const SOUL_ENEMY_DROP_SPREAD_X = 14;
 const SOUL_MAX_BUNDLE_VALUE = 5;
+const SOUL_MAX_ENEMY_DROP_COUNT = 30;
 const SOUL_HEAL_PER_VALUE = 12;
 const SOUL_RADIUS_BASE = 7;
 const SOUL_PUBLIC_WARNING_TIER_INDEX = 2;
@@ -148,7 +149,7 @@ function dropSoulsForPlayerDeath(state, io, player) {
 }
 
 function dropSoulsForEnemyDeath(state, io, enemy) {
-  const count = 1 + Math.floor(Math.random() * 3);
+  const count = getEnemySoulDropCount(enemy);
   spawnSoulsBurst(state, io, {
     x: enemy.x,
     y: enemy.y - 8,
@@ -156,6 +157,25 @@ function dropSoulsForEnemyDeath(state, io, enemy) {
     spreadX: SOUL_ENEMY_DROP_SPREAD_X,
     baseLift: 125,
   });
+}
+
+function getEnemySoulDropCount(enemy) {
+  const enemyLevel = Math.max(1, Math.round(Number(enemy?.level) || 1));
+  let count = 1;
+
+  // Higher-level enemies repeatedly roll for extra souls.
+  // The chance ramps with level and approaches guaranteed extra drops at the top end,
+  // while each additional soul becomes slightly harder than the last.
+  for (let extraIndex = 0; extraIndex < SOUL_MAX_ENEMY_DROP_COUNT - 1; extraIndex += 1) {
+    const levelPressure = enemyLevel / (enemyLevel + 10 + extraIndex * 8);
+    const dropChance = Math.max(0.08, Math.min(0.96, levelPressure));
+    if (Math.random() > dropChance) {
+      break;
+    }
+    count += 1;
+  }
+
+  return Math.min(SOUL_MAX_ENEMY_DROP_COUNT, count);
 }
 
 function clampSoulToBounds(state, soul) {
