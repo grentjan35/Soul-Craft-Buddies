@@ -3753,6 +3753,8 @@
         let myPlayerName = "Player";
         let selectedCharacter = null;
         let availableCharacterSelections = [];
+        let specialUnlockSelectionCharacter = '';
+        let specialAttackEnabledForRun = false;
         let loadingCompleteAudio = null;
         let loadingCompleteSoundPlayed = false;
         let menuAudio = null;
@@ -3765,6 +3767,26 @@
         let combatMusic = null;
         let youtubeIframeApiPromise = null;
         const MENU_SETTINGS_STORAGE_KEY = 'soulcraft_menu_settings_v1';
+
+        function normalizeSpecialAttackName(name) {
+            return String(name || '').trim().toLowerCase();
+        }
+
+        function isSpecialAttackNameEligible(name) {
+            const normalized = normalizeSpecialAttackName(name);
+            return normalized === 'muhammad' || normalized === 'pkducky';
+        }
+
+        function canPrimeSpecialAttackForSelection(name, character) {
+            const normalizedName = normalizeSpecialAttackName(name);
+            const normalizedCharacter = String(character || '').trim().toLowerCase();
+            return normalizedName === 'muhammad' || (normalizedName === 'pkducky' && normalizedCharacter === 'duck');
+        }
+
+        function shouldEnableSpecialAttack(name, character) {
+            const normalizedCharacter = String(character || '').trim().toLowerCase();
+            return specialUnlockSelectionCharacter === normalizedCharacter && canPrimeSpecialAttackForSelection(name, normalizedCharacter);
+        }
 
         // Mobile detection
         function isMobileDevice() {
@@ -4139,7 +4161,7 @@
         });
 
         // Frame Rate Configuration
-        const HIGH_END_FPS_CAP = 240;
+        const HIGH_END_FPS_CAP = 120;
         const LOW_END_FPS_CAP = 30;
         const MOBILE_FPS_CAP = 60;
         const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 16;
@@ -5423,6 +5445,33 @@
             socket.emit('projectile_fire', { angle, distance, dx, dy });
         }
 
+        function isSpecialBeamUsable() {
+            return Boolean(specialAttackEnabledForRun && socket.connected && allAssetsLoaded);
+        }
+
+        function sendSpecialBeamInput(active, clientX = currentMouseClientX, clientY = currentMouseClientY, force = false) {
+            if (!specialAttackEnabledForRun || !socket.connected) {
+                return;
+            }
+
+            if (!active) {
+                specialBeamMouseActive = false;
+                specialBeamInputSentAt = 0;
+                socket.emit('special_attack_update', { active: false });
+                return;
+            }
+
+            const now = performance.now();
+            if (!force && now - specialBeamInputSentAt < SPECIAL_BEAM_INPUT_INTERVAL_MS) {
+                return;
+            }
+
+            const { worldX, worldY } = getCanvasWorldPoint(clientX, clientY);
+            specialBeamMouseActive = true;
+            specialBeamInputSentAt = now;
+            socket.emit('special_attack_update', { active: true, worldX, worldY });
+        }
+
         function getLocalRunStats() {
             return localProgressionState?.runStats || null;
         }
@@ -5431,6 +5480,49 @@
             const { worldX, worldY } = getCanvasWorldPoint(clientX, clientY);
             mousePosition.x = worldX;
             mousePosition.y = worldY;
+        }
+
+        function stopAutoFireLoop() {
+            if (autoFireInterval) {
+                clearInterval(autoFireInterval);
+                autoFireInterval = null;
+            }
+        }
+
+        function startAutoFireLoop() {
+            if (autoFireInterval) {
+                return;
+            }
+
+            autoFireInterval = setInterval(() => {
+                if (!chatActive && allAssetsLoaded && isMouseDown && !(isSpecialBeamUsable() && isShiftHeld)) {
+                    fireProjectileAtScreenPoint(currentMouseClientX, currentMouseClientY);
+                }
+            }, AUTO_FIRE_RATE_MS);
+        }
+
+        function refreshPrimaryAttackMode(fireImmediately = false) {
+            if (!isMouseDown || chatActive || isUpgradeDraftActive() || !allAssetsLoaded) {
+                stopAutoFireLoop();
+                if (specialBeamMouseActive) {
+                    sendSpecialBeamInput(false, 0, 0, true);
+                }
+                return;
+            }
+
+            if (isSpecialBeamUsable() && isShiftHeld) {
+                stopAutoFireLoop();
+                sendSpecialBeamInput(true, currentMouseClientX, currentMouseClientY, true);
+                return;
+            }
+
+            if (specialBeamMouseActive) {
+                sendSpecialBeamInput(false, 0, 0, true);
+            }
+            if (fireImmediately) {
+                fireProjectileAtScreenPoint(currentMouseClientX, currentMouseClientY);
+            }
+            startAutoFireLoop();
         }
 
         function handleJumpStart(e) {
@@ -7485,16 +7577,28 @@
                 updateFocusedCardTransforms();
             }
 
-            function selectFocusedCharacter() {
+            function selectFocusedCharacter(options = {}) {
                 const focused = availableCharacterSelections[focusIndex];
                 if (!focused) {
                     return;
                 }
 
                 selectedCharacter = focused.character;
+                const normalizedCharacter = String(focused.character || '').trim().toLowerCase();
+                if (options.shiftPressed) {
+                    specialUnlockSelectionCharacter = normalizedCharacter;
+                } else if (specialUnlockSelectionCharacter && specialUnlockSelectionCharacter !== normalizedCharacter) {
+                    specialUnlockSelectionCharacter = '';
+                }
                 menuAudio.play('set', 0.7);
                 updateFocusedCardTransforms();
-                setFootnote('Press play to start');
+                if (options.shiftPressed && canPrimeSpecialAttackForSelection(nameInput?.value, focused.character)) {
+                    setFootnote('Secret fire lazer primed. Hold Shift and attack in game.');
+                } else if (options.shiftPressed && isSpecialAttackNameEligible(nameInput?.value)) {
+                    setFootnote('Shift-click registered. Use duck for PKDucky or any soul for Muhammad.');
+                } else {
+                    setFootnote('Press play to start');
+                }
             }
 
             function renderCharacterCarousel() {
@@ -7725,12 +7829,17 @@
                 } else if (pointerDeltaX >= dragThreshold) {
                     moveFocus(-1);
                 } else if (tappedCard) {
-                    if (pointerDownCardIndex !== focusIndex) {
+                    if (pointerDownCardIndex !== focusIndex && event?.shiftKey && absoluteDrag < 10) {
+                        focusIndex = pointerDownCardIndex;
+                        menuAudio.play('navigate', 0.55);
+                        updateFocusedCardTransforms();
+                        selectFocusedCharacter({ shiftPressed: true });
+                    } else if (pointerDownCardIndex !== focusIndex) {
                         focusIndex = pointerDownCardIndex;
                         menuAudio.play('navigate', 0.55);
                         updateFocusedCardTransforms();
                     } else if (absoluteDrag < 10) {
-                        selectFocusedCharacter();
+                        selectFocusedCharacter({ shiftPressed: Boolean(event?.shiftKey) });
                     }
                 }
 
@@ -7877,6 +7986,7 @@
                 }
                 
                 myPlayerName = name;
+                specialAttackEnabledForRun = shouldEnableSpecialAttack(name, selectedCharacter);
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
                 loadingStage = 'Loading';
@@ -7904,7 +8014,11 @@
                     startSmoothLoading();
                     
                     // Now we actually connect to the game server!
-                    socket.io.opts.query = { name: myPlayerName, character: selectedCharacter };
+                    socket.io.opts.query = {
+                        name: myPlayerName,
+                        character: selectedCharacter,
+                        specialUnlock: specialAttackEnabledForRun ? '1' : '0'
+                    };
                     socket.connect();
                 }, 300);
             }
@@ -10177,6 +10291,8 @@
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const packetReceiveTimes = [];
+        let pendingServerStatePacket = null;
+        let scheduledServerStateApplyFrame = 0;
         let serverClockOffsetMs = 0;
         // Store rendered dimensions for each player (aspect-ratio-preserving)
         const playerRenderDimensions = {};
@@ -10287,8 +10403,19 @@
         const dynamicLightUniformBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
         const radialSpriteCache = new Map();
         let enemyHitboxDebugEnabled = false;
+        let isShiftHeld = false;
+        let specialBeamInputSentAt = 0;
+        let specialBeamMouseActive = false;
+        const SPECIAL_BEAM_INPUT_INTERVAL_MS = 34;
         // Keyboard input handling
         window.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                isShiftHeld = true;
+                if (isMouseDown) {
+                    refreshPrimaryAttackMode(false);
+                }
+            }
+
             // Disable movement keys when chat is active
             if (chatActive || isUpgradeDraftActive()) {
                 return;
@@ -10321,6 +10448,15 @@
         });
 
         window.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                isShiftHeld = false;
+                if (isMouseDown) {
+                    refreshPrimaryAttackMode(true);
+                } else if (specialBeamMouseActive) {
+                    sendSpecialBeamInput(false, 0, 0, true);
+                }
+            }
+
             // Disable movement keys when chat is active
             if (chatActive || isUpgradeDraftActive()) {
                 return;
@@ -10608,6 +10744,11 @@
         });
         chatInput.addEventListener('focus', () => {
             chatActive = true;
+            isMouseDown = false;
+            stopAutoFireLoop();
+            if (specialBeamMouseActive) {
+                sendSpecialBeamInput(false, 0, 0, true);
+            }
             setChatMinimized(false);
         });
 
@@ -10649,32 +10790,25 @@
                 currentMouseClientX = e.clientX;
                 currentMouseClientY = e.clientY;
                 updateAimPreviewFromClientPoint(e.clientX, e.clientY);
-                fireProjectileAtScreenPoint(e.clientX, e.clientY);
-                
-                // Start auto-fire
-                if (!autoFireInterval) {
-                    autoFireInterval = setInterval(() => {
-                        if (!chatActive && allAssetsLoaded && isMouseDown) {
-                            fireProjectileAtScreenPoint(currentMouseClientX, currentMouseClientY);
-                        }
-                    }, AUTO_FIRE_RATE_MS);
-                }
+                refreshPrimaryAttackMode(true);
             }
         });
 
         canvas.addEventListener('mouseup', (e) => {
-            if (e.button === 0 && autoFireInterval) { // Left click release
+            if (e.button === 0) { // Left click release
                 isMouseDown = false;
-                clearInterval(autoFireInterval);
-                autoFireInterval = null;
+                stopAutoFireLoop();
+                if (specialBeamMouseActive) {
+                    sendSpecialBeamInput(false, 0, 0, true);
+                }
             }
         });
 
         canvas.addEventListener('mouseleave', () => {
             isMouseDown = false;
-            if (autoFireInterval) {
-                clearInterval(autoFireInterval);
-                autoFireInterval = null;
+            stopAutoFireLoop();
+            if (specialBeamMouseActive) {
+                sendSpecialBeamInput(false, 0, 0, true);
             }
         });
         
@@ -10683,6 +10817,18 @@
             // Update current mouse position for auto-fire
             currentMouseClientX = e.clientX;
             currentMouseClientY = e.clientY;
+            if (isMouseDown && isSpecialBeamUsable() && isShiftHeld) {
+                sendSpecialBeamInput(true, e.clientX, e.clientY);
+            }
+        });
+
+        window.addEventListener('blur', () => {
+            isMouseDown = false;
+            isShiftHeld = false;
+            stopAutoFireLoop();
+            if (specialBeamMouseActive) {
+                sendSpecialBeamInput(false, 0, 0, true);
+            }
         });
         function getSoulMetaForCount(soulCount) {
             const souls = Math.max(0, Math.round(Number(soulCount) || 0));
@@ -11315,10 +11461,10 @@
         }
 
         // State synchronization - server authoritative
-        socket.on('state', (serverState) => {
-            // FIX: Guard against processing state before assets are ready
+        function applyServerState(serverState, receivedAt = performance.now()) {
+            // Guard against processing state before assets are ready.
             if (!allAssetsLoaded || !characterMetadata) return;
-            
+
             const {
                 ts,
                 seq,
@@ -11332,8 +11478,6 @@
                 explosions: serverExplosions,
                 self: selfState
             } = serverState;
-            const receivedAt = performance.now();
-
             recordPacketReceiveTime(receivedAt);
             updateAdaptiveInterpolationDelay();
             updateServerClockOffset(ts);
@@ -11364,6 +11508,12 @@
                     max_health: typeof pos.max_health === 'number' ? pos.max_health : PLAYER_MAX_HEALTH,
                     is_attacking: Boolean(pos.is_attacking),
                     attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0,
+                    special_beam_active: Boolean(pos.special_beam_active),
+                    special_beam_from_x: typeof pos.special_beam_from_x === 'number' ? pos.special_beam_from_x : pos.x,
+                    special_beam_from_y: typeof pos.special_beam_from_y === 'number' ? pos.special_beam_from_y : pos.y,
+                    special_beam_to_x: typeof pos.special_beam_to_x === 'number' ? pos.special_beam_to_x : pos.x,
+                    special_beam_to_y: typeof pos.special_beam_to_y === 'number' ? pos.special_beam_to_y : pos.y,
+                    special_beam_started_at_ms: typeof pos.special_beam_started_at_ms === 'number' ? pos.special_beam_started_at_ms : 0,
                     soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0
                 };
                 authoritativePlayerState[sid] = nextState;
@@ -11770,6 +11920,33 @@
                 }
             }
             updateRunHud();
+        }
+
+        function flushPendingServerState() {
+            scheduledServerStateApplyFrame = 0;
+            const pendingPacket = pendingServerStatePacket;
+            pendingServerStatePacket = null;
+
+            if (!pendingPacket) {
+                return;
+            }
+
+            applyServerState(pendingPacket.serverState, pendingPacket.receivedAt);
+
+            if (pendingServerStatePacket && !scheduledServerStateApplyFrame) {
+                scheduledServerStateApplyFrame = requestAnimationFrame(flushPendingServerState);
+            }
+        }
+
+        function scheduleServerStateApply(serverState, receivedAt = performance.now()) {
+            pendingServerStatePacket = { serverState, receivedAt };
+            if (!scheduledServerStateApplyFrame) {
+                scheduledServerStateApplyFrame = requestAnimationFrame(flushPendingServerState);
+            }
+        }
+
+        socket.on('state', (serverState) => {
+            scheduleServerStateApply(serverState);
         });
 
         // Handle map loaded event from server
@@ -12864,6 +13041,9 @@
             }
 
             if (typeof x === 'number' && typeof y === 'number') {
+                if (effect === 'beam') {
+                    addDistanceShake(x, y, 60, 900, sid === socket.id ? 0.24 : 0.12);
+                }
                 createAttachedPlayerBurn(sid, x, y, EXPLOSION_RADIUS, effect === 'slime' ? 'slime' : 'blood');
             }
         });
@@ -13032,6 +13212,11 @@
         function resetRenderSmoothingState() {
             const now = performance.now();
             packetReceiveTimes.length = 0;
+            pendingServerStatePacket = null;
+            if (scheduledServerStateApplyFrame) {
+                cancelAnimationFrame(scheduledServerStateApplyFrame);
+                scheduledServerStateApplyFrame = 0;
+            }
             renderDelayMs = currentMinInterpolationDelayMs;
             lastFrameTime = now;
             lastPerformanceCheck = now;
@@ -15765,6 +15950,46 @@
                 pushDynamicLight(lights, maxLights, (fireball.x - cameraX) * cameraZoom, (fireball.y - cameraY) * cameraZoom, 250, 0.88);
             }
 
+            for (const sid in playerState) {
+                const state = playerState[sid];
+                if (
+                    !state?.special_beam_active ||
+                    !Number.isFinite(state.special_beam_from_x) ||
+                    !Number.isFinite(state.special_beam_from_y) ||
+                    !Number.isFinite(state.special_beam_to_x) ||
+                    !Number.isFinite(state.special_beam_to_y)
+                ) {
+                    continue;
+                }
+
+                const beamLength = Math.hypot(
+                    state.special_beam_to_x - state.special_beam_from_x,
+                    state.special_beam_to_y - state.special_beam_from_y
+                );
+                if (beamLength < 1) {
+                    continue;
+                }
+
+                const sampleCount = sid === socket.id ? 3 : 2;
+                for (let index = 0; index < sampleCount; index += 1) {
+                    const t = (index + 1) / (sampleCount + 1);
+                    const sampleX = state.special_beam_from_x + (state.special_beam_to_x - state.special_beam_from_x) * t;
+                    const sampleY = state.special_beam_from_y + (state.special_beam_to_y - state.special_beam_from_y) * t;
+                    if (visibleBounds && !isWorldRectVisible(sampleX - 180, sampleY - 180, 360, 360, 80, visibleBounds)) {
+                        continue;
+                    }
+
+                    pushDynamicLight(
+                        lights,
+                        maxLights,
+                        (sampleX - cameraX) * cameraZoom,
+                        (sampleY - cameraY) * cameraZoom,
+                        (sid === socket.id ? 290 : 220) * cameraZoom,
+                        sid === socket.id ? 1.22 : 0.92
+                    );
+                }
+            }
+
             for (const mark of burnMarks) {
                 if (visibleBounds && !isWorldRectVisible(mark.x - 220, mark.y - 220, 440, 440, 120, visibleBounds)) {
                     continue;
@@ -15887,7 +16112,7 @@
 
             for (const sid in playerState) {
                 const state = playerState[sid];
-                if (!state || !state.is_attacking || typeof state.attack_start_time_ms !== 'number' || state.attack_start_time_ms <= 0) {
+                if (!state || state.special_beam_active || !state.is_attacking || typeof state.attack_start_time_ms !== 'number' || state.attack_start_time_ms <= 0) {
                     continue;
                 }
 
@@ -15934,6 +16159,194 @@
                 ctx.globalAlpha = 1;
             }
 
+            ctx.restore();
+        }
+
+        function drawSpecialBeams(now = Date.now(), visibleBounds = null) {
+            let drewAnyBeam = false;
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+
+            for (const sid in playerState) {
+                const state = playerState[sid];
+                if (
+                    !state?.special_beam_active ||
+                    !Number.isFinite(state.special_beam_from_x) ||
+                    !Number.isFinite(state.special_beam_from_y) ||
+                    !Number.isFinite(state.special_beam_to_x) ||
+                    !Number.isFinite(state.special_beam_to_y)
+                ) {
+                    continue;
+                }
+
+                const fromX = state.special_beam_from_x;
+                const fromY = state.special_beam_from_y;
+                const toX = state.special_beam_to_x;
+                const toY = state.special_beam_to_y;
+                const minX = Math.min(fromX, toX);
+                const minY = Math.min(fromY, toY);
+                const width = Math.abs(toX - fromX);
+                const height = Math.abs(toY - fromY);
+                if (!isWorldRectVisible(minX, minY, Math.max(1, width), Math.max(1, height), 180, visibleBounds)) {
+                    continue;
+                }
+
+                const dx = toX - fromX;
+                const dy = toY - fromY;
+                const length = Math.max(1, Math.hypot(dx, dy));
+                const dirX = dx / length;
+                const dirY = dy / length;
+                const tangentX = -dirY;
+                const tangentY = dirX;
+                const localBeam = sid === socket.id;
+                const beamAge = typeof state.special_beam_started_at_ms === 'number'
+                    ? Math.max(0, (now - state.special_beam_started_at_ms) / 1000)
+                    : 0;
+                const pulse = 0.9 + Math.sin(now * 0.018 + sid.length * 0.9) * 0.1;
+                const baseWidth = (localBeam ? 34 : 26) * pulse;
+                const ribbonAmplitude = (localBeam ? 12 : 9) * pulse;
+                const sampleCount = Math.max(8, Math.min(28, Math.ceil(length / 90)));
+                const beamGradient = ctx.createLinearGradient(fromX - cameraX, fromY - cameraY, toX - cameraX, toY - cameraY);
+                beamGradient.addColorStop(0, 'rgba(255, 248, 220, 0.96)');
+                beamGradient.addColorStop(0.18, 'rgba(255, 216, 120, 0.92)');
+                beamGradient.addColorStop(0.55, 'rgba(255, 126, 34, 0.9)');
+                beamGradient.addColorStop(1, 'rgba(255, 70, 24, 0.84)');
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(255, 92, 20, 0.2)';
+                ctx.lineWidth = baseWidth * 2.2;
+                ctx.shadowColor = 'rgba(255, 128, 32, 0.7)';
+                ctx.shadowBlur = localBeam ? 40 : 28;
+                ctx.beginPath();
+                ctx.moveTo(fromX - cameraX, fromY - cameraY);
+                ctx.lineTo(toX - cameraX, toY - cameraY);
+                ctx.stroke();
+
+                ctx.strokeStyle = beamGradient;
+                ctx.lineWidth = baseWidth;
+                ctx.shadowBlur = localBeam ? 28 : 22;
+                ctx.beginPath();
+                ctx.moveTo(fromX - cameraX, fromY - cameraY);
+                ctx.lineTo(toX - cameraX, toY - cameraY);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(255, 255, 235, 0.95)';
+                ctx.lineWidth = baseWidth * 0.34;
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.moveTo(fromX - cameraX, fromY - cameraY);
+                ctx.lineTo(toX - cameraX, toY - cameraY);
+                ctx.stroke();
+                ctx.restore();
+
+                for (let ribbonIndex = 0; ribbonIndex < 3; ribbonIndex += 1) {
+                    ctx.beginPath();
+                    for (let step = 0; step <= sampleCount; step += 1) {
+                        const t = step / sampleCount;
+                        const baseX = fromX + dx * t;
+                        const baseY = fromY + dy * t;
+                        const ribbonWave = Math.sin(now * 0.012 + ribbonIndex * 1.8 + t * 18 + beamAge * 14) * ribbonAmplitude * (1 - t * 0.18);
+                        const flutter = Math.cos(now * 0.017 + ribbonIndex * 2.4 + t * 23) * ribbonAmplitude * 0.32;
+                        const offset = ribbonWave + flutter;
+                        const x = baseX + tangentX * offset;
+                        const y = baseY + tangentY * offset;
+                        if (step === 0) {
+                            ctx.moveTo(x - cameraX, y - cameraY);
+                        } else {
+                            ctx.lineTo(x - cameraX, y - cameraY);
+                        }
+                    }
+                    ctx.strokeStyle = ribbonIndex === 0 ? 'rgba(255, 166, 74, 0.34)' : 'rgba(255, 92, 28, 0.26)';
+                    ctx.lineWidth = Math.max(1.5, baseWidth * (ribbonIndex === 0 ? 0.3 : 0.18));
+                    ctx.stroke();
+                }
+
+                const flameStep = Math.max(42, Math.min(84, length / 10));
+                for (let distance = 0; distance <= length; distance += flameStep) {
+                    const t = distance / length;
+                    const flameX = fromX + dirX * distance + tangentX * Math.sin(now * 0.01 + distance * 0.05) * 4;
+                    const flameY = fromY + dirY * distance + tangentY * Math.cos(now * 0.012 + distance * 0.04) * 4;
+                    const flameRadius = Math.max(8, baseWidth * (0.35 + (1 - t) * 0.4));
+                    drawFireballGlow(flameX, flameY, flameRadius * 2.4, 'rgba(255, 236, 185, __A__)', 'rgba(255, 104, 24, __A__)', 0.22 + (1 - t) * 0.16);
+                    drawPixelFlameBody(
+                        flameX,
+                        flameY,
+                        Math.atan2(dy, dx) + Math.sin(now * 0.006 + t * 10) * 0.08,
+                        flameRadius,
+                        0.72,
+                        now * 0.0012 + t * 3,
+                        {
+                            cellScale: 0.14,
+                            tailLength: 0.66,
+                            noseLength: 0.22,
+                            width: 0.3,
+                            alpha: 0.72,
+                            emberChance: 0.05
+                        }
+                    );
+                }
+
+                drawFireballGlow(fromX, fromY, baseWidth * 2.7, 'rgba(255, 245, 210, __A__)', 'rgba(255, 110, 24, __A__)', 0.42);
+                drawFireballGlow(toX, toY, baseWidth * 3.6, 'rgba(255, 248, 220, __A__)', 'rgba(255, 96, 18, __A__)', 0.56);
+                drawPixelFlameBody(toX, toY, Math.atan2(dy, dx), baseWidth * 0.9, 0.92, now * 0.0018 + length * 0.01, {
+                    cellScale: 0.16,
+                    tailLength: 0.54,
+                    noseLength: 0.18,
+                    width: 0.38,
+                    alpha: 0.9,
+                    emberChance: 0.08
+                });
+
+                drewAnyBeam = true;
+            }
+
+            ctx.restore();
+
+            const localBeamState = playerState[socket.id] || authoritativePlayerState[socket.id];
+            if (drewAnyBeam && localBeamState?.special_beam_active) {
+                addScreenShake(0.012);
+            }
+        }
+
+        function drawSpecialBeamScreenOverlay(now = Date.now()) {
+            const localBeamState = playerState[socket.id] || authoritativePlayerState[socket.id];
+            if (!localBeamState?.special_beam_active) {
+                return;
+            }
+
+            const pulse = 0.82 + Math.sin(now * 0.02) * 0.18;
+            const edgeSize = Math.max(72, Math.min(canvas.width, canvas.height) * 0.14);
+            const drawEdge = (x0, y0, x1, y1, x, y, w, h) => {
+                const gradient = ctx.createLinearGradient(x0, y0, x1, y1);
+                gradient.addColorStop(0, `rgba(255, 220, 120, ${0.26 * pulse})`);
+                gradient.addColorStop(0.45, `rgba(255, 102, 28, ${0.22 * pulse})`);
+                gradient.addColorStop(1, 'rgba(255, 60, 20, 0)');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(x, y, w, h);
+            };
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            drawEdge(0, 0, 0, edgeSize, 0, 0, canvas.width, edgeSize);
+            drawEdge(0, canvas.height, 0, canvas.height - edgeSize, 0, canvas.height - edgeSize, canvas.width, edgeSize);
+            drawEdge(0, 0, edgeSize, 0, 0, 0, edgeSize, canvas.height);
+            drawEdge(canvas.width, 0, canvas.width - edgeSize, 0, canvas.width - edgeSize, 0, edgeSize, canvas.height);
+
+            const impactScreenX = (localBeamState.special_beam_to_x - cameraX) * cameraZoom;
+            const impactScreenY = (localBeamState.special_beam_to_y - cameraY) * cameraZoom;
+            const flare = ctx.createRadialGradient(
+                impactScreenX,
+                impactScreenY,
+                0,
+                impactScreenX,
+                impactScreenY,
+                Math.max(canvas.width, canvas.height) * 0.26
+            );
+            flare.addColorStop(0, `rgba(255, 244, 196, ${0.2 * pulse})`);
+            flare.addColorStop(0.32, `rgba(255, 110, 34, ${0.12 * pulse})`);
+            flare.addColorStop(1, 'rgba(255, 80, 20, 0)');
+            ctx.fillStyle = flare;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.restore();
         }
 
@@ -17026,6 +17439,9 @@
                 // Draw explosions
                 drawExplosions(nowMs, renderServerTimeMs, effectVisibleBounds);
 
+                // Draw held special beams
+                drawSpecialBeams(nowMs, effectVisibleBounds);
+
                 // --- DRAW PLAYER NAMES BEFORE WEBGL ---
                 // Draw names here so they are affected by the shader
                 for (const sid in playerState) {
@@ -17122,6 +17538,7 @@
                 // --- END CHAT MESSAGES ---
 
                 ctx.restore();
+                drawSpecialBeamScreenOverlay(nowMs);
                 drawGroupMateIndicators(ctx);
 
                 if (shouldUseLowQualityPresentation()) {

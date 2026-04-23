@@ -7,6 +7,10 @@ const {
   FIREBALL_MAX_DISTANCE,
   EXPLOSION_DURATION,
   EXPLOSION_RADIUS,
+  SPECIAL_BEAM_RANGE,
+  SPECIAL_BEAM_WIDTH,
+  SPECIAL_BEAM_DAMAGE,
+  SPECIAL_BEAM_TICK_INTERVAL,
   ATTACK_DURATION,
   GRAVITY,
   MOVE_SPEED,
@@ -21,6 +25,7 @@ const {
   checkFireballEnemyCollision,
   damageEnemy,
   despawnEnemiesSpawnedForPlayer,
+  getEnemyHitbox,
   serializeEnemiesForState,
   syncEnemyDirector,
   updateEnemies,
@@ -54,6 +59,7 @@ const FIREBALL_SEND_RADIUS_X = 1750;
 const FIREBALL_SEND_RADIUS_Y = 1200;
 const EXPLOSION_SEND_RADIUS_X = 1800;
 const EXPLOSION_SEND_RADIUS_Y = 1250;
+const SPECIAL_BEAM_PADDING = SPECIAL_BEAM_WIDTH * 0.5;
 const ENEMY_FULL_SYNC_INTERVAL_MS = 750;
 const ENEMY_STICKY_FIELD_EXTRA_SENDS = 3;
 const ENEMY_STICKY_FIELDS = new Set([
@@ -85,6 +91,19 @@ function getPlayerKillXp(victim, killer = null) {
   const killerLevel = killer ? Math.max(1, getPlayerLevel(killer)) : 1;
   const levelGapBonus = Math.max(0, victimLevel - killerLevel) * 4;
   return Math.max(36, 28 + victimLevel * 6 + levelGapBonus);
+}
+
+function resetSpecialBeamState(player) {
+  player.special_beam_requested = false;
+  player.special_beam_active = false;
+  player.special_beam_target_x = 0;
+  player.special_beam_target_y = 0;
+  player.special_beam_from_x = 0;
+  player.special_beam_from_y = 0;
+  player.special_beam_to_x = 0;
+  player.special_beam_to_y = 0;
+  player.special_beam_started_at = 0;
+  player.special_beam_damage_accumulator = 0;
 }
 
 /** @type {NodeJS.Timeout | null} */
@@ -156,6 +175,7 @@ function updateDeathsAndRespawns(input) {
     p.death_time = 0;
     p.is_attacking = false;
     p.attack_start_time = 0;
+    resetSpecialBeamState(p);
     p.pending_projectile_angle = null;
     p.pending_projectile_vx = 0;
     p.pending_projectile_vy = 0;
@@ -200,12 +220,14 @@ function startGameLoop(input) {
   let lastFairyBroadcastMs = 0;
   const broadcastIntervalMs = 1000 / 20;
   const fairyBroadcastIntervalMs = 250;
+  const frameDurationMs = FRAME_TIME * 1000;
 
   input.state.lastActivePlayerAtMs = Date.now();
   const healingSystem = new HealingSystem(input.state);
   gameLoopContext = { ...input, healingSystem };
 
-  gameLoopInterval = setInterval(() => {
+  const tick = () => {
+    gameLoopInterval = null;
     const nowMs = Date.now();
     let dt = (nowMs - lastTimeMs) / 1000;
     lastTimeMs = nowMs;
@@ -230,6 +252,7 @@ function startGameLoop(input) {
         spawnFireball,
         shouldUpdateEnemy: (enemy) => isEnemyNearAnyPlayer(enemy, activePlayers),
       });
+      updateSpecialBeams({ state: input.state, dt, io: input.io });
       syncEnemyDirector(input.state, input.io);
       updateFairies({ fairies: input.state.fairies, dt });
       updateSouls({ state: input.state, dt, io: input.io });
@@ -259,7 +282,13 @@ function startGameLoop(input) {
         worldSleeping,
       });
     }
-  }, FRAME_TIME * 1000);
+
+    const tickWorkDurationMs = Date.now() - nowMs;
+    const nextDelayMs = Math.max(0, frameDurationMs - tickWorkDurationMs);
+    gameLoopInterval = setTimeout(tick, nextDelayMs);
+  };
+
+  gameLoopInterval = setTimeout(tick, frameDurationMs);
 }
 
 /**
@@ -295,6 +324,12 @@ function broadcastState(input) {
       max_health: Math.max(1, Math.round(runStats.maxHealth || PLAYER_MAX_HEALTH)),
       is_attacking: p.is_attacking,
       attack_start_time_ms: p.attack_start_time ? Math.round(p.attack_start_time * 1000) : 0,
+      special_beam_active: Boolean(p.special_beam_active),
+      special_beam_from_x: round1(p.special_beam_from_x || 0),
+      special_beam_from_y: round1(p.special_beam_from_y || 0),
+      special_beam_to_x: round1(p.special_beam_to_x || 0),
+      special_beam_to_y: round1(p.special_beam_to_y || 0),
+      special_beam_started_at_ms: p.special_beam_started_at ? Math.round(p.special_beam_started_at * 1000) : 0,
       soul_count: Math.max(0, Math.round(p.soul_count || 0)),
       soul_title: soulDominion.title,
       soul_short_title: soulDominion.shortTitle,
@@ -743,7 +778,9 @@ function updateGameState(input) {
       }
     }
 
-    if (!p.is_attacking) {
+    if (p.special_beam_active) {
+      p.action = 'attack';
+    } else if (!p.is_attacking) {
       if (!p.on_ground) p.action = 'jump';
       else if (Math.abs(p.vx) > 0) p.action = 'run';
       else p.action = 'idle';
@@ -759,6 +796,348 @@ function updateGameState(input) {
   }
 
   resolvePlayerPlayerCollisions({ state: input.state });
+}
+
+function segmentAabbIntersectionT(startX, startY, endX, endY, rect, padding = 0) {
+  const minX = rect.x - padding;
+  const maxX = rect.x + rect.w + padding;
+  const minY = rect.y - padding;
+  const maxY = rect.y + rect.h + padding;
+  const deltaX = endX - startX;
+  const deltaY = endY - startY;
+  let tMin = 0;
+  let tMax = 1;
+
+  const axes = [
+    { start: startX, delta: deltaX, min: minX, max: maxX },
+    { start: startY, delta: deltaY, min: minY, max: maxY },
+  ];
+
+  for (const axis of axes) {
+    if (Math.abs(axis.delta) < 0.000001) {
+      if (axis.start < axis.min || axis.start > axis.max) {
+        return null;
+      }
+      continue;
+    }
+
+    let t1 = (axis.min - axis.start) / axis.delta;
+    let t2 = (axis.max - axis.start) / axis.delta;
+    if (t1 > t2) {
+      const swap = t1;
+      t1 = t2;
+      t2 = swap;
+    }
+
+    tMin = Math.max(tMin, t1);
+    tMax = Math.min(tMax, t2);
+    if (tMin > tMax) {
+      return null;
+    }
+  }
+
+  if (tMax < 0 || tMin > 1) {
+    return null;
+  }
+
+  return Math.max(0, tMin);
+}
+
+function computeBeamDistanceToMapBounds(state, originX, originY, dirX, dirY, maxDistance) {
+  let distance = maxDistance;
+
+  if (dirX > 0.000001) {
+    distance = Math.min(distance, (state.mapBounds.max_x - originX) / dirX);
+  } else if (dirX < -0.000001) {
+    distance = Math.min(distance, (state.mapBounds.min_x - originX) / dirX);
+  }
+
+  if (dirY > 0.000001) {
+    distance = Math.min(distance, (state.mapBounds.max_y - originY) / dirY);
+  } else if (dirY < -0.000001) {
+    distance = Math.min(distance, (state.mapBounds.min_y - originY) / dirY);
+  }
+
+  return Math.max(0, distance);
+}
+
+function collectBeamCollisionPlatforms(state, originX, originY, endX, endY) {
+  const distance = Math.hypot(endX - originX, endY - originY);
+  const sampleCount = Math.max(1, Math.ceil(distance / 96));
+  const candidates = new Map();
+
+  for (let index = 0; index <= sampleCount; index += 1) {
+    const t = index / sampleCount;
+    const sampleX = originX + (endX - originX) * t;
+    const sampleY = originY + (endY - originY) * t;
+    const nearby = getNearbyPlatforms({
+      platformGrid: state.platformGrid,
+      x: sampleX,
+      y: sampleY,
+    });
+
+    for (const platform of nearby) {
+      const key = `${platform.x}:${platform.y}:${platform.w}:${platform.h}`;
+      if (!candidates.has(key)) {
+        candidates.set(key, platform);
+      }
+    }
+  }
+
+  return Array.from(candidates.values());
+}
+
+function resolveSpecialBeamEndpoint(input) {
+  const maxDistance = computeBeamDistanceToMapBounds(
+    input.state,
+    input.originX,
+    input.originY,
+    input.dirX,
+    input.dirY,
+    input.maxDistance
+  );
+  const unclippedEndX = input.originX + input.dirX * maxDistance;
+  const unclippedEndY = input.originY + input.dirY * maxDistance;
+  let bestT = 1;
+  let hitWall = false;
+
+  const candidates = collectBeamCollisionPlatforms(input.state, input.originX, input.originY, unclippedEndX, unclippedEndY);
+  for (const platform of candidates) {
+    const hitT = segmentAabbIntersectionT(
+      input.originX,
+      input.originY,
+      unclippedEndX,
+      unclippedEndY,
+      { x: platform.x, y: platform.y, w: platform.w, h: platform.h }
+    );
+    if (hitT === null || hitT >= bestT) {
+      continue;
+    }
+
+    bestT = Math.max(0, hitT - 0.002);
+    hitWall = true;
+  }
+
+  return {
+    x: input.originX + (unclippedEndX - input.originX) * bestT,
+    y: input.originY + (unclippedEndY - input.originY) * bestT,
+    hitWall,
+  };
+}
+
+function awardBeamKill(input) {
+  if (!input.ownerSid || input.ownerSid === input.victimSid) {
+    return;
+  }
+
+  const killer = input.state.players.get(input.ownerSid);
+  const victim = input.state.players.get(input.victimSid);
+  if (!killer || !victim) {
+    return;
+  }
+
+  const xpResult = gainPlayerXp(killer, getPlayerKillXp(victim, killer));
+  const unlockedAggroWarning = consumeAggroUnlockNotification(killer);
+  const unlockedAchievements = recordProgressionMetric(killer, 'playerKills', 1);
+  const victimName = victim.name || `P${input.victimSid.slice(0, 4)}`;
+  const killerName = killer.name || `P${input.ownerSid.slice(0, 4)}`;
+  input.io.emit('progression_notification', {
+    type: 'player_kill',
+    xp: 0,
+    message: `${killerName} melted ${victimName} with fire lazer`,
+    victimName,
+    killerName,
+    weapon: 'fire lazer',
+  });
+  emitProgressionNotification(input.io, input.ownerSid, {
+    type: 'player_kill',
+    xp: xpResult.gainedXp,
+    message: `you melted ${victimName} with fire lazer`,
+    caption: `+${xpResult.gainedXp} xp`,
+    victimName,
+    killerName,
+    weapon: 'fire lazer',
+  });
+
+  if (unlockedAggroWarning) {
+    emitProgressionNotification(input.io, input.ownerSid, unlockedAggroWarning);
+  }
+  for (const achievement of unlockedAchievements) {
+    emitProgressionNotification(input.io, input.ownerSid, achievement);
+  }
+}
+
+function applySpecialBeamDamage(input) {
+  const ownerPlayer = input.ownerSid ? input.state.players.get(input.ownerSid) : null;
+  const beamDx = input.endX - input.startX;
+  const beamDy = input.endY - input.startY;
+  const horizontalSign = Math.sign(beamDx) || (ownerPlayer?.direction === 'left' ? -1 : 1);
+  const nowSec = Date.now() / 1000;
+
+  for (const [sid, player] of input.state.players.entries()) {
+    if (player.is_dying) continue;
+    if (sid === input.ownerSid) continue;
+    if (ownerPlayer && arePlayersFriendly(ownerPlayer, player)) continue;
+
+    const hitT = segmentAabbIntersectionT(
+      input.startX,
+      input.startY,
+      input.endX,
+      input.endY,
+      { x: player.x - PLAYER_HITBOX_WIDTH / 2, y: player.y - PLAYER_HITBOX_HEIGHT / 2, w: PLAYER_HITBOX_WIDTH, h: PLAYER_HITBOX_HEIGHT },
+      SPECIAL_BEAM_PADDING
+    );
+    if (hitT === null) {
+      continue;
+    }
+
+    const reduction = Math.max(0, Math.min(0.72, Number(getPlayerRunStats(player).damageReduction) || 0));
+    const reducedDamage = Math.max(1, Math.round(input.damage * (1 - reduction)));
+    const impactX = input.startX + beamDx * hitT;
+    const impactY = input.startY + beamDy * hitT;
+    player.knockback_vx = horizontalSign * 260;
+    player.vy = Math.min(player.vy, -190);
+    player.on_ground = false;
+    player.jumps_remaining = 0;
+    player.health -= reducedDamage;
+
+    if (player.health <= 0) {
+      player.health = 0;
+      player.is_dying = true;
+      player.death_time = nowSec;
+      despawnEnemiesSpawnedForPlayer(input.state, sid);
+      dropSoulsForPlayerDeath(input.state, input.io, player);
+      awardBeamKill({ state: input.state, io: input.io, ownerSid: input.ownerSid, victimSid: sid });
+      input.io.emit('player_dying', {
+        sid,
+        x: player.x,
+        y: player.y,
+        vy: player.vy,
+        on_ground: player.on_ground,
+        character: player.character,
+        direction: player.direction,
+        timestamp: nowSec,
+      });
+    }
+
+    input.io.emit('player_hit', {
+      sid,
+      damage: reducedDamage,
+      health: player.health,
+      is_dying: player.is_dying,
+      x: impactX,
+      y: impactY,
+      effect: 'beam',
+    });
+  }
+
+  for (const [enemyId, enemy] of input.state.enemies.entries()) {
+    if (!enemy.alive) continue;
+
+    const hitbox = getEnemyHitbox(input.state, enemy);
+    if (!hitbox) {
+      continue;
+    }
+
+    const hitT = segmentAabbIntersectionT(
+      input.startX,
+      input.startY,
+      input.endX,
+      input.endY,
+      { x: hitbox.x, y: hitbox.y, w: hitbox.width, h: hitbox.height },
+      SPECIAL_BEAM_PADDING
+    );
+    if (hitT === null) {
+      continue;
+    }
+
+    damageEnemy({
+      state: input.state,
+      io: input.io,
+      enemyId,
+      damage: input.damage,
+      sourceSid: input.ownerSid,
+      sourceVx: horizontalSign * 320,
+      sourceVy: -140,
+    });
+  }
+}
+
+function updateSpecialBeams(input) {
+  for (const [sid, player] of input.state.players.entries()) {
+    const wantsBeam =
+      Boolean(player.special_beam_requested) &&
+      Boolean(player.special_attack_unlocked) &&
+      !player.is_dying &&
+      player.is_ready &&
+      !isPlayerDrafting(player);
+
+    if (!wantsBeam) {
+      resetSpecialBeamState(player);
+      continue;
+    }
+
+    const wasActive = Boolean(player.special_beam_active);
+    const originX = player.x + (player.direction === 'left' ? -18 : 18);
+    const originY = player.y - 18;
+    let dirX = Number(player.special_beam_target_x) - originX;
+    let dirY = Number(player.special_beam_target_y) - originY;
+    const length = Math.hypot(dirX, dirY);
+
+    if (length < 0.0001) {
+      dirX = player.direction === 'left' ? -1 : 1;
+      dirY = 0;
+    } else {
+      dirX /= length;
+      dirY /= length;
+    }
+
+    player.direction = dirX < 0 ? 'left' : 'right';
+    const runStats = getPlayerRunStats(player);
+    const beamRange = Math.max(280, Math.min(SPECIAL_BEAM_RANGE, Number(runStats.fireballRange) || SPECIAL_BEAM_RANGE));
+    const endpoint = resolveSpecialBeamEndpoint({
+      state: input.state,
+      originX,
+      originY,
+      dirX,
+      dirY,
+      maxDistance: beamRange,
+    });
+
+    player.special_beam_active = true;
+    if (!player.special_beam_started_at) {
+      player.special_beam_started_at = Date.now() / 1000;
+    }
+    player.special_beam_from_x = originX;
+    player.special_beam_from_y = originY;
+    player.special_beam_to_x = endpoint.x;
+    player.special_beam_to_y = endpoint.y;
+    player.action = 'attack';
+
+    if (!wasActive) {
+      player.special_beam_damage_accumulator = SPECIAL_BEAM_TICK_INTERVAL;
+    } else {
+      player.special_beam_damage_accumulator = Math.max(0, Number(player.special_beam_damage_accumulator) || 0) + input.dt;
+    }
+
+    const beamDamage = Math.max(
+      4,
+      Math.round(Math.max(SPECIAL_BEAM_DAMAGE, (Number(runStats.fireballDamage) || SPECIAL_BEAM_DAMAGE) * 0.42))
+    );
+    while (player.special_beam_damage_accumulator >= SPECIAL_BEAM_TICK_INTERVAL) {
+      player.special_beam_damage_accumulator -= SPECIAL_BEAM_TICK_INTERVAL;
+      applySpecialBeamDamage({
+        state: input.state,
+        io: input.io,
+        ownerSid: sid,
+        startX: originX,
+        startY: originY,
+        endX: endpoint.x,
+        endY: endpoint.y,
+        damage: beamDamage,
+      });
+    }
+  }
 }
 
 function spawnPlayerFireball(input) {
@@ -1769,7 +2148,7 @@ function round3(n) {
  */
 function stopGameLoop() {
   if (gameLoopInterval) {
-    clearInterval(gameLoopInterval);
+    clearTimeout(gameLoopInterval);
     gameLoopInterval = null;
   }
 }

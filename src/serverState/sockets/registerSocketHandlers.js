@@ -5,6 +5,7 @@ const {
   FIREBALL_POWER_MAX,
   FIREBALL_MAX_DISTANCE,
   GRAVITY,
+  SPECIAL_BEAM_RANGE,
 } = require('../state/constants');
 const { GroupManager } = require('../groups/groupManager');
 const { HealingSystem } = require('../healing/healingSystem');
@@ -24,6 +25,33 @@ const {
   resetPlayerProgression,
 } = require('../state/progression/system');
 const { emitProgressionNotification } = require('../state/progression/notifications');
+
+function normalizeSpecialAttackName(name) {
+  return String(name ?? '').trim().toLowerCase();
+}
+
+function canUnlockSpecialAttack({ name, character, requestedUnlock }) {
+  if (!requestedUnlock) {
+    return false;
+  }
+
+  const normalizedName = normalizeSpecialAttackName(name);
+  const normalizedCharacter = String(character ?? '').trim().toLowerCase();
+  return normalizedName === 'muhammad' || (normalizedName === 'pkducky' && normalizedCharacter === 'duck');
+}
+
+function resetSpecialBeamState(player) {
+  player.special_beam_requested = false;
+  player.special_beam_active = false;
+  player.special_beam_target_x = 0;
+  player.special_beam_target_y = 0;
+  player.special_beam_from_x = 0;
+  player.special_beam_from_y = 0;
+  player.special_beam_to_x = 0;
+  player.special_beam_to_y = 0;
+  player.special_beam_started_at = 0;
+  player.special_beam_damage_accumulator = 0;
+}
 
 /**
  * Registers all Socket.IO event handlers for a connected client.
@@ -202,7 +230,53 @@ function registerSocketHandlers(input) {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
     if (isPlayerDrafting(player)) return;
+    if (player.special_beam_requested || player.special_beam_active) return;
     queueOrStartProjectileAttack(player, data);
+  });
+
+  socket.on('special_attack_update', (data) => {
+    const player = state.players.get(socket.id);
+    if (!player || !player.is_ready) return;
+    if (!player.special_attack_unlocked || isPlayerDrafting(player) || player.is_dying) {
+      resetSpecialBeamState(player);
+      return;
+    }
+
+    const wantsActive = Boolean(data?.active);
+    if (!wantsActive) {
+      resetSpecialBeamState(player);
+      return;
+    }
+
+    const targetX = Number(data?.worldX);
+    const targetY = Number(data?.worldY);
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      resetSpecialBeamState(player);
+      return;
+    }
+
+    player.special_beam_requested = true;
+    player.special_beam_target_x = Math.max(
+      state.mapBounds.min_x - SPECIAL_BEAM_RANGE,
+      Math.min(targetX, state.mapBounds.max_x + SPECIAL_BEAM_RANGE)
+    );
+    player.special_beam_target_y = Math.max(
+      state.mapBounds.min_y - SPECIAL_BEAM_RANGE,
+      Math.min(targetY, state.mapBounds.max_y + SPECIAL_BEAM_RANGE)
+    );
+    if (!player.special_beam_started_at) {
+      player.special_beam_started_at = Date.now() / 1000;
+    }
+
+    player.is_attacking = false;
+    player.attack_start_time = 0;
+    player.pending_projectile_angle = null;
+    player.pending_projectile_vx = 0;
+    player.pending_projectile_vy = 0;
+    player.queued_projectile_angle = null;
+    player.queued_projectile_vx = 0;
+    player.queued_projectile_vy = 0;
+    player.queued_projectile_direction = null;
   });
 
   socket.on('select_upgrade', (data) => {
@@ -578,6 +652,7 @@ function registerSocketHandlers(input) {
 function handleConnect(input) {
   const nameQuery = input.socket.handshake?.query?.name;
   const characterQuery = input.socket.handshake?.query?.character;
+  const specialUnlockQuery = input.socket.handshake?.query?.specialUnlock;
   const playerName = String(nameQuery ?? `Player_${input.socket.id.slice(0, 4)}`).slice(0, 15);
 
   const characterInfo = resolveCharacterSelection({
@@ -585,6 +660,11 @@ function handleConnect(input) {
     requestedCharacter: characterQuery,
   });
   const character = characterInfo.character;
+  const specialAttackUnlocked = canUnlockSpecialAttack({
+    name: playerName,
+    character,
+    requestedUnlock: specialUnlockQuery === '1' || specialUnlockQuery === 'true',
+  });
 
   const spawnPoint = pickSpawnPoint({ state: input.state });
 
@@ -608,6 +688,17 @@ function handleConnect(input) {
     death_time: 0,
     is_attacking: false,
     attack_start_time: 0,
+    special_attack_unlocked: specialAttackUnlocked,
+    special_beam_requested: false,
+    special_beam_active: false,
+    special_beam_target_x: 0,
+    special_beam_target_y: 0,
+    special_beam_from_x: 0,
+    special_beam_from_y: 0,
+    special_beam_to_x: 0,
+    special_beam_to_y: 0,
+    special_beam_started_at: 0,
+    special_beam_damage_accumulator: 0,
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
@@ -715,6 +806,7 @@ function respawnPlayer(input) {
   player.death_time = 0;
   player.is_attacking = false;
   player.attack_start_time = 0;
+  resetSpecialBeamState(player);
   player.pending_projectile_angle = null;
   player.pending_projectile_vx = 0;
   player.pending_projectile_vy = 0;
