@@ -13,45 +13,45 @@ const CARD_RARITY_META = {
 const SOUL_TIER_RULES = Object.freeze([
   {
     threshold: 0,
-    title: 'Kindled',
-    shortTitle: 'Kindled',
-    accent: '#d9edf8',
-    aura: 'rgba(196, 232, 255, 0)',
+    title: 'Wanderer',
+    shortTitle: 'Wanderer',
+    accent: '#cfd9e6',
+    aura: 'rgba(207, 217, 230, 0.18)',
   },
   {
     threshold: 60,
-    title: 'Soulbound',
-    shortTitle: 'Soulbound',
-    accent: '#74d7d2',
-    aura: 'rgba(116, 215, 210, 0.18)',
+    title: 'Seeker',
+    shortTitle: 'Seeker',
+    accent: '#b8d8ff',
+    aura: 'rgba(184, 216, 255, 0.28)',
   },
   {
     threshold: 220,
-    title: 'Feared Vessel',
-    shortTitle: 'Feared',
-    accent: '#7ec9ff',
-    aura: 'rgba(126, 201, 255, 0.24)',
+    title: 'Hunter',
+    shortTitle: 'Hunter',
+    accent: '#8dd3ff',
+    aura: 'rgba(141, 211, 255, 0.42)',
   },
   {
     threshold: 700,
-    title: 'Soul Tyrant',
-    shortTitle: 'Tyrant',
-    accent: '#8fd8ff',
-    aura: 'rgba(143, 216, 255, 0.32)',
+    title: 'Reaper',
+    shortTitle: 'Reaper',
+    accent: '#7fc8ff',
+    aura: 'rgba(127, 200, 255, 0.56)',
   },
   {
     threshold: 1600,
-    title: 'Crownbearer',
-    shortTitle: 'Crown',
-    accent: '#a9e7ff',
-    aura: 'rgba(169, 231, 255, 0.42)',
+    title: 'Master',
+    shortTitle: 'Master',
+    accent: '#ffb866',
+    aura: 'rgba(255, 184, 102, 0.72)',
   },
   {
     threshold: 3000,
-    title: 'Soul Sovereign',
-    shortTitle: 'Sovereign',
-    accent: '#d6f7ff',
-    aura: 'rgba(214, 247, 255, 0.58)',
+    title: 'Eternal',
+    shortTitle: 'Eternal',
+    accent: '#ff6b3d',
+    aura: 'rgba(255, 107, 61, 0.92)',
   },
 ]);
 
@@ -203,22 +203,22 @@ function getSoulDominionBonuses(soulCount) {
   const souls = Math.max(0, Math.round(Number(soulCount) || 0));
 
   return {
-    bonusMaxHealth: Math.min(150, Math.round(souls * 0.28 + Math.max(0, souls - 180) * 0.07)),
-    moveSpeedMultiplier: 1 + Math.min(0.18, souls * 0.00018),
-    jumpVelocityMultiplier: 1 + Math.min(0.13, souls * 0.00013),
-    damageReductionBonus: Math.min(0.14, souls * 0.00014),
-    xpGainMultiplier: 1 + Math.min(0.22, souls * 0.00022),
-    soulMagnetMultiplier: 1 + Math.min(0.65, souls * 0.00065),
-    soulHealMultiplier: 1 + Math.min(0.42, souls * 0.00042),
-    regainPerSecondBonus: Math.min(2.1, souls * 0.0021),
-    fireballDamageMultiplier: 1 + Math.min(1.15, souls * 0.00115),
-    fireballExplosionRadiusMultiplier: 1 + Math.min(0.28, souls * 0.00028),
-    fireballExplosionDamageMultiplier: 1 + Math.min(0.28, souls * 0.00028),
-    fireballCritChanceBonus: Math.min(0.12, souls * 0.00012),
-    fireballCritMultiplierBonus: Math.min(0.38, souls * 0.00038),
-    fireballRangeMultiplier: 1 + Math.min(0.18, souls * 0.00018),
-    fireballSpeedMultiplier: 1 + Math.min(0.16, souls * 0.00016),
-    attackDurationMultiplier: 1 - Math.min(0.24, souls * 0.00024),
+    bonusMaxHealth: Math.min(420, Math.round(souls * 0.52 + Math.max(0, souls - 180) * 0.16 + Math.max(0, souls - 1200) * 0.08)),
+    moveSpeedMultiplier: 1 + Math.min(0.52, souls * 0.00052),
+    jumpVelocityMultiplier: 1 + Math.min(0.22, souls * 0.00022),
+    damageReductionBonus: Math.min(0.3, souls * 0.0003),
+    xpGainMultiplier: 1 + Math.min(0.45, souls * 0.00045),
+    soulMagnetMultiplier: 1 + Math.min(1.15, souls * 0.00115),
+    soulHealMultiplier: 1 + Math.min(0.9, souls * 0.0009),
+    regainPerSecondBonus: Math.min(6.5, souls * 0.0065),
+    fireballDamageMultiplier: 1 + Math.min(3.1, souls * 0.0031),
+    fireballExplosionRadiusMultiplier: 1 + Math.min(0.82, souls * 0.00082),
+    fireballExplosionDamageMultiplier: 1 + Math.min(1.05, souls * 0.00105),
+    fireballCritChanceBonus: Math.min(0.24, souls * 0.00024),
+    fireballCritMultiplierBonus: Math.min(1.15, souls * 0.00115),
+    fireballRangeMultiplier: 1 + Math.min(0.5, souls * 0.0005),
+    fireballSpeedMultiplier: 1 + Math.min(0.44, souls * 0.00044),
+    attackDurationMultiplier: 1 - Math.min(0.46, souls * 0.00046),
   };
 }
 
@@ -232,6 +232,7 @@ function getSoulDominionPayload(player) {
   const progressToNext = nextThreshold
     ? Math.max(0, Math.min(1, (souls - previousThreshold) / Math.max(1, nextThreshold - previousThreshold)))
     : 1;
+  const auraCharge = Math.max(0, souls - 4) / 420;
 
   return {
     souls,
@@ -240,7 +241,7 @@ function getSoulDominionPayload(player) {
     shortTitle: tier.shortTitle,
     accent: tier.accent,
     aura: tier.aura,
-    auraStrength: Math.max(0, Math.min(1, souls / 3000)),
+    auraStrength: Math.pow(Math.max(0, Math.min(1, auraCharge)), 0.72),
     currentThreshold: previousThreshold,
     nextThreshold,
     progressToNext,

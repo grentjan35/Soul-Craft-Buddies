@@ -13,6 +13,25 @@
             --mobile-edge-gap: 20px;
             --mobile-action-size: 86px;
             --mobile-action-gap: 14px;
+            --mobile-controls-left: 0px;
+            --mobile-controls-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+            --jump-button-left: auto;
+            --jump-button-right: 10px;
+            --jump-button-top: auto;
+            --jump-button-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+            --run-hud-left: 14px;
+            --run-hud-top: 14px;
+            --progression-feed-left: 14px;
+            --progression-feed-top: 246px;
+            --leaderboard-right: 2px;
+            --leaderboard-top: 140px;
+            --chat-right: 10px;
+            --chat-bottom: calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 8px);
+            --game-scale-multiplier: 1;
+            --game-display-left: 50%;
+            --game-display-top: 50%;
+            --game-display-translate-x: -50%;
+            --game-display-translate-y: -50%;
             --mobile-chat-width: 300px;
             --mobile-chat-bottom-offset: calc(env(safe-area-inset-bottom, 0px) + 12px);
             --adaptive-chat-width: 300px;
@@ -72,11 +91,11 @@
         #gameCanvas {
             display: none;
             position: fixed;
-            left: 50%;
-            top: 50%;
+            left: var(--game-display-left);
+            top: var(--game-display-top);
             width: var(--game-display-width, 100vw);
             height: var(--game-display-height, 100vh);
-            transform: translate(-50%, -50%);
+            transform: translate(var(--game-display-translate-x), var(--game-display-translate-y));
             image-rendering: auto;
             z-index: 1;
             background: #000;
@@ -87,11 +106,11 @@
         #gameCanvas-wrapper {
             display: block;
             position: fixed;
-            left: 50%;
-            top: 50%;
+            left: var(--game-display-left);
+            top: var(--game-display-top);
             width: var(--game-display-width, 100vw);
             height: var(--game-display-height, 100vh);
-            transform: translate(-50%, -50%);
+            transform: translate(var(--game-display-translate-x), var(--game-display-translate-y));
             z-index: 1;
             overflow: hidden;
         }
@@ -115,11 +134,11 @@
 
         #dynamic-light-glows {
             position: fixed;
-            left: 50%;
-            top: 50%;
+            left: var(--game-display-left);
+            top: var(--game-display-top);
             width: var(--game-display-width, 100vw);
             height: var(--game-display-height, 100vh);
-            transform: translate(-50%, -50%);
+            transform: translate(var(--game-display-translate-x), var(--game-display-translate-y));
             pointer-events: none;
             z-index: 4;
         }
@@ -131,11 +150,11 @@
         #glCanvas {
             display: none;
             position: fixed;
-            left: 50%;
-            top: 50%;
+            left: var(--game-display-left);
+            top: var(--game-display-top);
             width: var(--game-display-width, 100vw);
             height: var(--game-display-height, 100vh);
-            transform: translate(-50%, -50%);
+            transform: translate(var(--game-display-translate-x), var(--game-display-translate-y));
             pointer-events: none;
             z-index: 2;
         }
@@ -197,9 +216,9 @@
         }
         #souls-leaderboard {
             position: fixed;
-            top: 140px;
+            top: var(--leaderboard-top);
             bottom: auto;
-            right: var(--adaptive-chat-edge);
+            right: var(--leaderboard-right);
             min-width: 220px;
             width: min(var(--adaptive-leaderboard-width), 42vw);
             max-width: min(var(--adaptive-leaderboard-width), 42vw);
@@ -279,8 +298,8 @@
         }
         #run-hud {
             position: fixed;
-            top: 14px;
-            left: 14px;
+            top: var(--run-hud-top);
+            left: var(--run-hud-left);
             z-index: 180;
             display: none;
             width: min(var(--adaptive-hud-width), calc(100vw - 28px));
@@ -429,8 +448,8 @@
         }
         #progression-feed {
             position: fixed;
-            left: 14px;
-            top: 246px;
+            left: var(--progression-feed-left);
+            top: var(--progression-feed-top);
             z-index: 230;
             display: flex;
             flex-direction: column;
@@ -2320,7 +2339,7 @@
         #chat-container {
             position: fixed;
             bottom: 10px;
-            right: var(--adaptive-chat-edge);
+            right: var(--chat-right, var(--adaptive-chat-edge));
             z-index: 100;
             font-family: 'EB Garamond', serif;
             width: var(--adaptive-chat-width);
@@ -3113,8 +3132,8 @@
         /* Mobile Controls Styling */
         #mobile-controls {
             position: fixed;
-            left: 0;
-            bottom: var(--mobile-chat-bottom-offset);
+            left: var(--mobile-controls-left);
+            bottom: var(--mobile-controls-bottom);
             height: var(--mobile-controls-height);
             z-index: 50;
             display: flex;
@@ -3212,8 +3231,10 @@
         #jump-button {
             background: transparent;
             position: fixed;
-            right: 20px;
-            bottom: 20px;
+            left: var(--jump-button-left);
+            right: var(--jump-button-right);
+            top: var(--jump-button-top);
+            bottom: var(--jump-button-bottom);
             z-index: 101;
         }
 
@@ -3257,10 +3278,10 @@
         @media (hover: none) and (pointer: coarse) {
             #chat-container {
                 left: auto;
-                right: 10px;
+                right: var(--chat-right);
                 width: min(var(--adaptive-chat-width), calc(100vw - 24px));
                 max-width: calc(100vw - 24px);
-                bottom: calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 8px);
+                bottom: var(--chat-bottom);
             }
 
             #chat-box.expanded {
@@ -3275,8 +3296,10 @@
 
             #jump-button {
                 position: fixed;
-                right: 10px;
-                bottom: var(--mobile-chat-bottom-offset);
+                left: var(--jump-button-left);
+                right: var(--jump-button-right);
+                top: var(--jump-button-top);
+                bottom: var(--jump-button-bottom);
                 z-index: 101;
             }
         }
@@ -3699,6 +3722,111 @@
                    (navigator.maxTouchPoints > 0);
         }
         const isMobile = isMobileDevice();
+        let mobileLayoutPresets = [];
+        let activeMobileLayoutPreset = null;
+
+        function clampNumber(value, min, max, fallback) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return fallback;
+            }
+            return Math.max(min, Math.min(max, numeric));
+        }
+
+        async function loadMobileLayoutPresets() {
+            try {
+                const response = await fetch('/api/mobile_layouts', { cache: 'no-store' });
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                mobileLayoutPresets = Array.isArray(payload?.presets) ? payload.presets : [];
+                pickActiveMobileLayoutPreset();
+                resizeCanvas();
+            } catch {
+                mobileLayoutPresets = [];
+            }
+        }
+
+        function pickActiveMobileLayoutPreset() {
+            if (!isMobile || mobileLayoutPresets.length === 0) {
+                activeMobileLayoutPreset = null;
+                return;
+            }
+
+            const viewportWidth = Math.max(1, Math.round(window.visualViewport?.width || window.innerWidth));
+            const viewportHeight = Math.max(1, Math.round(window.visualViewport?.height || window.innerHeight));
+            const targetRatio = viewportWidth / viewportHeight;
+            let bestPreset = null;
+            let bestScore = Number.POSITIVE_INFINITY;
+
+            for (const preset of mobileLayoutPresets) {
+                const presetRatio = Number(preset?.aspectRatio) || (Number(preset?.width) / Math.max(1, Number(preset?.height)));
+                const score = Math.abs(targetRatio - presetRatio);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestPreset = preset;
+                }
+            }
+
+            activeMobileLayoutPreset = bestPreset;
+        }
+
+        function applyMobileLayoutCssVariables(layout, displayWidth, displayHeight) {
+            const rootStyle = document.documentElement.style;
+            const gameScale = clampNumber(layout?.gameScale, 0.65, 1.2, 1);
+            const mobileUiScaleOverride = Number.isFinite(Number(layout?.mobileUiScale))
+                ? clampNumber(layout.mobileUiScale, 0.7, 1.6, 1)
+                : null;
+            const gameWidth = Math.round(displayWidth * gameScale);
+            const gameHeight = Math.round(displayHeight * gameScale);
+            const gameX = clampNumber(layout?.gameX, 0, window.innerWidth, Math.max(0, Math.round((window.innerWidth - gameWidth) / 2)));
+            const gameY = clampNumber(layout?.gameY, 0, window.innerHeight, Math.max(0, Math.round((window.innerHeight - gameHeight) / 2)));
+
+            rootStyle.setProperty('--game-display-width', `${gameWidth}px`);
+            rootStyle.setProperty('--game-display-height', `${gameHeight}px`);
+            rootStyle.setProperty('--game-display-left', `${Math.round(gameX)}px`);
+            rootStyle.setProperty('--game-display-top', `${Math.round(gameY)}px`);
+            rootStyle.setProperty('--game-display-translate-x', '0px');
+            rootStyle.setProperty('--game-display-translate-y', '0px');
+            rootStyle.setProperty('--mobile-controls-left', `${Math.round(clampNumber(layout?.joystickX, 0, window.innerWidth, 0))}px`);
+            rootStyle.setProperty('--mobile-controls-bottom', `${Math.round(clampNumber(layout?.joystickBottom, 0, window.innerHeight, 12))}px`);
+            rootStyle.setProperty('--jump-button-left', `${Math.round(clampNumber(layout?.jumpX, 0, window.innerWidth, Math.max(0, window.innerWidth - 96)))}px`);
+            rootStyle.setProperty('--jump-button-right', 'auto');
+            rootStyle.setProperty('--jump-button-top', `${Math.round(clampNumber(layout?.jumpY, 0, window.innerHeight, Math.max(0, window.innerHeight - 120)))}px`);
+            rootStyle.setProperty('--jump-button-bottom', 'auto');
+            rootStyle.setProperty('--run-hud-left', `${Math.round(clampNumber(layout?.hudX, 0, window.innerWidth, 14))}px`);
+            rootStyle.setProperty('--run-hud-top', `${Math.round(clampNumber(layout?.hudY, 0, window.innerHeight, 14))}px`);
+            rootStyle.setProperty('--progression-feed-left', `${Math.round(clampNumber(layout?.feedX, 0, window.innerWidth, 14))}px`);
+            rootStyle.setProperty('--progression-feed-top', `${Math.round(clampNumber(layout?.feedY, 0, window.innerHeight, 246))}px`);
+            rootStyle.setProperty('--leaderboard-right', `${Math.round(clampNumber(layout?.leaderboardRight, 0, window.innerWidth, 2))}px`);
+            rootStyle.setProperty('--leaderboard-top', `${Math.round(clampNumber(layout?.leaderboardY, 0, window.innerHeight, 140))}px`);
+            rootStyle.setProperty('--chat-right', `${Math.round(clampNumber(layout?.chatRight, 0, window.innerWidth, 10))}px`);
+            rootStyle.setProperty('--chat-bottom', `${Math.round(clampNumber(layout?.chatBottom, 0, window.innerHeight, 210))}px`);
+
+            if (Number.isFinite(Number(layout?.joystickSize))) {
+                rootStyle.setProperty('--adaptive-joystick-size', `${Math.round(clampNumber(layout.joystickSize, 52, 180, 110))}px`);
+            }
+            if (Number.isFinite(Number(layout?.jumpSize))) {
+                rootStyle.setProperty('--mobile-action-size', `${Math.round(clampNumber(layout.jumpSize, 44, 140, 84))}px`);
+            }
+            if (Number.isFinite(Number(layout?.hudWidth))) {
+                rootStyle.setProperty('--adaptive-hud-width', `${Math.round(clampNumber(layout.hudWidth, 180, 520, 300))}px`);
+            }
+            if (Number.isFinite(Number(layout?.chatWidth))) {
+                rootStyle.setProperty('--adaptive-chat-width', `${Math.round(clampNumber(layout.chatWidth, 140, 420, 260))}px`);
+            }
+            if (Number.isFinite(Number(layout?.leaderboardWidth))) {
+                rootStyle.setProperty('--adaptive-leaderboard-width', `${Math.round(clampNumber(layout.leaderboardWidth, 160, 420, 260))}px`);
+            }
+            if (Number.isFinite(Number(layout?.feedWidth))) {
+                rootStyle.setProperty('--adaptive-feed-width', `${Math.round(clampNumber(layout.feedWidth, 180, 640, 340))}px`);
+            }
+            if (mobileUiScaleOverride !== null) {
+                rootStyle.setProperty('--mobile-ui-scale', String(mobileUiScaleOverride));
+            }
+        }
 
         const defaultMenuSettings = {
             sfxVolume: 1,
@@ -4767,7 +4895,10 @@
             }
 
             const data = await response.json();
-            return Array.isArray(data.characters) ? data.characters : [];
+            return {
+                spritesheet: data && typeof data === 'object' ? data.spritesheet || null : null,
+                characters: Array.isArray(data?.characters) ? data.characters : []
+            };
         }
 
         async function getCharacterCardToken(characterName) {
@@ -7217,7 +7348,7 @@
                     const label = document.createElement('div');
                     label.className = 'character-card-label';
                     label.dataset.customAlphabet = 'label';
-                    label.textContent = formatCharacterName(entry.character);
+                    label.textContent = entry.label || formatCharacterName(entry.character);
 
                     button.appendChild(cardCanvas);
                     button.appendChild(label);
@@ -7232,6 +7363,51 @@
                 refreshCustomAlphabetUi();
             }
 
+            function sliceCharacterCardsFromSpritesheet(entries, spritesheetBitmap, gridColumns, gridRows) {
+                const tileWidth = Math.floor(spritesheetBitmap.width / gridColumns);
+                const tileHeight = Math.floor(spritesheetBitmap.height / gridRows);
+
+                if (tileWidth <= 0 || tileHeight <= 0) {
+                    throw new Error('Character card grid dimensions are invalid.');
+                }
+
+                return entries.map((entry) => {
+                    const slice = entry && typeof entry === 'object' ? entry.card_slice : null;
+                    if (!slice || !Number.isInteger(slice.column) || !Number.isInteger(slice.row)) {
+                        throw new Error(`Missing grid slice for ${entry?.character || 'unknown character'}`);
+                    }
+
+                    const sx = slice.column * tileWidth;
+                    const sy = slice.row * tileHeight;
+                    const croppedCanvas = document.createElement('canvas');
+                    croppedCanvas.width = tileWidth;
+                    croppedCanvas.height = tileHeight;
+
+                    const croppedCtx = croppedCanvas.getContext('2d');
+                    if (!croppedCtx) {
+                        throw new Error('Failed to create character card canvas.');
+                    }
+
+                    croppedCtx.imageSmoothingEnabled = true;
+                    croppedCtx.drawImage(
+                        spritesheetBitmap,
+                        sx,
+                        sy,
+                        tileWidth,
+                        tileHeight,
+                        0,
+                        0,
+                        tileWidth,
+                        tileHeight
+                    );
+
+                    return {
+                        ...entry,
+                        cardBitmap: croppedCanvas
+                    };
+                });
+            }
+
             async function loadCharacterSelections() {
                 try {
                     updateSelectionCopy('Loading');
@@ -7239,73 +7415,106 @@
                     loadingStage = 'Loading';
                     updateLoadingScreen();
 
-                    availableCharacterSelections = await withTimeout(
+                    const selectionManifest = await withTimeout(
                         getCharacterSelectionManifest(),
                         8000,
                         'character manifest'
                     );
+                    availableCharacterSelections = selectionManifest.characters;
                     if (!availableCharacterSelections.length) {
                         throw new Error('No character cards were found.');
                     }
 
-                    const cardsWithBitmaps = await Promise.all(
-                        availableCharacterSelections.map(async (entry) => {
-                            const previewUrl = typeof entry.card_url === 'string' ? entry.card_url : '';
-                            if (previewUrl) {
-                                try {
-                                    const previewBlob = await withTimeout(
-                                        fetchProtectedBlob(previewUrl, 'image/png'),
-                                        5000,
-                                        `${entry.character} preview card blob`
-                                    );
-                                    const previewBitmap = await withTimeout(
-                                        createImageBitmap(previewBlob),
-                                        2500,
-                                        `${entry.character} preview card bitmap`
-                                    );
-                                    return {
-                                        ...entry,
-                                        cardBitmap: previewBitmap
-                                    };
-                                } catch (error) {
-                                    console.warn(`Preview card load failed for ${entry.character}, falling back to token route`, error);
+                    let cardsWithBitmaps = [];
+                    const spritesheet = selectionManifest.spritesheet;
+                    const canUseSpritesheet =
+                        spritesheet &&
+                        typeof spritesheet.url === 'string' &&
+                        spritesheet.url &&
+                        Number.isInteger(spritesheet.columns) &&
+                        spritesheet.columns > 0 &&
+                        Number.isInteger(spritesheet.rows) &&
+                        spritesheet.rows > 0 &&
+                        availableCharacterSelections.every((entry) => entry && entry.card_slice);
+
+                    if (canUseSpritesheet) {
+                        const spritesheetBlob = await withTimeout(
+                            fetchProtectedBlob(spritesheet.url, 'image/png'),
+                            8000,
+                            'character card spritesheet blob'
+                        );
+                        const spritesheetBitmap = await withTimeout(
+                            createImageBitmap(spritesheetBlob),
+                            4000,
+                            'character card spritesheet bitmap'
+                        );
+
+                        cardsWithBitmaps = sliceCharacterCardsFromSpritesheet(
+                            availableCharacterSelections,
+                            spritesheetBitmap,
+                            spritesheet.columns,
+                            spritesheet.rows
+                        );
+                    } else {
+                        cardsWithBitmaps = await Promise.all(
+                            availableCharacterSelections.map(async (entry) => {
+                                const previewUrl = typeof entry.card_url === 'string' ? entry.card_url : '';
+                                if (previewUrl) {
+                                    try {
+                                        const previewBlob = await withTimeout(
+                                            fetchProtectedBlob(previewUrl, 'image/png'),
+                                            5000,
+                                            `${entry.character} preview card blob`
+                                        );
+                                        const previewBitmap = await withTimeout(
+                                            createImageBitmap(previewBlob),
+                                            2500,
+                                            `${entry.character} preview card bitmap`
+                                        );
+                                        return {
+                                            ...entry,
+                                            cardBitmap: previewBitmap
+                                        };
+                                    } catch (error) {
+                                        console.warn(`Preview card load failed for ${entry.character}, falling back to token route`, error);
+                                    }
                                 }
-                            }
 
-                            let lastError = null;
-                            for (let attempt = 0; attempt < 2; attempt += 1) {
-                                try {
-                                    const cardToken = await withTimeout(
-                                        getCharacterCardToken(entry.character),
-                                        6000,
-                                        `${entry.character} card token`
-                                    );
-                                    const cardBlob = await withTimeout(
-                                        fetchProtectedBlob(
-                                            `/api/character_card/${cardToken}/${entry.character}`,
-                                            'image/png'
-                                        ),
-                                        8000,
-                                        `${entry.character} card blob`
-                                    );
-                                    const cardBitmap = await withTimeout(
-                                        createImageBitmap(cardBlob),
-                                        4000,
-                                        `${entry.character} card bitmap`
-                                    );
+                                let lastError = null;
+                                for (let attempt = 0; attempt < 2; attempt += 1) {
+                                    try {
+                                        const cardToken = await withTimeout(
+                                            getCharacterCardToken(entry.character),
+                                            6000,
+                                            `${entry.character} card token`
+                                        );
+                                        const cardBlob = await withTimeout(
+                                            fetchProtectedBlob(
+                                                `/api/character_card/${cardToken}/${entry.character}`,
+                                                'image/png'
+                                            ),
+                                            8000,
+                                            `${entry.character} card blob`
+                                        );
+                                        const cardBitmap = await withTimeout(
+                                            createImageBitmap(cardBlob),
+                                            4000,
+                                            `${entry.character} card bitmap`
+                                        );
 
-                                    return {
-                                        ...entry,
-                                        cardBitmap
-                                    };
-                                } catch (error) {
-                                    lastError = error;
+                                        return {
+                                            ...entry,
+                                            cardBitmap
+                                        };
+                                    } catch (error) {
+                                        lastError = error;
+                                    }
                                 }
-                            }
 
-                            throw lastError || new Error(`Failed to load card for ${entry.character}`);
-                        })
-                    );
+                                throw lastError || new Error(`Failed to load card for ${entry.character}`);
+                            })
+                        );
+                    }
 
                     availableCharacterSelections = cardsWithBitmaps;
                     renderCharacterCarousel();
@@ -7872,6 +8081,7 @@
         function resizeCanvas() {
             const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth);
             const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
+            pickActiveMobileLayoutPreset();
             const targetAspect = GAME_VIEWPORT_WIDTH / GAME_VIEWPORT_HEIGHT;
             let displayWidth = Math.max(1, viewportWidth);
             let displayHeight = Math.max(1, Math.round(displayWidth / targetAspect));
@@ -7890,6 +8100,24 @@
             canvas.style.height = `${displayHeight}px`;
             document.documentElement.style.setProperty('--game-display-width', `${displayWidth}px`);
             document.documentElement.style.setProperty('--game-display-height', `${displayHeight}px`);
+            document.documentElement.style.setProperty('--game-display-left', '50%');
+            document.documentElement.style.setProperty('--game-display-top', '50%');
+            document.documentElement.style.setProperty('--game-display-translate-x', '-50%');
+            document.documentElement.style.setProperty('--game-display-translate-y', '-50%');
+            document.documentElement.style.setProperty('--mobile-controls-left', '0px');
+            document.documentElement.style.setProperty('--mobile-controls-bottom', 'calc(env(safe-area-inset-bottom, 0px) + 12px)');
+            document.documentElement.style.setProperty('--jump-button-left', 'auto');
+            document.documentElement.style.setProperty('--jump-button-right', '10px');
+            document.documentElement.style.setProperty('--jump-button-top', 'auto');
+            document.documentElement.style.setProperty('--jump-button-bottom', 'calc(env(safe-area-inset-bottom, 0px) + 12px)');
+            document.documentElement.style.setProperty('--run-hud-left', '14px');
+            document.documentElement.style.setProperty('--run-hud-top', '14px');
+            document.documentElement.style.setProperty('--progression-feed-left', '14px');
+            document.documentElement.style.setProperty('--progression-feed-top', '246px');
+            document.documentElement.style.setProperty('--leaderboard-right', '2px');
+            document.documentElement.style.setProperty('--leaderboard-top', '140px');
+            document.documentElement.style.setProperty('--chat-right', '10px');
+            document.documentElement.style.setProperty('--chat-bottom', 'calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 8px)');
             const chatWidth = Math.round(
                 Math.min(
                     isMobile ? 230 : 320,
@@ -8008,11 +8236,15 @@
             document.documentElement.style.setProperty('--adaptive-toast-padding-y', `${toastPaddingY}px`);
             document.documentElement.style.setProperty('--adaptive-toast-padding-x', `${toastPaddingX}px`);
             document.documentElement.style.setProperty('--adaptive-chat-edge', `${chatEdge}px`);
+            document.documentElement.style.setProperty('--leaderboard-right', `${chatEdge}px`);
             document.documentElement.style.setProperty('--mobile-action-size', `${mobileActionSize}px`);
             document.documentElement.style.setProperty('--mobile-controls-height', `${mobileControlsHeight}px`);
             document.documentElement.style.setProperty('--mobile-edge-gap', `${mobileEdgeGap}px`);
             document.documentElement.style.setProperty('--mobile-action-gap', `${mobileActionGap}px`);
             document.documentElement.style.setProperty('--mobile-ui-scale', String(mobileUiScale));
+            if (activeMobileLayoutPreset?.layout && isMobile) {
+                applyMobileLayoutCssVariables(activeMobileLayoutPreset.layout, displayWidth, displayHeight);
+            }
             
             if (glCanvas) {
                 glCanvas.width = renderWidth;
@@ -9681,6 +9913,7 @@
         }
 
         initializeZoomControls();
+        loadMobileLayoutPresets();
         applyInitialRuntimePerformanceProfile();
         initWebGL();
         resizeCanvas();
@@ -9706,6 +9939,7 @@
         
         // Server authoritative snapshots are kept separate from rendered positions.
         const playerState = {};
+        const playerAuraVisualStrength = {};
         const authoritativePlayerState = {};
         const playerSnapshots = {};
         const enemyState = {};
@@ -9784,12 +10018,12 @@
         const playerSoulGlowUntilMs = {};
         const MAX_LEADERBOARD_ROWS = 8;
         const SOUL_TIER_META = [
-            { threshold: 0, title: 'Kindled', shortTitle: 'Kindled', accent: '#d9edf8', aura: 'rgba(196, 232, 255, 0)' },
-            { threshold: 60, title: 'Soulbound', shortTitle: 'Soulbound', accent: '#74d7d2', aura: 'rgba(116, 215, 210, 0.18)' },
-            { threshold: 220, title: 'Feared Vessel', shortTitle: 'Feared', accent: '#7ec9ff', aura: 'rgba(126, 201, 255, 0.24)' },
-            { threshold: 700, title: 'Soul Tyrant', shortTitle: 'Tyrant', accent: '#8fd8ff', aura: 'rgba(143, 216, 255, 0.32)' },
-            { threshold: 1600, title: 'Crownbearer', shortTitle: 'Crown', accent: '#a9e7ff', aura: 'rgba(169, 231, 255, 0.42)' },
-            { threshold: 3000, title: 'Soul Sovereign', shortTitle: 'Sovereign', accent: '#d6f7ff', aura: 'rgba(214, 247, 255, 0.58)' }
+            { threshold: 0, title: 'Wanderer', shortTitle: 'Wanderer', accent: '#cfd9e6', aura: 'rgba(207, 217, 230, 0.18)' },
+            { threshold: 60, title: 'Seeker', shortTitle: 'Seeker', accent: '#b8d8ff', aura: 'rgba(184, 216, 255, 0.28)' },
+            { threshold: 220, title: 'Hunter', shortTitle: 'Hunter', accent: '#8dd3ff', aura: 'rgba(141, 211, 255, 0.42)' },
+            { threshold: 700, title: 'Reaper', shortTitle: 'Reaper', accent: '#7fc8ff', aura: 'rgba(127, 200, 255, 0.56)' },
+            { threshold: 1600, title: 'Master', shortTitle: 'Master', accent: '#ffb866', aura: 'rgba(255, 184, 102, 0.72)' },
+            { threshold: 3000, title: 'Eternal', shortTitle: 'Eternal', accent: '#ff6b3d', aura: 'rgba(255, 107, 61, 0.92)' }
         ];
         const upgradeArtLabels = {
             fireball: 'FB',
@@ -10298,21 +10532,36 @@
             };
         }
 
+        function getSoulAuraVisualStrength(state, soulMeta) {
+            const soulCount = Math.max(0, Number(state?.soul_count) || 0);
+            const delayedCharge = clamp01((soulCount - 4) / 420);
+            const delayedStrength = Math.pow(delayedCharge, 0.72);
+            const stateStrength = Number.isFinite(soulMeta?.progressToNext) ? clamp01(soulMeta.progressToNext) : 0;
+            return Math.max(delayedStrength, stateStrength * delayedStrength);
+        }
+
+        function getSmoothedSoulAuraStrength(sid, targetStrength) {
+            const current = Number.isFinite(playerAuraVisualStrength[sid]) ? playerAuraVisualStrength[sid] : 0;
+            const next = current + (targetStrength - current) * 0.12;
+            playerAuraVisualStrength[sid] = next;
+            return next;
+        }
+
         function drawSoulAuraForPlayer(sid, state, renderDims, nowMs, visibleBounds = null) {
             if (!state || !renderDims) {
                 return;
             }
 
             const soulMeta = getSoulMetaForPlayerState(state);
-            const soulCount = Math.max(0, Number(state.soul_count) || 0);
-            const auraStrength = clamp01(soulMeta.progressToNext ?? (soulCount / 3000));
-            if (auraStrength <= 0.015) {
+            const targetAuraStrength = getSoulAuraVisualStrength(state, soulMeta);
+            const auraStrength = getSmoothedSoulAuraStrength(sid, targetAuraStrength);
+            if (auraStrength <= 0.01) {
                 return;
             }
 
             const centerX = state.x;
             const centerY = state.y - renderDims.height * 0.08;
-            const maxRadius = Math.max(renderDims.width, renderDims.height) * (0.8 + auraStrength * 1.7);
+            const maxRadius = Math.max(renderDims.width, renderDims.height) * (1.28 + auraStrength * 1.95);
             if (
                 visibleBounds &&
                 !isWorldRectVisible(centerX - maxRadius * 1.4, centerY - maxRadius * 1.5, maxRadius * 2.8, maxRadius * 3, 80, visibleBounds)
@@ -10327,49 +10576,91 @@
             const motionStrength = clamp01(speed / 250);
             const noiseBase = stableStringNoise(`aura:${sid}`);
             const flickerTime = nowMs * 0.00155 + noiseBase * Math.PI * 2;
-            const sway = Math.sin(flickerTime * 1.9) * (3 + auraStrength * 7) + (Number(state.vx) || 0) * 0.012;
+            const velocityX = Number(state.vx) || 0;
+            const sway = Math.sin(flickerTime * 1.7) * (3 + auraStrength * 6) + velocityX * 0.012;
             const lean = clamp01(Math.abs(Number(state.vx) || 0) / 220) * Math.sign(Number(state.vx) || 0);
-            const rise = Math.abs(Math.cos(flickerTime * 1.6)) * (5 + auraStrength * 10) + motionStrength * 5;
-            const baseX = centerX - cameraX + sway * 0.18;
-            const baseY = centerY - cameraY + rise * 0.08;
-            const auraPulse = 0.92 + Math.sin(flickerTime * 2.7) * 0.08;
-            const outerRadius = maxRadius * (1.02 + auraPulse * 0.12);
-            const innerRadiusX = renderDims.width * (0.72 + auraStrength * 0.85);
-            const innerRadiusY = renderDims.height * (0.82 + auraStrength * 1.18);
+            const rise = Math.abs(Math.cos(flickerTime * 1.55)) * (4 + auraStrength * 10) + motionStrength * 5;
+            const baseX = centerX - cameraX;
+            const baseY = centerY - cameraY;
+            const auraPulse = 0.95 + Math.sin(flickerTime * 2.2) * 0.05;
+            const plumeWidth = renderDims.width * (1.45 + auraStrength * 1.1);
+            const plumeHeight = renderDims.height * (1.6 + auraStrength * 1.45);
+            const coreWidth = plumeWidth * 0.56;
+            const coreHeight = plumeHeight * 0.74;
+            const outerRadius = maxRadius * (1.05 + auraPulse * 0.12);
+            const backGlowAlpha = 0.2 + auraStrength * 0.28;
+            const coreAlpha = 0.14 + auraStrength * 0.2;
+            const highlightAlpha = 0.08 + auraStrength * 0.14;
+            const windDragX = Math.max(-42, Math.min(42, -velocityX * (0.08 + auraStrength * 0.05)));
+            const driftWave = Math.sin(flickerTime * 1.15) * (8 + auraStrength * 12);
 
             ctx.save();
             ctx.globalCompositeOperation = 'lighter';
 
-            drawLowQualityGlow(ctx, baseX, baseY, outerRadius, coolRgb, accentRgb, 0.18 + auraStrength * 0.34);
+            drawLowQualityGlow(ctx, baseX, baseY - renderDims.height * 0.2, outerRadius, coolRgb, accentRgb, 0.24 + auraStrength * 0.36);
+            drawLowQualityEllipseGlow(ctx, baseX, baseY + renderDims.height * 0.06, plumeWidth, plumeHeight, accentRgb, deepRgb, backGlowAlpha);
+            drawLowQualityEllipseGlow(ctx, baseX + sway * 0.3, baseY + renderDims.height * 0.08, coreWidth, coreHeight, coolRgb, accentRgb, coreAlpha);
             drawLowQualityEllipseGlow(
                 ctx,
-                baseX + lean * 8,
-                baseY + 4,
-                innerRadiusX,
-                innerRadiusY,
-                coolRgb,
+                baseX + windDragX * 0.55,
+                baseY + renderDims.height * 0.02,
+                plumeWidth * 0.9,
+                plumeHeight * 0.92,
+                accentRgb,
                 deepRgb,
-                0.16 + auraStrength * 0.28
+                0.16 + auraStrength * 0.2
+            );
+            drawLowQualityEllipseGlow(
+                ctx,
+                baseX + windDragX * 0.95 + driftWave,
+                baseY + renderDims.height * 0.03,
+                plumeWidth * 0.72,
+                plumeHeight * 0.74,
+                accentRgb,
+                deepRgb,
+                0.12 + auraStrength * 0.16
+            );
+            drawLowQualityEllipseGlow(
+                ctx,
+                baseX + windDragX * 1.25 + driftWave * 0.7,
+                baseY + renderDims.height * 0.04,
+                plumeWidth * 0.54,
+                plumeHeight * 0.58,
+                deepRgb,
+                accentRgb,
+                0.08 + auraStrength * 0.12
             );
 
-            const crestCount = 2 + Math.min(3, Math.floor(auraStrength * 4));
-            for (let i = 0; i < crestCount; i += 1) {
-                const t = crestCount === 1 ? 0.5 : i / (crestCount - 1);
-                const side = (t - 0.5) * 2;
-                const flameRadius = Math.max(9, renderDims.height * (0.14 + auraStrength * 0.12) * (0.92 + Math.sin(flickerTime * 2.4 + i * 0.9) * 0.08));
-                const flameX = centerX + side * renderDims.width * (0.26 + auraStrength * 0.34) + sway * (0.22 + Math.abs(side) * 0.35) - lean * 6;
-                const flameY = centerY + renderDims.height * 0.12 - Math.abs(side) * renderDims.height * 0.06 - rise * (0.42 + i * 0.08);
-                drawPixelFlameBody(flameX, flameY, -Math.PI / 2 + side * 0.22 - lean * 0.16, flameRadius, 0.18 + auraStrength * 0.42, flickerTime + i * 0.7, {
-                    cellScale: 0.16,
-                    tailLength: 0.8,
-                    noseLength: 0.24,
-                    width: 0.34,
-                    alpha: 0.7,
-                    emberChance: 0.02 + auraStrength * 0.02,
-                    extraCellSize: 0,
-                    palette: ['#0c1b36', '#17477a', '#2d7fca', '#8ddcff', '#d6f7ff']
-                });
-            }
+            drawLowQualityEllipseGlow(
+                ctx,
+                baseX - sway * 0.24 + lean * 10,
+                baseY - renderDims.height * (0.24 + auraStrength * 0.08) - rise * 0.08,
+                plumeWidth * 0.34,
+                plumeHeight * 0.44,
+                coolRgb,
+                accentRgb,
+                highlightAlpha
+            );
+            drawLowQualityEllipseGlow(
+                ctx,
+                baseX + sway * 0.22 - lean * 14,
+                baseY - renderDims.height * (0.12 + auraStrength * 0.05) - rise * 0.05,
+                plumeWidth * 0.26,
+                plumeHeight * 0.36,
+                accentRgb,
+                deepRgb,
+                highlightAlpha * 0.9
+            );
+            drawLowQualityEllipseGlow(
+                ctx,
+                baseX,
+                baseY + renderDims.height * 0.14,
+                renderDims.width * (0.58 + auraStrength * 0.26),
+                renderDims.height * (0.5 + auraStrength * 0.22),
+                accentRgb,
+                coolRgb,
+                0.08 + auraStrength * 0.16
+            );
 
             ctx.restore();
         }
@@ -15370,8 +15661,8 @@
                 }
 
                 const soulMeta = getSoulMetaForPlayerState(state);
-                const auraStrength = clamp01(soulMeta.progressToNext ?? 0);
-                if (auraStrength <= 0.015) {
+                const auraStrength = getSoulAuraVisualStrength(state, soulMeta);
+                if (auraStrength <= 0.01) {
                     continue;
                 }
 
@@ -15380,8 +15671,8 @@
                     maxLights,
                     (state.x - cameraX) * cameraZoom,
                     (state.y - 10 - cameraY) * cameraZoom,
-                    (96 + auraStrength * 220) * cameraZoom,
-                    (sid === socket.id ? 0.14 : 0.11) + auraStrength * (sid === socket.id ? 0.34 : 0.26)
+                    (140 + auraStrength * 320) * cameraZoom,
+                    (sid === socket.id ? 0.18 : 0.14) + auraStrength * (sid === socket.id ? 0.42 : 0.32)
                 );
             }
 

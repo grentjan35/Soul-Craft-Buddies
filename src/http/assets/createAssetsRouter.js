@@ -11,6 +11,7 @@ const { loadManifest } = require('./manifestService');
 function listAvailableCharacterCards(staticDir) {
   const characterDir = path.join(staticDir, 'assets', 'characters');
   const cardsDir = path.join(staticDir, 'assets', 'cards');
+  const cardGridMetadataPath = path.join(cardsDir, 'metadata_grid.json');
 
   let characterNames = [];
   let cardNames = new Set();
@@ -35,20 +36,76 @@ function listAvailableCharacterCards(staticDir) {
     cardNames = new Set();
   }
 
+  try {
+    const rawGridMetadata = fs.readFileSync(cardGridMetadataPath, 'utf8');
+    const parsedGridMetadata = JSON.parse(rawGridMetadata);
+    const declaredCards = Array.isArray(parsedGridMetadata?.cards) ? parsedGridMetadata.cards : [];
+    const characterSet = new Set(characterNames);
+
+    const cardsFromGrid = declaredCards
+      .map((entry) => {
+        const character = String(entry?.character ?? '').trim().toLowerCase();
+        if (!character || !characterSet.has(character)) {
+          return null;
+        }
+
+        const column = Number(entry?.column);
+        const row = Number(entry?.row);
+        if (!Number.isInteger(column) || column < 0 || !Number.isInteger(row) || row < 0) {
+          return null;
+        }
+
+        return {
+          character,
+          label: typeof entry?.label === 'string' && entry.label.trim() ? entry.label.trim() : character,
+          index: Number.isInteger(entry?.index) ? entry.index : Number.MAX_SAFE_INTEGER,
+          slice: {
+            column,
+            row,
+          },
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.index - b.index || a.character.localeCompare(b.character));
+
+    if (cardsFromGrid.length) {
+      const grid = parsedGridMetadata?.grid ?? {};
+      const columns = Number(grid.columns);
+      const rows = Number(grid.rows);
+      const hasValidGrid = Number.isInteger(columns) && columns > 0 && Number.isInteger(rows) && rows > 0;
+
+      return {
+        spritesheet: hasValidGrid
+          ? {
+              url: '/api/character_card_grid',
+              columns,
+              rows,
+            }
+          : null,
+        characters: cardsFromGrid,
+      };
+    }
+  } catch {
+    // Fall back to legacy per-file cards if grid metadata is absent or invalid.
+  }
+
   const normalizeCharacterName = (value) => String(value || '').trim().toLowerCase().replace(/a$/, '');
 
-  return characterNames
-    .filter((character) => {
-      const normalized = normalizeCharacterName(character);
-      return cardNames.has(`${normalized}a`) || cardNames.has(normalized);
-    })
-    .sort()
-    .map((character) => ({
-      character,
-      cardAsset: cardNames.has(`${normalizeCharacterName(character)}a`)
-        ? `${normalizeCharacterName(character)}A`
-        : character,
-    }));
+  return {
+    spritesheet: null,
+    characters: characterNames
+      .filter((character) => {
+        const normalized = normalizeCharacterName(character);
+        return cardNames.has(`${normalized}a`) || cardNames.has(normalized);
+      })
+      .sort()
+      .map((character) => ({
+        character,
+        cardAsset: cardNames.has(`${normalizeCharacterName(character)}a`)
+          ? `${normalizeCharacterName(character)}A`
+          : character,
+      })),
+  };
 }
 
 function listAvailableBackgrounds(staticDir) {
@@ -382,7 +439,8 @@ function createAssetsRouter(deps) {
 
   const manifestResult = loadManifest({ manifestPath: deps.manifestPath });
   const manifest = manifestResult.ok ? manifestResult.manifest : {};
-  const selectableCharacters = listAvailableCharacterCards(deps.staticDir);
+  const characterCardCatalog = listAvailableCharacterCards(deps.staticDir);
+  const selectableCharacters = characterCardCatalog.characters;
   const selectableBackgrounds = listAvailableBackgrounds(deps.staticDir);
   const backgroundCompanions = listAvailableBackgroundCompanions(deps.staticDir);
   const listEnemyCatalog = () => loadEnemyCatalog({ staticDir: deps.staticDir });
@@ -878,11 +936,30 @@ function createAssetsRouter(deps) {
 
     res.setHeader('Cache-Control', 'no-store');
     res.json({
+      spritesheet: characterCardCatalog.spritesheet,
       characters: selectableCharacters.map((entry) => ({
         character: entry.character,
-        card_url: `/api/character_card_preview/${entry.character}`,
+        label: entry.label || entry.character,
+        card_url: characterCardCatalog.spritesheet ? '' : `/api/character_card_preview/${entry.character}`,
+        card_slice: entry.slice || null,
       })),
     });
+  });
+
+  router.get('/api/character_card_grid', async (_req, res) => {
+    const assetPath = path.join(deps.staticDir, 'assets', 'cards', 'grid.png');
+    if (!fs.existsSync(assetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', 'grid.png'), 'grid.png')) {
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type('.png');
+    res.sendFile(assetPath);
   });
 
   router.post('/api/request_character_card_token', (req, res) => {
@@ -1399,6 +1476,25 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    if (selection.slice) {
+      const gridPath = path.join(deps.staticDir, 'assets', 'cards', 'grid.png');
+      if (!fs.existsSync(gridPath)) {
+        res.status(404).send('<h1>Not Found</h1>');
+        return;
+      }
+
+      if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', 'grid.png'), 'character-card-grid.png', { protectedResponse: true })) {
+        return;
+      }
+
+      sendProtectedBinaryFile({
+        res,
+        fullPath: gridPath,
+        downloadName: 'character-card-grid.png',
+      });
+      return;
+    }
+
     const assetPath = path.join(deps.staticDir, 'assets', 'cards', `${selection.cardAsset}.png`);
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
@@ -1421,6 +1517,23 @@ function createAssetsRouter(deps) {
     const selection = selectableCharacters.find((entry) => entry.character === character);
     if (!selection) {
       res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (selection.slice) {
+      const assetPath = path.join(deps.staticDir, 'assets', 'cards', 'grid.png');
+      if (!fs.existsSync(assetPath)) {
+        res.status(404).send('<h1>Not Found</h1>');
+        return;
+      }
+
+      if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('cards', 'grid.png'), 'grid.png')) {
+        return;
+      }
+
+      setPublicAssetCacheHeaders(res);
+      res.type('.png');
+      res.sendFile(assetPath);
       return;
     }
 

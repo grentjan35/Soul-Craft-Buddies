@@ -18,9 +18,9 @@ async function main() {
   httpServer.listen(config.port, config.bindHost, () => {
     console.log('='.repeat(60));
     console.log('Platformer Buddies Node Server Started!');
-    console.log(`Main Game: http://localhost:${config.port}/`);
-    console.log(`Editor:   http://localhost:${config.port}/editor`);
-    console.log(`Enhancer: http://localhost:${config.port}/enhancer`);
+    console.log(`Main Game:    http://localhost:${config.port}/`);
+    console.log(`Editor:       http://localhost:${config.port}/editor`);
+    console.log(`Enhancer:     http://localhost:${config.port}/enhancer`);
     console.log('='.repeat(60));
 
   });

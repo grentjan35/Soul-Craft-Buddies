@@ -14,6 +14,29 @@ const VALID_DECOR_TYPES = new Set(['fire_small', 'fire_purple']);
 function createMapsRouter(deps) {
   const router = express.Router();
   const enemyCatalog = loadEnemyCatalog({ staticDir: deps.staticDir });
+  const mobileLayoutsPath = path.join(deps.dataDir, 'mobile-layout-presets.json');
+
+  function loadMobileLayouts() {
+    try {
+      if (!fs.existsSync(mobileLayoutsPath)) {
+        return { presets: [] };
+      }
+
+      const raw = fs.readFileSync(mobileLayoutsPath, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.presets)) {
+        return { presets: [] };
+      }
+
+      return { presets: parsed.presets };
+    } catch {
+      return { presets: [] };
+    }
+  }
+
+  function saveMobileLayouts(payload) {
+    fs.writeFileSync(mobileLayoutsPath, JSON.stringify(payload, null, 2));
+  }
 
   function setRevalidationCacheHeaders(res) {
     res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
@@ -173,6 +196,58 @@ function createMapsRouter(deps) {
       .filter((f) => f.endsWith('.json'))
       .map((f) => f.slice(0, -5));
     res.json(maps);
+  });
+
+  router.get('/api/mobile_layouts', (_req, res) => {
+    setRevalidationCacheHeaders(res);
+    res.json(loadMobileLayouts());
+  });
+
+  router.post('/api/mobile_layouts', (req, res) => {
+    const preset = req.body?.preset;
+    if (!preset || typeof preset !== 'object') {
+      res.status(400).json({ error: 'Preset is required' });
+      return;
+    }
+
+    const id = String(preset.id ?? '').trim();
+    const name = String(preset.name ?? '').trim();
+    const width = Number(preset.width);
+    const height = Number(preset.height);
+
+    if (!id || !name) {
+      res.status(400).json({ error: 'Preset id and name are required' });
+      return;
+    }
+
+    if (!Number.isFinite(width) || width < 200 || !Number.isFinite(height) || height < 200) {
+      res.status(400).json({ error: 'Preset width and height must be valid numbers' });
+      return;
+    }
+
+    const normalizedPreset = {
+      id: path.basename(id),
+      name,
+      width: Math.round(width),
+      height: Math.round(height),
+      aspectRatio: Number.isFinite(Number(preset.aspectRatio))
+        ? Number(Number(preset.aspectRatio).toFixed(4))
+        : Number((width / height).toFixed(4)),
+      layout: preset.layout && typeof preset.layout === 'object' ? preset.layout : {},
+      updatedAt: new Date().toISOString(),
+    };
+
+    const payload = loadMobileLayouts();
+    const existingIndex = payload.presets.findIndex((entry) => entry.id === normalizedPreset.id);
+    if (existingIndex >= 0) {
+      payload.presets[existingIndex] = normalizedPreset;
+    } else {
+      payload.presets.push(normalizedPreset);
+    }
+
+    payload.presets.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    saveMobileLayouts(payload);
+    res.json({ success: true, preset: normalizedPreset });
   });
 
   router.delete('/api/delete_map/:mapName', (req, res) => {

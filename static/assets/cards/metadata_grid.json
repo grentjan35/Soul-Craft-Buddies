@@ -1,0 +1,100 @@
+{
+  "grid": {
+    "columns": 3,
+    "rows": 5
+  },
+  "cards": [
+    {
+      "character": "blanky",
+      "label": "Blanky",
+      "index": 1,
+      "column": 0,
+      "row": 0
+    },
+    {
+      "character": "villager",
+      "label": "Villager",
+      "index": 2,
+      "column": 1,
+      "row": 0
+    },
+    {
+      "character": "caveman",
+      "label": "Caveman",
+      "index": 3,
+      "column": 2,
+      "row": 0
+    },
+    {
+      "character": "mage",
+      "label": "Mage",
+      "index": 4,
+      "column": 0,
+      "row": 1
+    },
+    {
+      "character": "knight",
+      "label": "Knight",
+      "index": 5,
+      "column": 1,
+      "row": 1
+    },
+    {
+      "character": "pharaoh",
+      "label": "Pharaoh",
+      "index": 6,
+      "column": 2,
+      "row": 1
+    },
+    {
+      "character": "elf",
+      "label": "Elf",
+      "index": 7,
+      "column": 0,
+      "row": 2
+    },
+    {
+      "character": "zombie",
+      "label": "Zombie",
+      "index": 8,
+      "column": 1,
+      "row": 2
+    },
+    {
+      "character": "spartan",
+      "label": "Spartan",
+      "index": 9,
+      "column": 2,
+      "row": 2
+    },
+    {
+      "character": "plague",
+      "label": "Plague",
+      "index": 10,
+      "column": 0,
+      "row": 3,
+      "aliases": ["plauge"]
+    },
+    {
+      "character": "clown",
+      "label": "Clown",
+      "index": 11,
+      "column": 1,
+      "row": 3
+    },
+    {
+      "character": "vampire",
+      "label": "Vampire",
+      "index": 12,
+      "column": 2,
+      "row": 3
+    },
+    {
+      "character": "duck",
+      "label": "Duck",
+      "index": 13,
+      "column": 0,
+      "row": 4
+    }
+  ]
+}
