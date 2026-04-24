@@ -166,6 +166,19 @@
             z-index: 2;
         }
 
+        #groupTrackerCanvas {
+            position: fixed;
+            left: var(--game-display-left);
+            top: var(--game-display-top);
+            width: var(--game-display-width, 100vw);
+            height: var(--game-display-height, 100vh);
+            transform: translate(var(--game-display-translate-x), var(--game-display-translate-y));
+            pointer-events: none;
+            image-rendering: auto;
+            filter: brightness(0.86) saturate(0.82) contrast(1.08);
+            z-index: 60;
+        }
+
         body.game-ui-hidden #run-hud,
         body.game-ui-hidden #progression-feed,
         body.game-ui-hidden #achievement-toggle,
@@ -3419,6 +3432,7 @@
     </div>
     <div id="healing-effects"></div>
     <canvas id="glCanvas" style="display: none;"></canvas>
+    <canvas id="groupTrackerCanvas"></canvas>
     <div id="dynamic-light-glows"></div>
     <div id="run-hud" aria-live="polite">
         <div class="run-hud-badge in-game-frame in-game-frame-blue">
@@ -5521,7 +5535,7 @@
             }
 
             autoFireInterval = setInterval(() => {
-                if (!chatActive && allAssetsLoaded && isMouseDown && !(isSpecialBeamUsable() && isShiftHeld)) {
+                if (!chatActive && allAssetsLoaded && isMouseDown) {
                     fireProjectileAtScreenPoint(currentMouseClientX, currentMouseClientY);
                 }
             }, AUTO_FIRE_RATE_MS);
@@ -5530,20 +5544,7 @@
         function refreshPrimaryAttackMode(fireImmediately = false) {
             if (!isMouseDown || chatActive || isUpgradeDraftActive() || !allAssetsLoaded) {
                 stopAutoFireLoop();
-                if (specialBeamMouseActive) {
-                    sendSpecialBeamInput(false, 0, 0, true);
-                }
                 return;
-            }
-
-            if (isSpecialBeamUsable() && isShiftHeld) {
-                stopAutoFireLoop();
-                sendSpecialBeamInput(true, currentMouseClientX, currentMouseClientY, true);
-                return;
-            }
-
-            if (specialBeamMouseActive) {
-                sendSpecialBeamInput(false, 0, 0, true);
             }
             if (fireImmediately) {
                 fireProjectileAtScreenPoint(currentMouseClientX, currentMouseClientY);
@@ -8076,6 +8077,8 @@
         const GAME_VIEWPORT_HEIGHT = 900;
         // WebGL Setup
         const glCanvas = document.getElementById('glCanvas');
+        const groupTrackerCanvas = document.getElementById('groupTrackerCanvas');
+        const groupTrackerCtx = groupTrackerCanvas?.getContext('2d');
         const canvasWrapper = document.getElementById('gameCanvas-wrapper');
         const gl = glCanvas.getContext('webgl');
         let program;
@@ -8101,6 +8104,12 @@
             if (canvas) {
                 canvas.style.opacity = lowQualityActive ? '1' : '0';
                 canvas.style.imageRendering = lowQualityActive ? 'pixelated' : 'auto';
+            }
+            if (groupTrackerCanvas) {
+                groupTrackerCanvas.style.imageRendering = lowQualityActive ? 'pixelated' : 'auto';
+                groupTrackerCanvas.style.filter = lowQualityActive
+                    ? 'none'
+                    : 'brightness(0.86) saturate(0.82) contrast(1.08)';
             }
             if (glCanvas) {
                 glCanvas.style.display = lowQualityActive ? 'none' : 'block';
@@ -8578,6 +8587,13 @@
                 glCanvas.style.width = `${displayWidth}px`;
                 glCanvas.style.height = `${displayHeight}px`;
                 if (gl) gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+            }
+
+            if (groupTrackerCanvas) {
+                groupTrackerCanvas.width = renderWidth;
+                groupTrackerCanvas.height = renderHeight;
+                groupTrackerCanvas.style.width = `${displayWidth}px`;
+                groupTrackerCanvas.style.height = `${displayHeight}px`;
             }
 
             resizeLowQualityBuffers();
@@ -10432,19 +10448,12 @@
         const dynamicLightUniformBuffer = new Float32Array(MAX_DYNAMIC_LIGHTS * 4);
         const radialSpriteCache = new Map();
         let enemyHitboxDebugEnabled = false;
-        let isShiftHeld = false;
         let specialBeamInputSentAt = 0;
         let specialBeamMouseActive = false;
+        let isSpecialBeamMouseDown = false;
         const SPECIAL_BEAM_INPUT_INTERVAL_MS = 34;
         // Keyboard input handling
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'Shift') {
-                isShiftHeld = true;
-                if (isMouseDown) {
-                    refreshPrimaryAttackMode(false);
-                }
-            }
-
             // Disable movement keys when chat is active
             if (chatActive || isUpgradeDraftActive()) {
                 return;
@@ -10477,15 +10486,6 @@
         });
 
         window.addEventListener('keyup', (e) => {
-            if (e.key === 'Shift') {
-                isShiftHeld = false;
-                if (isMouseDown) {
-                    refreshPrimaryAttackMode(true);
-                } else if (specialBeamMouseActive) {
-                    sendSpecialBeamInput(false, 0, 0, true);
-                }
-            }
-
             // Disable movement keys when chat is active
             if (chatActive || isUpgradeDraftActive()) {
                 return;
@@ -10820,6 +10820,18 @@
                 currentMouseClientY = e.clientY;
                 updateAimPreviewFromClientPoint(e.clientX, e.clientY);
                 refreshPrimaryAttackMode(true);
+                return;
+            }
+
+            if (e.button === 2 && !chatActive && allAssetsLoaded) { // Right click
+                e.preventDefault();
+                currentMouseClientX = e.clientX;
+                currentMouseClientY = e.clientY;
+                updateAimPreviewFromClientPoint(e.clientX, e.clientY);
+                isSpecialBeamMouseDown = true;
+                if (isSpecialBeamUsable()) {
+                    sendSpecialBeamInput(true, e.clientX, e.clientY, true);
+                }
             }
         });
 
@@ -10827,6 +10839,11 @@
             if (e.button === 0) { // Left click release
                 isMouseDown = false;
                 stopAutoFireLoop();
+                return;
+            }
+
+            if (e.button === 2) { // Right click release
+                isSpecialBeamMouseDown = false;
                 if (specialBeamMouseActive) {
                     sendSpecialBeamInput(false, 0, 0, true);
                 }
@@ -10835,6 +10852,7 @@
 
         canvas.addEventListener('mouseleave', () => {
             isMouseDown = false;
+            isSpecialBeamMouseDown = false;
             stopAutoFireLoop();
             if (specialBeamMouseActive) {
                 sendSpecialBeamInput(false, 0, 0, true);
@@ -10846,14 +10864,14 @@
             // Update current mouse position for auto-fire
             currentMouseClientX = e.clientX;
             currentMouseClientY = e.clientY;
-            if (isMouseDown && isSpecialBeamUsable() && isShiftHeld) {
+            if (isSpecialBeamMouseDown && isSpecialBeamUsable()) {
                 sendSpecialBeamInput(true, e.clientX, e.clientY);
             }
         });
 
         window.addEventListener('blur', () => {
             isMouseDown = false;
-            isShiftHeld = false;
+            isSpecialBeamMouseDown = false;
             stopAutoFireLoop();
             if (specialBeamMouseActive) {
                 sendSpecialBeamInput(false, 0, 0, true);
@@ -12557,9 +12575,9 @@
                 return;
             }
 
-            const viewportWidth = canvas?.width || window.innerWidth;
-            const viewportHeight = canvas?.height || window.innerHeight;
-            const edgePadding = 24;
+            const viewportWidth = groupTrackerCanvas?.width || canvas?.width || window.innerWidth;
+            const viewportHeight = groupTrackerCanvas?.height || canvas?.height || window.innerHeight;
+            const edgePadding = 28;
             const safeLeft = edgePadding;
             const safeTop = edgePadding;
             const safeRight = viewportWidth - edgePadding;
@@ -12586,7 +12604,7 @@
 
                     const markerX = Math.max(8, Math.min(viewportWidth - 8, metrics.x - metrics.width / 2 - 8));
                     const markerY = Math.max(8, Math.min(viewportHeight - 8, metrics.y));
-                    drawScreenArrow(ctx, markerX, markerY, 0, 1.02);
+                    drawScreenArrow(ctx, markerX, markerY, 0, 1.1);
                     continue;
                 }
 
@@ -12603,28 +12621,56 @@
                 );
                 const indicatorX = Math.max(safeLeft, Math.min(safeRight, centerX + Math.cos(angle) * scale));
                 const indicatorY = Math.max(safeTop, Math.min(safeBottom, centerY + Math.sin(angle) * scale));
-                drawScreenArrow(ctx, indicatorX, indicatorY, angle, 1.15);
+                drawScreenArrow(ctx, indicatorX, indicatorY, angle, 1.28);
             }
         }
 
         function drawScreenArrow(ctx, x, y, angle, scale = 1) {
+            const cell = Math.max(2, Math.round(scale * 2.2));
+            const snappedX = Math.round(x);
+            const snappedY = Math.round(y);
+            const octant = ((Math.round(angle / (Math.PI / 4)) % 8) + 8) % 8;
+
+            const pixelArrowPatterns = [
+                [[3, 0], [3, 1], [3, 2], [3, 3], [2, 1], [2, 2], [1, 2], [1, 1], [0, 1]],
+                [[3, 0], [3, 1], [2, 1], [2, 2], [1, 2], [1, 3], [0, 3], [1, 1], [2, 0]],
+                [[0, 3], [1, 3], [2, 3], [3, 3], [1, 2], [2, 2], [1, 1], [2, 1], [1, 0]],
+                [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2], [3, 2], [3, 3], [1, 2], [0, 1]],
+                [[0, 1], [1, 1], [1, 2], [2, 1], [2, 2], [3, 0], [3, 1], [3, 2], [3, 3]],
+                [[0, 3], [1, 2], [1, 3], [2, 1], [2, 2], [3, 0], [3, 1], [1, 1], [0, 0]],
+                [[1, 3], [2, 3], [1, 2], [2, 2], [0, 3], [0, 2], [0, 1], [0, 0], [3, 3]],
+                [[0, 2], [1, 1], [1, 2], [2, 0], [2, 1], [3, 0], [3, 1], [1, 3], [0, 3]],
+            ];
+
+            const pattern = pixelArrowPatterns[octant] || pixelArrowPatterns[0];
+            const width = 4 * cell;
+            const height = 4 * cell;
+
             ctx.save();
-            ctx.translate(x, y);
-            ctx.rotate(angle);
-            ctx.shadowColor = 'rgba(104, 205, 255, 0.9)';
-            ctx.shadowBlur = 10;
-            ctx.fillStyle = '#68cdff';
-            ctx.strokeStyle = 'rgba(8, 18, 24, 0.96)';
-            ctx.lineJoin = 'miter';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(10 * scale, 0);
-            ctx.lineTo(-6 * scale, -5 * scale);
-            ctx.lineTo(-2 * scale, 0);
-            ctx.lineTo(-6 * scale, 5 * scale);
-            ctx.closePath();
-            ctx.stroke();
-            ctx.fill();
+            ctx.imageSmoothingEnabled = false;
+            ctx.shadowColor = 'rgba(104, 205, 255, 0.72)';
+            ctx.shadowBlur = Math.max(4, Math.round(scale * 5));
+
+            for (const [px, py] of pattern) {
+                ctx.fillStyle = 'rgba(8, 18, 24, 0.96)';
+                ctx.fillRect(
+                    snappedX - Math.round(width / 2) + px * cell - 1,
+                    snappedY - Math.round(height / 2) + py * cell - 1,
+                    cell + 2,
+                    cell + 2
+                );
+            }
+
+            for (const [px, py] of pattern) {
+                ctx.fillStyle = '#68cdff';
+                ctx.fillRect(
+                    snappedX - Math.round(width / 2) + px * cell,
+                    snappedY - Math.round(height / 2) + py * cell,
+                    cell,
+                    cell
+                );
+            }
+
             ctx.restore();
         }
 
@@ -12976,20 +13022,6 @@
 
         document.addEventListener('keyup', (e) => {
             if (e.key === 'h' || e.key === 'H') {
-                stopHealingInput();
-            }
-        });
-
-        // Mouse healing (right click hold)
-        document.addEventListener('mousedown', (e) => {
-            if (e.button === 2) { // Right click
-                e.preventDefault();
-                startHealingInput();
-            }
-        });
-
-        document.addEventListener('mouseup', (e) => {
-            if (e.button === 2) { // Right click
                 stopHealingInput();
             }
         });
@@ -17769,7 +17801,6 @@
 
                 ctx.restore();
                 drawSpecialBeamScreenOverlay(nowMs);
-                drawGroupMateIndicators(ctx);
 
                 if (shouldUseLowQualityPresentation()) {
                     renderLowQualityPresentation(nowMs, renderServerTimeMs, effectVisibleBounds);
@@ -17821,6 +17852,11 @@
                     gl.clearColor(0, 0, 0, 1);
                     gl.clear(gl.COLOR_BUFFER_BIT);
                     gl.drawArrays(gl.TRIANGLES, 0, 6);
+                }
+
+                if (groupTrackerCtx && groupTrackerCanvas) {
+                    groupTrackerCtx.clearRect(0, 0, groupTrackerCanvas.width, groupTrackerCanvas.height);
+                    drawGroupMateIndicators(groupTrackerCtx);
                 }
             }
 

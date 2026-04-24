@@ -93,6 +93,25 @@ function getPlayerKillXp(victim, killer = null) {
   return Math.max(36, 28 + victimLevel * 6 + levelGapBonus);
 }
 
+function isHitFromBehind(target, sourceX) {
+  if (!target || !Number.isFinite(sourceX)) {
+    return false;
+  }
+
+  const facing = target.direction === 'left' ? 'left' : 'right';
+  return facing === 'right'
+    ? sourceX < target.x
+    : sourceX > target.x;
+}
+
+function getRearHitDamageMultiplier({ ownerType, ownerSid, targetSid, target, sourceX }) {
+  if (ownerType !== 'player' || !ownerSid || ownerSid === targetSid) {
+    return 1;
+  }
+
+  return isHitFromBehind(target, sourceX) ? 1.35 : 1;
+}
+
 function resetSpecialBeamState(player) {
   player.special_beam_requested = false;
   player.special_beam_active = false;
@@ -1664,6 +1683,14 @@ function applyExplosionDamage(input) {
       : Math.max(4, Math.round(ENEMY_EXPLOSION_DIRECT_DAMAGE * 0.7 * proximity));
     if (damage <= 0) continue;
 
+    const rearHitMultiplier = getRearHitDamageMultiplier({
+      ownerType: input.ownerType,
+      ownerSid: input.ownerSid,
+      targetSid: sid,
+      target: player,
+      sourceX: Number.isFinite(input.x) ? input.x : player.x,
+    });
+
     let impulseX = distance > 0.001 ? dx / distance : 0;
     let impulseY = distance > 0.001 ? dy / distance : -1;
     if (isDirectHit && Math.abs(impulseX) < 0.001) {
@@ -1683,7 +1710,7 @@ function applyExplosionDamage(input) {
     player.on_ground = false;
     player.jumps_remaining = 0;
     const reduction = Math.max(0, Math.min(0.72, Number(getPlayerRunStats(player).damageReduction) || 0));
-    const reducedDamage = Math.max(1, Math.round(damage * (1 - reduction)));
+    const reducedDamage = Math.max(1, Math.round(damage * rearHitMultiplier * (1 - reduction)));
     player.health -= reducedDamage;
 
     if (player.health <= 0) {
