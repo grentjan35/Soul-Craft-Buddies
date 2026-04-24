@@ -4164,10 +4164,17 @@
         const HIGH_END_FPS_CAP = 120;
         const LOW_END_FPS_CAP = 30;
         const MOBILE_FPS_CAP = 60;
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 16;
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 24;
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 40;
+        // The server broadcasts authoritative state at roughly 20Hz, so interpolation
+        // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 64;
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 78;
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 92;
         const MAX_INTERPOLATION_DELAY_MS = 200;
+        const CLOCK_OFFSET_DEADZONE_MS = 2;
+        const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
+        const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
+        const RENDER_DELAY_DEADZONE_MS = 1;
+        const RENDER_DELAY_MAX_STEP_MS = 0.35;
         let fpsCap = HIGH_END_FPS_CAP; // Default for high-end
         let isLowEnd = false;
         let frameCount = 0;
@@ -4194,7 +4201,12 @@
                 maxRenderedFairies: 80,
                 drawFairyGlow: true,
                 dynamicLights: 8,
-                spatialAudioIntervalMs: 33
+                spatialAudioIntervalMs: 33,
+                drawEnemyPersistentGlow: true,
+                drawEnemyNameplates: true,
+                drawRemoteSoulAuras: true,
+                enemyCrowdSoftCap: 14,
+                nearbyEnemyHealthBarDistance: 9999
             },
             medium: {
                 renderScale: 0.9,
@@ -4216,7 +4228,12 @@
                 maxRenderedFairies: 48,
                 drawFairyGlow: true,
                 dynamicLights: 5,
-                spatialAudioIntervalMs: 50
+                spatialAudioIntervalMs: 50,
+                drawEnemyPersistentGlow: true,
+                drawEnemyNameplates: true,
+                drawRemoteSoulAuras: true,
+                enemyCrowdSoftCap: 10,
+                nearbyEnemyHealthBarDistance: 360
             },
             low: {
                 renderScale: 0.78,
@@ -4238,7 +4255,12 @@
                 maxRenderedFairies: 24,
                 drawFairyGlow: false,
                 dynamicLights: 3,
-                spatialAudioIntervalMs: 66
+                spatialAudioIntervalMs: 66,
+                drawEnemyPersistentGlow: false,
+                drawEnemyNameplates: false,
+                drawRemoteSoulAuras: false,
+                enemyCrowdSoftCap: 6,
+                nearbyEnemyHealthBarDistance: 240
             }
         };
         let currentEffectQuality = 'high';
@@ -4327,12 +4349,16 @@
         }
 
         function getCurrentEffectLoadScore() {
+            const nearbyEnemyCount = Object.keys(enemyState).length;
+            const nearbyPlayerCount = Object.keys(playerState).length;
             return (
                 Object.keys(fireballs).length +
                 Object.keys(explosions).length * 3 +
                 burnMarks.length +
                 attachedPlayerBurns.length +
-                Math.min(12, Math.round(currentMapDecorFireCount * 0.08))
+                Math.min(12, Math.round(currentMapDecorFireCount * 0.08)) +
+                Math.min(20, nearbyEnemyCount) +
+                Math.min(6, Math.max(0, nearbyPlayerCount - 1))
             );
         }
 
@@ -10290,10 +10316,13 @@
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 80;
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
+        const PLAYER_DISCONTINUITY_DISTANCE = 260;
+        const ENEMY_DISCONTINUITY_DISTANCE = 220;
         const packetReceiveTimes = [];
-        let pendingServerStatePacket = null;
+        let pendingServerStatePackets = [];
         let scheduledServerStateApplyFrame = 0;
         let serverClockOffsetMs = 0;
+        const recentlyRespawnedPlayers = new Set();
         // Store rendered dimensions for each player (aspect-ratio-preserving)
         const playerRenderDimensions = {};
         const enemyRenderDimensions = {};
@@ -11481,6 +11510,7 @@
             recordPacketReceiveTime(receivedAt);
             updateAdaptiveInterpolationDelay();
             updateServerClockOffset(ts);
+            const snapshotTs = typeof ts === 'number' ? ts : receivedAt;
 
             // Store latest state for each player and load their character assets if needed
             for (const [sid, pos] of Object.entries(serverPlayers)) {
@@ -11517,8 +11547,8 @@
                     soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0
                 };
                 authoritativePlayerState[sid] = nextState;
-                appendSnapshot(playerSnapshots, sid, {
-                    ts: receivedAt,
+                const playerSnapshot = {
+                    ts: snapshotTs,
                     x: pos.x,
                     y: pos.y,
                     vy: pos.vy,
@@ -11533,9 +11563,15 @@
                     is_attacking: Boolean(pos.is_attacking),
                     attack_start_time_ms: typeof pos.attack_start_time_ms === 'number' ? pos.attack_start_time_ms : 0,
                     soul_count: typeof pos.soul_count === 'number' ? pos.soul_count : 0
-                });
-                if (!playerState[sid]) {
+                };
+                if (shouldResetPlayerInterpolation(previousState, nextState, sid)) {
+                    resetSnapshotsToSingle(playerSnapshots, sid, playerSnapshot);
                     playerState[sid] = { ...nextState };
+                } else {
+                    appendSnapshot(playerSnapshots, sid, playerSnapshot);
+                    if (!playerState[sid]) {
+                        playerState[sid] = { ...nextState };
+                    }
                 }
                 
                 // Create dust particles for jumps, landings, walking, and falling impacts
@@ -11691,8 +11727,8 @@
                     }
 
                     authoritativeEnemyState[enemyId] = nextEnemyState;
-                    appendSnapshot(enemySnapshots, enemyId, {
-                        ts: receivedAt,
+                    const enemySnapshot = {
+                        ts: snapshotTs,
                         x: nextEnemyState.x,
                         y: nextEnemyState.y,
                         vx: nextEnemyState.vx,
@@ -11717,11 +11753,17 @@
                         stealth_broken: Boolean(nextEnemyState.stealth_broken),
                         render_opacity: typeof nextEnemyState.render_opacity === 'number' ? nextEnemyState.render_opacity : 1,
                         striker_slam_impacted_at_ms: nextEnemyState.striker_slam_impacted_at_ms
-                    });
-                    enemyState[enemyId] = {
-                        ...(enemyState[enemyId] || {}),
-                        ...nextEnemyState
                     };
+                    if (shouldResetEnemyInterpolation(previousEnemyState, nextEnemyState)) {
+                        resetSnapshotsToSingle(enemySnapshots, enemyId, enemySnapshot);
+                        enemyState[enemyId] = { ...nextEnemyState };
+                    } else {
+                        appendSnapshot(enemySnapshots, enemyId, enemySnapshot);
+                        enemyState[enemyId] = {
+                            ...(enemyState[enemyId] || {}),
+                            ...nextEnemyState
+                        };
+                    }
                 }
 
                 if (Array.isArray(serverEnemyRemoved)) {
@@ -11804,7 +11846,7 @@
                         color: fairy.color
                     };
                     appendSnapshot(fairySnapshots, fairyId, {
-                        ts: receivedAt,
+                        ts: snapshotTs,
                         x: fairy.x,
                         y: fairy.y,
                         vx: fairy.vx,
@@ -11924,22 +11966,27 @@
 
         function flushPendingServerState() {
             scheduledServerStateApplyFrame = 0;
-            const pendingPacket = pendingServerStatePacket;
-            pendingServerStatePacket = null;
-
-            if (!pendingPacket) {
+            if (!pendingServerStatePackets.length) {
                 return;
             }
 
-            applyServerState(pendingPacket.serverState, pendingPacket.receivedAt);
+            const queuedPackets = pendingServerStatePackets;
+            pendingServerStatePackets = [];
+            for (let index = 0; index < queuedPackets.length; index += 1) {
+                const pendingPacket = queuedPackets[index];
+                if (!pendingPacket) {
+                    continue;
+                }
+                applyServerState(pendingPacket.serverState, pendingPacket.receivedAt);
+            }
 
-            if (pendingServerStatePacket && !scheduledServerStateApplyFrame) {
+            if (pendingServerStatePackets.length > 0 && !scheduledServerStateApplyFrame) {
                 scheduledServerStateApplyFrame = requestAnimationFrame(flushPendingServerState);
             }
         }
 
         function scheduleServerStateApply(serverState, receivedAt = performance.now()) {
-            pendingServerStatePacket = { serverState, receivedAt };
+            pendingServerStatePackets.push({ serverState, receivedAt });
             if (!scheduledServerStateApplyFrame) {
                 scheduledServerStateApplyFrame = requestAnimationFrame(flushPendingServerState);
             }
@@ -12016,6 +12063,9 @@
             // Remove player from dyingPlayers so they can be rendered immediately
             if (dyingPlayers[sid]) {
                 delete dyingPlayers[sid];
+            }
+            if (typeof sid === 'string' && sid) {
+                recentlyRespawnedPlayers.add(sid);
             }
         });
 
@@ -13212,7 +13262,7 @@
         function resetRenderSmoothingState() {
             const now = performance.now();
             packetReceiveTimes.length = 0;
-            pendingServerStatePacket = null;
+            pendingServerStatePackets.length = 0;
             if (scheduledServerStateApplyFrame) {
                 cancelAnimationFrame(scheduledServerStateApplyFrame);
                 scheduledServerStateApplyFrame = 0;
@@ -13221,6 +13271,65 @@
             lastFrameTime = now;
             lastPerformanceCheck = now;
             frameCount = 0;
+        }
+
+        function pickDiscreteSnapshotValue(from, to, t, key) {
+            return t < 0.5 ? from?.[key] : to?.[key];
+        }
+
+        function resetSnapshotsToSingle(store, id, snapshot) {
+            store[id] = [snapshot];
+        }
+
+        function getStateDistance(a, b) {
+            if (!a || !b) {
+                return 0;
+            }
+            const ax = Number(a.x);
+            const ay = Number(a.y);
+            const bx = Number(b.x);
+            const by = Number(b.y);
+            if (!Number.isFinite(ax) || !Number.isFinite(ay) || !Number.isFinite(bx) || !Number.isFinite(by)) {
+                return 0;
+            }
+            return Math.hypot(bx - ax, by - ay);
+        }
+
+        function shouldResetPlayerInterpolation(previousState, nextState, sid) {
+            if (!previousState || !nextState) {
+                return false;
+            }
+
+            if (recentlyRespawnedPlayers.has(sid)) {
+                recentlyRespawnedPlayers.delete(sid);
+                return true;
+            }
+
+            return getStateDistance(previousState, nextState) >= PLAYER_DISCONTINUITY_DISTANCE;
+        }
+
+        function shouldResetEnemyInterpolation(previousState, nextState) {
+            if (!previousState || !nextState) {
+                return false;
+            }
+
+            if (!previousState.alive && nextState.alive) {
+                return true;
+            }
+
+            if (
+                typeof previousState.spawn_time_ms === 'number' &&
+                typeof nextState.spawn_time_ms === 'number' &&
+                previousState.spawn_time_ms !== nextState.spawn_time_ms
+            ) {
+                return true;
+            }
+
+            if ((previousState.attached_sid ?? null) !== (nextState.attached_sid ?? null)) {
+                return true;
+            }
+
+            return getStateDistance(previousState, nextState) >= ENEMY_DISCONTINUITY_DISTANCE;
         }
 
         function appendSnapshot(store, id, snapshot) {
@@ -13294,14 +13403,31 @@
                         y,
                         vy: typeof from.vy === 'number' && typeof to.vy === 'number' ? lerp(from.vy, to.vy, t) : to.vy,
                         vx: typeof from.vx === 'number' && typeof to.vx === 'number' ? lerp(from.vx, to.vx, t) : to.vx,
-                        action: t < 0.5 ? from.action : to.action,
-                        direction: t < 0.5 ? from.direction : to.direction,
-                        on_ground: t < 0.5 ? from.on_ground : to.on_ground,
-                        character: t < 0.5 ? from.character : to.character,
-                        name: t < 0.5 ? from.name : to.name,
-                        health: t < 0.5 ? from.health : to.health,
-                        is_attacking: t < 0.5 ? from.is_attacking : to.is_attacking,
-                        attack_start_time_ms: t < 0.5 ? from.attack_start_time_ms : to.attack_start_time_ms
+                        action: pickDiscreteSnapshotValue(from, to, t, 'action'),
+                        direction: pickDiscreteSnapshotValue(from, to, t, 'direction'),
+                        on_ground: pickDiscreteSnapshotValue(from, to, t, 'on_ground'),
+                        character: pickDiscreteSnapshotValue(from, to, t, 'character'),
+                        name: pickDiscreteSnapshotValue(from, to, t, 'name'),
+                        level: pickDiscreteSnapshotValue(from, to, t, 'level'),
+                        health: pickDiscreteSnapshotValue(from, to, t, 'health'),
+                        max_health: pickDiscreteSnapshotValue(from, to, t, 'max_health'),
+                        is_attacking: pickDiscreteSnapshotValue(from, to, t, 'is_attacking'),
+                        attack_start_time_ms: pickDiscreteSnapshotValue(from, to, t, 'attack_start_time_ms'),
+                        displayName: pickDiscreteSnapshotValue(from, to, t, 'displayName'),
+                        alive: pickDiscreteSnapshotValue(from, to, t, 'alive'),
+                        brain_state: pickDiscreteSnapshotValue(from, to, t, 'brain_state'),
+                        state_started_at_ms: pickDiscreteSnapshotValue(from, to, t, 'state_started_at_ms'),
+                        spawn_time_ms: pickDiscreteSnapshotValue(from, to, t, 'spawn_time_ms'),
+                        death_time_ms: pickDiscreteSnapshotValue(from, to, t, 'death_time_ms'),
+                        despawn_at_ms: pickDiscreteSnapshotValue(from, to, t, 'despawn_at_ms'),
+                        respawn_at_ms: pickDiscreteSnapshotValue(from, to, t, 'respawn_at_ms'),
+                        target_sid: pickDiscreteSnapshotValue(from, to, t, 'target_sid'),
+                        attached_sid: pickDiscreteSnapshotValue(from, to, t, 'attached_sid'),
+                        gargoyle_mode: pickDiscreteSnapshotValue(from, to, t, 'gargoyle_mode'),
+                        stealth_broken: pickDiscreteSnapshotValue(from, to, t, 'stealth_broken'),
+                        render_opacity: pickDiscreteSnapshotValue(from, to, t, 'render_opacity'),
+                        striker_slam_impacted_at_ms: pickDiscreteSnapshotValue(from, to, t, 'striker_slam_impacted_at_ms'),
+                        soul_count: pickDiscreteSnapshotValue(from, to, t, 'soul_count')
                     };
                 }
             }
@@ -13329,8 +13455,8 @@
             return latestSnapshot;
         }
 
-        function updateInterpolatedPlayerStates(renderNowTs) {
-            const renderTs = renderNowTs - renderDelayMs;
+        function updateInterpolatedPlayerStates(renderServerTimeMs) {
+            const renderTs = renderServerTimeMs;
 
             for (const sid in authoritativePlayerState) {
                 const authoritativeState = authoritativePlayerState[sid];
@@ -13359,8 +13485,8 @@
             }
         }
 
-        function updateInterpolatedEnemyStates(renderNowTs) {
-            const renderTs = renderNowTs - renderDelayMs;
+        function updateInterpolatedEnemyStates(renderServerTimeMs) {
+            const renderTs = renderServerTimeMs;
 
             for (const enemyId in authoritativeEnemyState) {
                 const authoritativeState = authoritativeEnemyState[enemyId];
@@ -13377,14 +13503,46 @@
                 nextState.y = sampled.y;
                 nextState.vx = typeof sampled.vx === 'number' ? sampled.vx : authoritativeState.vx;
                 nextState.vy = typeof sampled.vy === 'number' ? sampled.vy : authoritativeState.vy;
-                nextState.target_sid = authoritativeState.target_sid ?? null;
-                nextState.stealth_broken = Boolean(authoritativeState.stealth_broken);
+                nextState.displayName = sampled.displayName ?? authoritativeState.displayName;
+                nextState.level = typeof sampled.level === 'number' ? sampled.level : authoritativeState.level;
+                nextState.action = sampled.action ?? authoritativeState.action;
+                nextState.direction = sampled.direction ?? authoritativeState.direction;
+                nextState.on_ground = typeof sampled.on_ground === 'boolean' ? sampled.on_ground : authoritativeState.on_ground;
+                nextState.health = sampled.health ?? authoritativeState.health;
+                nextState.max_health = sampled.max_health ?? authoritativeState.max_health;
+                nextState.alive = typeof sampled.alive === 'boolean' ? sampled.alive : authoritativeState.alive;
+                nextState.brain_state = sampled.brain_state ?? authoritativeState.brain_state;
+                nextState.state_started_at_ms = typeof sampled.state_started_at_ms === 'number'
+                    ? sampled.state_started_at_ms
+                    : authoritativeState.state_started_at_ms;
+                nextState.spawn_time_ms = typeof sampled.spawn_time_ms === 'number'
+                    ? sampled.spawn_time_ms
+                    : authoritativeState.spawn_time_ms;
+                nextState.death_time_ms = typeof sampled.death_time_ms === 'number'
+                    ? sampled.death_time_ms
+                    : authoritativeState.death_time_ms;
+                nextState.despawn_at_ms = typeof sampled.despawn_at_ms === 'number'
+                    ? sampled.despawn_at_ms
+                    : authoritativeState.despawn_at_ms;
+                nextState.respawn_at_ms = typeof sampled.respawn_at_ms === 'number'
+                    ? sampled.respawn_at_ms
+                    : authoritativeState.respawn_at_ms;
+                nextState.target_sid = sampled.target_sid ?? authoritativeState.target_sid ?? null;
+                nextState.attached_sid = sampled.attached_sid ?? authoritativeState.attached_sid ?? null;
+                nextState.gargoyle_mode = sampled.gargoyle_mode ?? authoritativeState.gargoyle_mode ?? null;
+                nextState.stealth_broken = Boolean(sampled.stealth_broken ?? authoritativeState.stealth_broken);
+                nextState.render_opacity = typeof sampled.render_opacity === 'number'
+                    ? sampled.render_opacity
+                    : authoritativeState.render_opacity;
+                nextState.striker_slam_impacted_at_ms = typeof sampled.striker_slam_impacted_at_ms === 'number'
+                    ? sampled.striker_slam_impacted_at_ms
+                    : authoritativeState.striker_slam_impacted_at_ms;
                 enemyState[enemyId] = nextState;
             }
         }
 
-        function updateInterpolatedFairies(renderNowTs) {
-            const renderTs = renderNowTs - renderDelayMs;
+        function updateInterpolatedFairies(renderServerTimeMs) {
+            const renderTs = renderServerTimeMs;
             let fairyCount = 0;
 
             for (const fairyId in authoritativeFairyState) {
@@ -13509,9 +13667,9 @@
         }
 
         function updateInterpolatedRenderState(renderNowTs, renderServerTimeMs) {
-            updateInterpolatedPlayerStates(renderNowTs);
-            updateInterpolatedEnemyStates(renderNowTs);
-            updateInterpolatedFairies(renderNowTs);
+            updateInterpolatedPlayerStates(renderServerTimeMs);
+            updateInterpolatedEnemyStates(renderServerTimeMs);
+            updateInterpolatedFairies(renderServerTimeMs);
             updateInterpolatedFireballs(renderNowTs, renderServerTimeMs);
         }
 
@@ -15232,6 +15390,68 @@
             };
         }
 
+        function getEnemyRenderBurden(nowMs = Date.now()) {
+            let burden = 0;
+            for (const enemyId in enemyState) {
+                const state = enemyState[enemyId];
+                if (!state) {
+                    continue;
+                }
+
+                if (state.alive) {
+                    burden += 1;
+                    continue;
+                }
+
+                const despawnAtMs = typeof state.despawn_at_ms === 'number' ? state.despawn_at_ms : 0;
+                if (despawnAtMs > nowMs) {
+                    burden += 1;
+                }
+            }
+            return burden;
+        }
+
+        function shouldReduceCrowdEffects(enemyBurden) {
+            return enemyBurden > Math.max(0, Number(currentEffectProfile.enemyCrowdSoftCap) || 0);
+        }
+
+        function shouldDrawEnemyPersistentEffects(enemyBurden) {
+            return currentEffectProfile.drawEnemyPersistentGlow !== false && !shouldReduceCrowdEffects(enemyBurden);
+        }
+
+        function shouldDrawEnemyNameplates(enemyBurden) {
+            return currentEffectProfile.drawEnemyNameplates !== false && !shouldReduceCrowdEffects(enemyBurden);
+        }
+
+        function shouldDrawSoulAuraForPlayerId(sid, enemyBurden) {
+            if (sid === socket.id) {
+                return true;
+            }
+
+            if (currentEffectProfile.drawRemoteSoulAuras === false) {
+                return false;
+            }
+
+            return !shouldReduceCrowdEffects(enemyBurden);
+        }
+
+        function shouldDrawEnemyHealthBarForState(state, enemyBurden, localPlayerPos) {
+            if (!state?.alive) {
+                return false;
+            }
+
+            const maxDistance = Number(currentEffectProfile.nearbyEnemyHealthBarDistance);
+            if (!Number.isFinite(maxDistance) || maxDistance >= 9999) {
+                return true;
+            }
+
+            if (!localPlayerPos) {
+                return enemyBurden <= Math.max(0, Number(currentEffectProfile.enemyCrowdSoftCap) || 0);
+            }
+
+            return Math.hypot(state.x - localPlayerPos.x, state.y - localPlayerPos.y) <= maxDistance;
+        }
+
         function isWorldRectVisible(x, y, width, height, padding = 0, bounds = null) {
             const effectiveBounds = bounds
                 ? {
@@ -16889,6 +17109,9 @@
                 cameraY = clampedCamera.y;
                 const visibleBounds = getVisibleWorldBounds(0);
                 const effectVisibleBounds = getVisibleWorldBounds(120);
+                const enemyRenderBurden = getEnemyRenderBurden(nowMs);
+                const allowEnemyPersistentEffects = shouldDrawEnemyPersistentEffects(enemyRenderBurden);
+                const allowEnemyNameplates = shouldDrawEnemyNameplates(enemyRenderBurden);
 
                 // Draw tiles if map is loaded
                 if (currentMap && tilesetImage) {
@@ -16999,7 +17222,9 @@
                             const drawHeight = frameInfo.renderDims.height * easedSpawnScale;
                             const scaledDrawX = state.x - cameraX - drawWidth / 2;
                             const scaledDrawY = state.y - cameraY - drawHeight / 2;
-                            drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraX, cameraY);
+                            if (allowEnemyPersistentEffects) {
+                                drawEnemyPersistentGlow(frameInfo, state, nowMs, cameraX, cameraY);
+                            }
                             drawSpriteFrameWithHitFlash({
                                 image: frameInfo.image,
                                 frameX: frameInfo.frameX,
@@ -17016,7 +17241,7 @@
                                 cacheKey: `enemy|${frameInfo.cacheKey}`
                             });
                             const shouldShowEnemyNameplate = state.type !== 'gargoyle' || Boolean(state.stealth_broken);
-                            if (shouldShowEnemyNameplate) {
+                            if (shouldShowEnemyNameplate && allowEnemyNameplates) {
                                 drawEntityNameplate(
                                     ctx,
                                     state.x,
@@ -17055,7 +17280,10 @@
                         }
                     }
 
-                    if (state.alive && (!(state.type === 'gargoyle') || !Number.isFinite(state.render_opacity) || state.render_opacity > 0.003)) {
+                    if (
+                        shouldDrawEnemyHealthBarForState(state, enemyRenderBurden, localPlayerPos) &&
+                        (!(state.type === 'gargoyle') || !Number.isFinite(state.render_opacity) || state.render_opacity > 0.003)
+                    ) {
                         const maxHealth = typeof state.max_health === 'number' ? state.max_health : 4;
                         const health = typeof state.health === 'number' ? state.health : maxHealth;
                         drawEntityHealthBar(ctx, state.x, state.y, health, maxHealth, cameraX, cameraY, 62);
@@ -17129,7 +17357,9 @@
                             playerRenderDimensions[sid] = renderDims;
                             const flashAlpha = getHitFlashAlpha(playerHitFlashUntilMs[sid], now);
                             const soulGlowRemaining = Math.max(0, (playerSoulGlowUntilMs[sid] || 0) - nowMs);
-                            drawSoulAuraForPlayer(sid, state, renderDims, nowMs, visibleBounds);
+                            if (shouldDrawSoulAuraForPlayerId(sid, enemyRenderBurden)) {
+                                drawSoulAuraForPlayer(sid, state, renderDims, nowMs, visibleBounds);
+                            }
                             if (soulGlowRemaining > 0) {
                                 const soulGlowAlpha = clamp01(soulGlowRemaining / SOUL_PICKUP_GLOW_DURATION_MS);
                                 const glowX = pos.x - cameraX;
