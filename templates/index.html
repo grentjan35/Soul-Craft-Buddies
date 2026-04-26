@@ -696,6 +696,10 @@
             display: flex;
             flex-direction: column;
             gap: 6px;
+            pointer-events: auto;
+            cursor: pointer;
+            touch-action: pan-y;
+            will-change: transform, opacity;
         }
         .progression-toast.player_kill {
             box-shadow:
@@ -788,6 +792,32 @@
         }
         .progression-toast.fading-out {
             animation: progression-toast-out 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        }
+        .progression-toast.is-dismissing-left {
+            animation: progression-toast-dismiss-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        }
+        .progression-toast.is-dismissing-right {
+            animation: progression-toast-dismiss-right 220ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        }
+        @keyframes progression-toast-dismiss-left {
+            from {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(-56px) scale(0.96);
+            }
+        }
+        @keyframes progression-toast-dismiss-right {
+            from {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(56px) scale(0.96);
+            }
         }
         #upgrade-draft-overlay {
             position: fixed;
@@ -8267,6 +8297,14 @@
             const playerPos = getPlayerPosition(socket.id);
             const playerLightX = playerPos ? (playerPos.x - cameraX) * cameraZoom : canvas.width / 2;
             const playerLightY = playerPos ? (playerPos.y - cameraY) * cameraZoom : canvas.height / 2;
+            const playerSoulState = playerState[socket.id] || null;
+            const eternalRevealStrength = getEternalRevealStrength(playerSoulState);
+            const primaryHoleRadiusX = 340 + eternalRevealStrength * (canvas.width * 0.95 - 340);
+            const primaryHoleRadiusY = 252 + eternalRevealStrength * (canvas.height * 0.92 - 252);
+            const coreHoleRadiusX = 168 + eternalRevealStrength * (canvas.width * 0.56 - 168);
+            const coreHoleRadiusY = 122 + eternalRevealStrength * (canvas.height * 0.5 - 122);
+            const playerGlowRadiusX = 152 + eternalRevealStrength * (canvas.width * 0.48 - 152);
+            const playerGlowRadiusY = 108 + eternalRevealStrength * (canvas.height * 0.42 - 108);
             const dynamicLights = collectDynamicLights(nowMs, renderServerTimeMs, effectVisibleBounds);
             const processedLights = isLowQualityModeEnabled()
                 ? dynamicLights.slice(0, Math.min(dynamicLights.length, 5))
@@ -8292,8 +8330,8 @@
             lowQualityLightingCtx.fillStyle = vignette;
             lowQualityLightingCtx.fillRect(0, 0, lowQualityLightingCanvas.width, lowQualityLightingCanvas.height);
 
-            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 340, 252, 0.62);
-            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, 168, 122, 1);
+            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, primaryHoleRadiusX, primaryHoleRadiusY, 0.62 + eternalRevealStrength * 0.28);
+            punchLowQualityEllipseHole(lowQualityLightingCtx, playerLightX, playerLightY, coreHoleRadiusX, coreHoleRadiusY, 1);
 
             processedLights.forEach((light) => {
                 const radius = Math.max(36, light.radius * 0.5);
@@ -8306,7 +8344,7 @@
             ctx.drawImage(lowQualityLightingCanvas, 0, 0);
 
             ctx.globalCompositeOperation = 'lighter';
-            drawLowQualityEllipseGlow(ctx, playerLightX, playerLightY, 152, 108, [255, 244, 228], [255, 154, 64], 0.82);
+            drawLowQualityEllipseGlow(ctx, playerLightX, playerLightY, playerGlowRadiusX, playerGlowRadiusY, [255, 244, 228], [255, 154, 64], 0.82 + eternalRevealStrength * 0.18);
             processedLights.forEach((light) => {
                 const glowRadius = Math.max(24, light.radius * 0.24);
                 drawLowQualityGlow(ctx, light.x, light.y, glowRadius, [255, 240, 220], [255, 126, 34], 0.22 + light.strength * 0.15);
@@ -10393,7 +10431,6 @@
             clock: 'HASTE',
             crit: 'CRIT',
             multishot: 'VOLLEY',
-            arc: 'ARC',
             xp: 'XP',
             boots: 'MOVE',
             wing: 'JUMP',
@@ -10425,6 +10462,7 @@
         let upgradeDraftInteractionUnlockAt = 0;
         let upgradeDraftPressedCardId = '';
         const progressionToasts = [];
+        let activeToastPointer = null;
         let lastRenderedLeaderboardSignature = '';
         let lastRunHudSignature = '';
         
@@ -10931,6 +10969,11 @@
             return Math.max(delayedStrength, stateStrength * delayedStrength);
         }
 
+        function getEternalRevealStrength(state) {
+            const soulCount = Math.max(0, Number(state?.soul_count) || 0);
+            return clamp01((soulCount - 1600) / 1400);
+        }
+
         function getSmoothedSoulAuraStrength(sid, targetStrength) {
             const current = Number.isFinite(playerAuraVisualStrength[sid]) ? playerAuraVisualStrength[sid] : 0;
             const next = current + (targetStrength - current) * 0.12;
@@ -11364,6 +11407,17 @@
             renderProgressionToasts();
         }
 
+        function dismissProgressionToast(toastId, direction = 'left') {
+            const toast = progressionToasts.find((entry) => entry.id === toastId);
+            if (!toast || toast.dismissedAt) {
+                return;
+            }
+
+            toast.dismissedAt = Date.now();
+            toast.dismissDirection = direction === 'right' ? 'right' : 'left';
+            renderProgressionToasts();
+        }
+
         let lastRenderedToastCount = -1;
         let lastRenderedToastIds = new Set();
 
@@ -11373,7 +11427,12 @@
             }
 
             const now = Date.now();
-            pruneArrayInPlace(progressionToasts, (toast) => now - toast.createdAt < toast.duration);
+            pruneArrayInPlace(progressionToasts, (toast) => {
+                if (toast.dismissedAt) {
+                    return now - toast.dismissedAt < 260;
+                }
+                return now - toast.createdAt < toast.duration;
+            });
 
             // Only re-render if toast list changed
             const currentToastIds = new Set(progressionToasts.map(t => t.id));
@@ -11387,8 +11446,11 @@
                 toastElements.forEach((el, index) => {
                     const toast = progressionToasts[index];
                     if (toast) {
+                        const isDismissing = Boolean(toast.dismissedAt);
                         const timeLeft = toast.duration - (now - toast.createdAt);
-                        const isFadingOut = timeLeft < 500;
+                        const isFadingOut = !isDismissing && timeLeft < 500;
+                        el.classList.toggle('is-dismissing-left', isDismissing && toast.dismissDirection !== 'right');
+                        el.classList.toggle('is-dismissing-right', isDismissing && toast.dismissDirection === 'right');
                         if (isFadingOut && !el.classList.contains('fading-out')) {
                             el.classList.add('fading-out');
                         } else if (!isFadingOut && el.classList.contains('fading-out')) {
@@ -11404,7 +11466,8 @@
 
             progressionFeedElement.innerHTML = progressionToasts.map((toast) => {
                 const timeLeft = toast.duration - (now - toast.createdAt);
-                const isFadingOut = timeLeft < 500;
+                const isDismissing = Boolean(toast.dismissedAt);
+                const isFadingOut = !isDismissing && timeLeft < 500;
 
                 let formattedMessage = escapeHtml(toast.message);
                 if (toast.victimName && toast.killerName && toast.weapon) {
@@ -11420,7 +11483,7 @@
                         : toast.label);
 
                 return `
-                <div class="progression-toast in-game-frame in-game-frame-blue ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''}">
+                <div class="progression-toast in-game-frame in-game-frame-blue ${escapeHtml(toast.type)} ${isFadingOut ? 'fading-out' : ''} ${isDismissing ? (toast.dismissDirection === 'right' ? 'is-dismissing-right' : 'is-dismissing-left') : ''}" data-toast-id="${escapeHtml(toast.id)}">
                     <div class="progression-toast-title">${formattedMessage}</div>
                     <div class="progression-toast-xp">${toast.xp > 0 ? `+${toast.xp} xp` : ''}</div>
                 </div>
@@ -11437,6 +11500,62 @@
                 renderUpgradeDraft();
             }
         }
+
+        progressionFeedElement?.addEventListener('pointerdown', (event) => {
+            const toastElement = event.target?.closest('.progression-toast[data-toast-id]');
+            if (!toastElement) {
+                activeToastPointer = null;
+                return;
+            }
+
+            activeToastPointer = {
+                pointerId: event.pointerId,
+                toastId: toastElement.getAttribute('data-toast-id') || '',
+                startX: event.clientX,
+                startY: event.clientY,
+            };
+        });
+
+        progressionFeedElement?.addEventListener('pointerup', (event) => {
+            const toastElement = event.target?.closest('.progression-toast[data-toast-id]');
+            const pointer = activeToastPointer;
+            activeToastPointer = null;
+
+            if (!toastElement || !pointer || pointer.pointerId !== event.pointerId) {
+                return;
+            }
+
+            const toastId = toastElement.getAttribute('data-toast-id') || pointer.toastId;
+            if (!toastId) {
+                return;
+            }
+
+            const dx = event.clientX - pointer.startX;
+            const dy = event.clientY - pointer.startY;
+            const direction = Math.abs(dx) >= Math.abs(dy)
+                ? (dx >= 0 ? 'right' : 'left')
+                : (dy >= 0 ? 'right' : 'left');
+
+            dismissProgressionToast(toastId, direction);
+        });
+
+        progressionFeedElement?.addEventListener('pointercancel', () => {
+            activeToastPointer = null;
+        });
+
+        progressionFeedElement?.addEventListener('click', (event) => {
+            const toastElement = event.target?.closest('.progression-toast[data-toast-id]');
+            if (!toastElement) {
+                return;
+            }
+
+            const toastId = toastElement.getAttribute('data-toast-id');
+            if (!toastId) {
+                return;
+            }
+
+            dismissProgressionToast(toastId, 'left');
+        });
 
         upgradeDraftCardsElement?.addEventListener('pointerdown', (event) => {
             const cardButton = event.target.closest('.upgrade-card[data-card-id]');
@@ -11905,7 +12024,8 @@
                         spawn_time_ms: typeof fb.spawn_time_ms === 'number' ? fb.spawn_time_ms : ts,
                         render_scale: typeof fb.render_scale === 'number' ? fb.render_scale : (authoritativeFireballs[id]?.render_scale ?? 1),
                         radius_scale: typeof fb.radius_scale === 'number' ? fb.radius_scale : (authoritativeFireballs[id]?.radius_scale ?? 1),
-                        gravity_scale: typeof fb.gravity_scale === 'number' ? fb.gravity_scale : (authoritativeFireballs[id]?.gravity_scale ?? 1)
+                        gravity_scale: typeof fb.gravity_scale === 'number' ? fb.gravity_scale : (authoritativeFireballs[id]?.gravity_scale ?? 1),
+                        gravity_delay_distance: typeof fb.gravity_delay_distance === 'number' ? fb.gravity_delay_distance : (authoritativeFireballs[id]?.gravity_delay_distance ?? 0)
                     };
 
                     if (!fireballs[id]) {
@@ -11922,7 +12042,8 @@
                             spawn_time_ms: authoritativeFireballs[id].spawn_time_ms,
                             render_scale: authoritativeFireballs[id].render_scale,
                             radius_scale: authoritativeFireballs[id].radius_scale,
-                            gravity_scale: authoritativeFireballs[id].gravity_scale
+                            gravity_scale: authoritativeFireballs[id].gravity_scale,
+                            gravity_delay_distance: authoritativeFireballs[id].gravity_delay_distance
                         };
                     } else {
                         fireballs[id].owner_sid = authoritativeFireballs[id].owner_sid;
@@ -11930,6 +12051,7 @@
                         fireballs[id].owner_enemy_id = authoritativeFireballs[id].owner_enemy_id;
                         fireballs[id].radius_scale = authoritativeFireballs[id].radius_scale;
                         fireballs[id].gravity_scale = authoritativeFireballs[id].gravity_scale;
+                        fireballs[id].gravity_delay_distance = authoritativeFireballs[id].gravity_delay_distance;
                     }
                 }
                 
@@ -12160,7 +12282,8 @@
                 spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now(),
                 render_scale: typeof data.render_scale === 'number' ? data.render_scale : 1,
                 radius_scale: typeof data.radius_scale === 'number' ? data.radius_scale : 1,
-                gravity_scale: typeof data.gravity_scale === 'number' ? data.gravity_scale : 1
+                gravity_scale: typeof data.gravity_scale === 'number' ? data.gravity_scale : 1,
+                gravity_delay_distance: typeof data.gravity_delay_distance === 'number' ? data.gravity_delay_distance : 0
             };
             fireballs[id] = {
                 id: id,
@@ -12175,7 +12298,8 @@
                 spawn_time_ms: typeof data.spawn_time_ms === 'number' ? data.spawn_time_ms : Date.now(),
                 render_scale: typeof data.render_scale === 'number' ? data.render_scale : 1,
                 radius_scale: typeof data.radius_scale === 'number' ? data.radius_scale : 1,
-                gravity_scale: typeof data.gravity_scale === 'number' ? data.gravity_scale : 1
+                gravity_scale: typeof data.gravity_scale === 'number' ? data.gravity_scale : 1,
+                gravity_delay_distance: typeof data.gravity_delay_distance === 'number' ? data.gravity_delay_distance : 0
             };
 
             const listenerState = getPlayerState(socket.id);
@@ -13609,29 +13733,34 @@
                 return null;
             }
 
-            const tickMs = 1000 / 60;
-            const dtSeconds = 1 / 60;
-            const gravityPerSecond = GRAVITY * 60 * Math.max(0.25, Number(fireball.gravity_scale) || 1);
+            const gravityPerSecond = GRAVITY * 60 * Math.max(0, Number(fireball.gravity_scale) || 0);
             const elapsedMs = Math.max(0, renderServerTimeMs - fireball.spawn_time_ms);
-            const stepFloat = elapsedMs / tickMs;
-            const wholeSteps = Math.floor(stepFloat);
-            const alpha = stepFloat - wholeSteps;
+            const elapsedSeconds = elapsedMs / 1000;
+            const initialVx = Number(fireball.initial_vx) || 0;
+            const initialVy = Number(fireball.initial_vy) || 0;
+            const straightSpeed = Math.hypot(initialVx, initialVy);
+            const gravityDelayDistance = Math.max(0, Number(fireball.gravity_delay_distance) || 0);
+            const gravityDelaySeconds = gravityPerSecond > 0 && straightSpeed > 0.0001
+                ? gravityDelayDistance / straightSpeed
+                : 0;
+            const straightSeconds = Math.min(elapsedSeconds, gravityDelaySeconds);
+            const fallSeconds = Math.max(0, elapsedSeconds - gravityDelaySeconds);
 
-            const xAtStep = fireball.start_x + fireball.initial_vx * dtSeconds * wholeSteps;
-            const yAtStep =
-                fireball.start_y +
-                wholeSteps * dtSeconds * fireball.initial_vy +
-                gravityPerSecond * dtSeconds * dtSeconds * ((wholeSteps * (wholeSteps + 1)) / 2);
-            const nextVy = fireball.initial_vy + gravityPerSecond * dtSeconds * (wholeSteps + 1);
-            const nextX = xAtStep + fireball.initial_vx * dtSeconds;
-            const nextY = yAtStep + nextVy * dtSeconds;
-            const currentVy = fireball.initial_vy + gravityPerSecond * dtSeconds * wholeSteps;
+            let x = fireball.start_x + initialVx * straightSeconds;
+            let y = fireball.start_y + initialVy * straightSeconds;
+            let vy = initialVy;
+
+            if (fallSeconds > 0) {
+                vy = initialVy + gravityPerSecond * fallSeconds;
+                x += initialVx * fallSeconds;
+                y += initialVy * fallSeconds + 0.5 * gravityPerSecond * fallSeconds * fallSeconds;
+            }
 
             return {
-                x: lerp(xAtStep, nextX, alpha),
-                y: lerp(yAtStep, nextY, alpha),
-                vx: fireball.initial_vx,
-                vy: lerp(currentVy, nextVy, alpha)
+                x,
+                y,
+                vx: initialVx,
+                vy
             };
         }
 
@@ -16346,7 +16475,7 @@
                     maxLights,
                     (state.x - cameraX) * cameraZoom,
                     (state.y - 10 - cameraY) * cameraZoom,
-                    (140 + auraStrength * 320) * cameraZoom,
+                    (140 + auraStrength * 320 + (sid === socket.id ? getEternalRevealStrength(state) * 720 : 0)) * cameraZoom,
                     (sid === socket.id ? 0.18 : 0.14) + auraStrength * (sid === socket.id ? 0.42 : 0.32)
                 );
             }
@@ -17031,6 +17160,7 @@
             if (document.hidden) {
                 lastFrameTime = currentTime;
                 lastPerformanceCheck = currentTime;
+                frameCount = 0;
                 requestAnimationFrame(draw);
                 return;
             }
@@ -17042,37 +17172,19 @@
             const deltaTime = currentTime - lastFrameTime;
             const activeFrameInterval = allAssetsLoaded ? frameInterval : Math.max(frameInterval, 1000 / 20);
 
-            // 1. Performance Detection
             frameCount++;
-            if (currentTime - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
-                const actualFps = (frameCount * 1000) / (currentTime - lastPerformanceCheck);
-                const effectLoad = getCurrentEffectLoadScore();
-                let nextQuality = 'high';
-                if (actualFps < 42 || effectLoad >= 28) {
-                    nextQuality = 'low';
-                } else if (actualFps < 55 || effectLoad >= 12) {
-                    nextQuality = 'medium';
-                }
-                setEffectQuality(nextQuality);
-                if (renderResolutionDirty) {
-                    resizeCanvas();
-                }
-                
-                // If we consistently drop below 55 FPS on a 60Hz/120Hz target, 
-                // cap it to 30 to stabilize the physics and prevent stuttering.
-                if (actualFps < 50 && !isLowEnd) {
-                    isLowEnd = true;
-                    fpsCap = LOW_END_FPS_CAP; // Cap low-end to 30 FPS
+            if (isLowQualityModeEnabled() && currentTime - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
+                const actualFps = (frameCount * 1000) / Math.max(1, currentTime - lastPerformanceCheck);
+                const targetFpsCap = isMobile ? MOBILE_FPS_CAP : HIGH_END_FPS_CAP;
+                const nextFpsCap = actualFps < 50 ? LOW_END_FPS_CAP : targetFpsCap;
+
+                if (fpsCap !== nextFpsCap) {
+                    fpsCap = nextFpsCap;
                     frameInterval = 1000 / fpsCap;
-                    syncResponsivenessProfile();
-                } else if (actualFps > 58 && isLowEnd) {
-                    // Optional: Recovery if performance improves
-                    isLowEnd = false;
-                    fpsCap = isMobile ? MOBILE_FPS_CAP : HIGH_END_FPS_CAP;
-                    frameInterval = 1000 / fpsCap;
+                    isLowEnd = fpsCap === LOW_END_FPS_CAP;
                     syncResponsivenessProfile();
                 }
-                
+
                 frameCount = 0;
                 lastPerformanceCheck = currentTime;
             }

@@ -72,10 +72,10 @@ const BASE_PLAYER_RUN_STATS = Object.freeze({
   fireballProjectileCount: 1,
   fireballProjectileSpreadDeg: 6,
   fireballRange: 900,
+  fireballDropDistance: 900,
   fireballSpeedMultiplier: 0.68,
   fireballRenderScale: 0.5,
   fireballRadiusScale: 0.48,
-  fireballGravityScale: 1.42,
   attackDuration: 1.02,
 });
 
@@ -289,7 +289,7 @@ function buildUpgradeCatalog() {
       art: 'range',
       values: [0.05, 0.06, 0.08, 0.1, 0.13, 0.16],
       apply: (stats, value) => { stats.fireballRange *= 1 + value; },
-      describe: (value) => `Fireball travel range ${percentLabel(value)}.`,
+      describe: (value) => `Straight flight ${percentLabel(value)} farther.`,
     }),
     createFamilyDefinition({
       family: 'fireball_speed',
@@ -350,13 +350,13 @@ function buildUpgradeCatalog() {
       describe: (value) => `Explosion damage ${percentLabel(value)}.`,
     }),
     createFamilyDefinition({
-      family: 'fireball_gravity',
-      name: 'Steady Flame',
+      family: 'fireball_trueflight',
+      name: 'Skyfall Sigil',
       category: 'fireball',
-      art: 'arc',
-      values: [0.04, 0.05, 0.06, 0.07, 0.09, 0.11],
-      apply: (stats, value) => { stats.fireballGravityScale *= 1 - value; },
-      describe: (value) => `Fireballs arc ${percentLabel(-value)} less.`,
+      art: 'meteor',
+      values: [0.06, 0.08, 0.1, 0.12, 0.15, 0.18],
+      apply: (stats, value) => { stats.fireballDropDistance *= 1 + value; },
+      describe: (value) => `Fall distance ${percentLabel(value)} farther.`,
     }),
     createFamilyDefinition({
       family: 'xp_gain',
@@ -613,6 +613,7 @@ function getPlayerRunStats(player) {
     fireballCritChance: clamp(baseStats.fireballCritChance + bonuses.fireballCritChanceBonus, 0, 0.92),
     fireballCritMultiplier: baseStats.fireballCritMultiplier + bonuses.fireballCritMultiplierBonus,
     fireballRange: baseStats.fireballRange * bonuses.fireballRangeMultiplier,
+    fireballDropDistance: baseStats.fireballDropDistance,
     fireballSpeedMultiplier: baseStats.fireballSpeedMultiplier * bonuses.fireballSpeedMultiplier,
     attackDuration: Math.max(0.22, baseStats.attackDuration * bonuses.attackDurationMultiplier),
   };
@@ -869,7 +870,6 @@ function applyUpgradeSelection(player, cardId) {
   progression.runStats.damageReduction = clamp(progression.runStats.damageReduction, 0, 0.72);
   progression.runStats.fireballCritChance = clamp(progression.runStats.fireballCritChance, 0, 0.85);
   progression.runStats.attackDuration = Math.max(0.24, progression.runStats.attackDuration);
-  progression.runStats.fireballGravityScale = Math.max(0.25, progression.runStats.fireballGravityScale);
   progression.runStats.fireballProjectileCount = Math.max(1, Math.round(progression.runStats.fireballProjectileCount));
   progression.runStats.regainPerSecond = Math.max(0, progression.runStats.regainPerSecond);
   markRunStatsDirty(progression);

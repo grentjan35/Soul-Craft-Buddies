@@ -4,7 +4,6 @@ const {
   FIREBALL_POWER_MIN,
   FIREBALL_POWER_MAX,
   FIREBALL_MAX_DISTANCE,
-  GRAVITY,
   SPECIAL_BEAM_RANGE,
 } = require('../state/constants');
 const { GroupManager } = require('../groups/groupManager');
@@ -84,11 +83,10 @@ function registerSocketHandlers(input) {
     const distanceRatio = Math.max(0, Math.min(1, targetDistance / FIREBALL_MAX_DISTANCE));
     const speedScale = Math.max(0.35, Number(runStats.fireballSpeedMultiplier) || 1);
     const referenceSpeed = (FIREBALL_POWER_MIN + (FIREBALL_POWER_MAX - FIREBALL_POWER_MIN) * distanceRatio) * speedScale;
-    const effectiveSpeed = referenceSpeed * 2.35;
-    const flightTime = Math.max(0.16, Math.min(targetDistance / Math.max(220, effectiveSpeed), 0.62));
-    const gravityPerSecond = GRAVITY * 60 * Math.max(0.25, Number(runStats.fireballGravityScale) || 1);
-    const vx = targetDx / flightTime;
-    const vy = (targetDy - 0.5 * gravityPerSecond * flightTime * flightTime) / flightTime;
+    const shotSpeed = Math.max(220, referenceSpeed * 2.35);
+    const targetLength = Math.hypot(targetDx, targetDy) || 1;
+    const vx = (targetDx / targetLength) * shotSpeed;
+    const vy = (targetDy / targetLength) * shotSpeed;
 
     if (player.is_attacking && now - (player.attack_start_time ?? 0) < attackDuration) {
       const elapsed = Math.max(0, now - (player.attack_start_time ?? 0));
@@ -97,6 +95,7 @@ function registerSocketHandlers(input) {
         player.queued_projectile_angle = angle;
         player.queued_projectile_vx = vx;
         player.queued_projectile_vy = vy;
+        player.queued_projectile_distance = targetDistance;
         player.queued_projectile_direction = direction;
       }
       return;
@@ -109,6 +108,7 @@ function registerSocketHandlers(input) {
     player.pending_projectile_angle = angle;
     player.pending_projectile_vx = vx;
     player.pending_projectile_vy = vy;
+    player.pending_projectile_distance = targetDistance;
   }
 
   handleConnect({ socket, io, state });
@@ -702,9 +702,11 @@ function handleConnect(input) {
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
+    pending_projectile_distance: 0,
     queued_projectile_angle: null,
     queued_projectile_vx: 0,
     queued_projectile_vy: 0,
+    queued_projectile_distance: 0,
     queued_projectile_direction: null,
     soul_count: 0,
     progression: createPlayerProgression(),
@@ -810,9 +812,11 @@ function respawnPlayer(input) {
   player.pending_projectile_angle = null;
   player.pending_projectile_vx = 0;
   player.pending_projectile_vy = 0;
+  player.pending_projectile_distance = 0;
   player.queued_projectile_angle = null;
   player.queued_projectile_vx = 0;
   player.queued_projectile_vy = 0;
+  player.queued_projectile_distance = 0;
   player.queued_projectile_direction = null;
   player.soul_count = 0;
 }

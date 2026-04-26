@@ -198,9 +198,11 @@ function updateDeathsAndRespawns(input) {
     p.pending_projectile_angle = null;
     p.pending_projectile_vx = 0;
     p.pending_projectile_vy = 0;
+    p.pending_projectile_distance = 0;
     p.queued_projectile_angle = null;
     p.queued_projectile_vx = 0;
     p.queued_projectile_vy = 0;
+    p.queued_projectile_distance = 0;
     p.queued_projectile_direction = null;
     p.soul_count = 0;
 
@@ -471,6 +473,7 @@ function serializeFireballsForState(state, options = {}) {
       render_scale: f.render_scale ?? 1,
       radius_scale: f.radius_scale ?? 1,
       gravity_scale: f.gravity_scale ?? 1,
+      gravity_delay_distance: f.gravity_delay_distance ?? 0,
     };
   }
 
@@ -771,10 +774,12 @@ function updateGameState(input) {
             angle: p.pending_projectile_angle,
             vx: typeof p.pending_projectile_vx === 'number' ? p.pending_projectile_vx : Math.cos(p.pending_projectile_angle) * FIREBALL_POWER_MAX,
             vy: typeof p.pending_projectile_vy === 'number' ? p.pending_projectile_vy : Math.sin(p.pending_projectile_angle) * FIREBALL_POWER_MAX,
+            targetDistance: Number.isFinite(p.pending_projectile_distance) ? p.pending_projectile_distance : 0,
           });
           p.pending_projectile_angle = null;
           p.pending_projectile_vx = 0;
           p.pending_projectile_vy = 0;
+          p.pending_projectile_distance = 0;
         }
 
         if (typeof p.queued_projectile_angle === 'number') {
@@ -787,9 +792,11 @@ function updateGameState(input) {
           p.pending_projectile_angle = p.queued_projectile_angle;
           p.pending_projectile_vx = Number.isFinite(p.queued_projectile_vx) ? p.queued_projectile_vx : 0;
           p.pending_projectile_vy = Number.isFinite(p.queued_projectile_vy) ? p.queued_projectile_vy : 0;
+          p.pending_projectile_distance = Number.isFinite(p.queued_projectile_distance) ? p.queued_projectile_distance : 0;
           p.queued_projectile_angle = null;
           p.queued_projectile_vx = 0;
           p.queued_projectile_vy = 0;
+          p.queued_projectile_distance = 0;
           p.queued_projectile_direction = null;
         } else {
           p.is_attacking = false;
@@ -1167,6 +1174,9 @@ function spawnPlayerFireball(input) {
   const spreadDeg = Number(runStats.fireballProjectileSpreadDeg) || 0;
   const baseAngle = Math.atan2(input.vy, input.vx);
   const baseSpeed = Math.max(180, Math.hypot(input.vx, input.vy));
+  const straightDistance = Math.max(0, Number(input.targetDistance) || 0);
+  const dropDistance = Math.max(420, Number(runStats.fireballDropDistance) || 0);
+  const totalDistance = straightDistance + dropDistance;
   const critChance = Math.max(0, Math.min(0.95, Number(runStats.fireballCritChance) || 0));
   const critMultiplier = Math.max(1.1, Number(runStats.fireballCritMultiplier) || 1.6);
 
@@ -1193,8 +1203,9 @@ function spawnPlayerFireball(input) {
       damage,
       renderScale,
       radiusScale,
-      gravityScale: Math.max(0.25, Number(runStats.fireballGravityScale) || 1),
-      maxDistance: Number(runStats.fireballRange) || FIREBALL_MAX_DISTANCE,
+      gravityScale: 1,
+      gravityDelayDistance: straightDistance,
+      maxDistance: totalDistance,
       explosionRadius: Number(runStats.fireballExplosionRadius) || EXPLOSION_RADIUS,
       explosionDamageMultiplier: Number(runStats.fireballExplosionDamageMultiplier) || 1,
       crit,
@@ -1227,7 +1238,8 @@ function spawnFireball(input) {
     damage: Math.max(1, Math.round(input.damage ?? FIREBALL_DAMAGE)),
     render_scale: Math.max(0.2, Number(input.renderScale) || 1),
     radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
-    gravity_scale: Math.max(0.25, Number(input.gravityScale) || 1),
+    gravity_scale: Number.isFinite(Number(input.gravityScale)) ? Math.max(0, Number(input.gravityScale)) : 1,
+    gravity_delay_distance: Math.max(0, Number(input.gravityDelayDistance) || 0),
     max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
     explosion_radius: Math.max(12, Number(input.explosionRadius) || EXPLOSION_RADIUS),
     explosion_damage_multiplier: Math.max(0.2, Number(input.explosionDamageMultiplier) || 1),
@@ -1259,7 +1271,8 @@ function spawnFireball(input) {
       spawn_time_ms: nowMs,
       render_scale: Math.max(0.2, Number(input.renderScale) || 1),
       radius_scale: Math.max(0.2, Number(input.radiusScale) || 1),
-      gravity_scale: Math.max(0.25, Number(input.gravityScale) || 1),
+      gravity_scale: Number.isFinite(Number(input.gravityScale)) ? Math.max(0, Number(input.gravityScale)) : 1,
+      gravity_delay_distance: Math.max(0, Number(input.gravityDelayDistance) || 0),
       max_distance: Math.max(48, Math.min(Number(input.maxDistance) || FIREBALL_MAX_DISTANCE, FIREBALL_MAX_DISTANCE)),
       explosion_radius: Math.max(12, Number(input.explosionRadius) || EXPLOSION_RADIUS),
       explosion_damage_multiplier: Math.max(0.2, Number(input.explosionDamageMultiplier) || 1),
@@ -1485,9 +1498,28 @@ function updateFireballs(input) {
       ? input.state.players.get(f.owner_sid)
       : null;
 
-    f.vy += GRAVITY * Math.max(0.25, Number(f.gravity_scale) || 1) * input.dt * 60;
-    f.x += f.vx * input.dt;
-    f.y += f.vy * input.dt;
+    const gravityScale = Math.max(0, Number(f.gravity_scale) || 0);
+    const gravityDelayDistance = Math.max(0, Number(f.gravity_delay_distance) || 0);
+    let remainingDt = input.dt;
+
+    if (gravityScale > 0 && gravityDelayDistance > f.distance_traveled) {
+      const speed = Math.hypot(f.vx, f.vy);
+      if (speed > 0.0001) {
+        const straightDistanceRemaining = gravityDelayDistance - f.distance_traveled;
+        const straightDt = Math.min(remainingDt, straightDistanceRemaining / speed);
+        if (straightDt > 0) {
+          f.x += f.vx * straightDt;
+          f.y += f.vy * straightDt;
+          remainingDt -= straightDt;
+        }
+      }
+    }
+
+    if (remainingDt > 0) {
+      f.vy += GRAVITY * gravityScale * remainingDt * 60;
+      f.x += f.vx * remainingDt;
+      f.y += f.vy * remainingDt;
+    }
 
     const dx = f.x - f.start_x;
     const dy = f.y - f.start_y;
