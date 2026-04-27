@@ -180,6 +180,7 @@
         }
 
         body.game-ui-hidden #run-hud,
+        body.game-ui-hidden #combat-inventory,
         body.game-ui-hidden #progression-feed,
         body.game-ui-hidden #achievement-toggle,
         body.game-ui-hidden #achievement-panel,
@@ -196,6 +197,8 @@
 
         #run-hud,
         #run-hud *,
+        #combat-inventory,
+        #combat-inventory *,
         #progression-feed,
         #progression-feed *,
         #achievement-toggle,
@@ -505,6 +508,166 @@
             font-variant-numeric: tabular-nums;
             color: #f3d896;
             text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
+        }
+        #combat-inventory {
+            --inventory-dock-offset: 0px;
+            position: fixed;
+            left: 50%;
+            bottom: max(14px, calc(env(safe-area-inset-bottom, 0px) + 14px));
+            transform: translateX(-50%) translateY(var(--inventory-dock-offset)) scale(var(--mobile-ui-scale));
+            transform-origin: bottom center;
+            z-index: 220;
+            display: none;
+            align-items: flex-end;
+            gap: 10px;
+            pointer-events: auto;
+            transition: transform 180ms ease, opacity 180ms ease;
+            opacity: 1;
+        }
+        #combat-inventory.is-docked {
+            --inventory-dock-offset: 58px;
+            opacity: 0.96;
+        }
+        body.mobile-device #combat-inventory {
+            bottom: calc(var(--mobile-controls-height) + env(safe-area-inset-bottom, 0px) + 10px);
+        }
+        .inventory-slot {
+            position: relative;
+            width: 90px;
+            height: 90px;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 3px solid #c9a15d;
+            background: rgba(18, 12, 6, 0.96);
+            box-shadow:
+                inset 0 0 0 1px rgba(244, 220, 170, 0.55),
+                0 10px 24px rgba(0, 0, 0, 0.3);
+            color: #f7efdb;
+            cursor: pointer;
+            overflow: hidden;
+            transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+        }
+        .inventory-slot-meta {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            right: 5px;
+            z-index: 2;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 2px;
+            pointer-events: none;
+        }
+        .inventory-slot.is-selected {
+            border-color: rgba(138, 34, 26, 0.98);
+            box-shadow:
+                inset 0 0 0 2px rgba(196, 78, 64, 0.66),
+                inset 0 0 24px rgba(122, 24, 20, 0.24),
+                0 0 22px rgba(128, 22, 18, 0.28),
+                0 10px 24px rgba(0, 0, 0, 0.3);
+        }
+        .inventory-slot.is-unavailable {
+            border-color: rgba(150, 137, 114, 0.94);
+            box-shadow:
+                inset 0 0 0 1px rgba(178, 168, 149, 0.26),
+                0 10px 24px rgba(0, 0, 0, 0.26);
+        }
+        .inventory-slot.is-active {
+            border-color: rgba(184, 76, 52, 0.96);
+            box-shadow:
+                inset 0 0 0 1px rgba(255, 148, 112, 0.3),
+                inset 0 0 18px rgba(190, 62, 38, 0.18),
+                0 10px 24px rgba(0, 0, 0, 0.28);
+        }
+        .inventory-slot:hover,
+        .inventory-slot:focus-visible {
+            border-color: #e7bc73;
+            transform: translateY(-2px);
+            outline: none;
+        }
+        .inventory-slot-progress {
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 100%;
+            pointer-events: none;
+            background: rgba(255, 199, 112, 0.04);
+        }
+        .inventory-slot-fill {
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 0%;
+            background: rgba(224, 135, 44, 0.68);
+            transition: height 120ms linear;
+        }
+        .inventory-slot-key,
+        .inventory-slot-progress-label {
+            position: relative;
+            z-index: 2;
+            min-height: 12px;
+            flex: 0 0 auto;
+        }
+        .inventory-slot-key {
+            padding: 2px 3px;
+            background: rgba(30, 19, 9, 0.88);
+            border: 1px solid rgba(226, 187, 111, 0.78);
+            line-height: 0;
+        }
+        .inventory-slot-progress-label {
+            padding: 1px 2px;
+            background: rgba(22, 14, 7, 0.9);
+            border: 1px solid rgba(226, 187, 111, 0.68);
+            line-height: 0;
+            margin-left: auto;
+            min-width: 24px;
+            max-width: 32px;
+            text-align: center;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+        .inventory-slot-progress-label:empty {
+            display: none;
+        }
+        .inventory-slot-progress-label canvas {
+            display: block;
+            margin: 0 auto;
+        }
+        .inventory-slot-icon {
+            position: absolute;
+            inset: 3px;
+            width: calc(100% - 6px);
+            height: calc(100% - 6px);
+            object-fit: cover;
+            image-rendering: auto;
+            pointer-events: none;
+            z-index: 1;
+            transition: filter 140ms ease, opacity 140ms ease;
+        }
+        .inventory-slot.is-unavailable .inventory-slot-icon {
+            filter: grayscale(1) saturate(0.15) brightness(0.7);
+            opacity: 0.78;
+        }
+        .inventory-slot.is-active .inventory-slot-icon {
+            filter: grayscale(0.75) sepia(0.45) saturate(0.6) hue-rotate(-18deg) brightness(0.72);
+            opacity: 0.82;
+        }
+        .inventory-slot.is-unavailable .inventory-slot-fill {
+            background: rgba(118, 118, 118, 0.62);
+        }
+        .inventory-slot.is-active .inventory-slot-fill {
+            background: rgba(176, 54, 38, 0.82);
+        }
+        .inventory-slot.is-unavailable .inventory-slot-progress {
+            background: rgba(210, 210, 210, 0.04);
+        }
+        .inventory-slot.is-active .inventory-slot-progress {
+            background: rgba(176, 54, 38, 0.08);
         }
         #progression-feed {
             position: fixed;
@@ -1002,6 +1165,18 @@
                 top: 10px;
                 left: 10px;
                 width: min(320px, calc(100vw - 20px));
+            }
+            #combat-inventory {
+                gap: 8px;
+            }
+            .inventory-slot {
+                width: 78px;
+                height: 78px;
+            }
+            .inventory-slot-icon {
+                inset: 3px;
+                width: calc(100% - 6px);
+                height: calc(100% - 6px);
             }
             .run-bar-track {
                 height: 24px;
@@ -3491,6 +3666,24 @@
             </div>
         </div>
     </div>
+    <div id="combat-inventory" aria-label="Combat inventory">
+        <button id="inventory-slot-fireball" class="inventory-slot" type="button" aria-label="Select fireball">
+            <div class="inventory-slot-progress"><div class="inventory-slot-fill"></div></div>
+            <img class="inventory-slot-icon" src="/icons/fireball.png" alt="" />
+            <div class="inventory-slot-meta">
+                <span class="inventory-slot-key" data-custom-alphabet="button">1</span>
+                <span class="inventory-slot-progress-label" data-custom-alphabet="dynamic"></span>
+            </div>
+        </button>
+        <button id="inventory-slot-lazer" class="inventory-slot" type="button" aria-label="Select lazer">
+            <div class="inventory-slot-progress"><div class="inventory-slot-fill"></div></div>
+            <img class="inventory-slot-icon" src="/icons/lazer.png" alt="" />
+            <div class="inventory-slot-meta">
+                <span class="inventory-slot-key" data-custom-alphabet="button">2</span>
+                <span class="inventory-slot-progress-label" data-custom-alphabet="dynamic"></span>
+            </div>
+        </button>
+    </div>
     <div id="progression-feed" aria-live="polite"></div>
     <button id="achievement-toggle" class="in-game-frame in-game-frame-blue" type="button" aria-expanded="false" aria-controls="achievement-panel">
         <span>Achievements</span>
@@ -3797,8 +3990,6 @@
         let myPlayerName = "Player";
         let selectedCharacter = null;
         let availableCharacterSelections = [];
-        let specialUnlockSelectionCharacter = '';
-        let specialAttackEnabledForRun = false;
         let loadingCompleteAudio = null;
         let loadingCompleteSoundPlayed = false;
         let menuAudio = null;
@@ -3811,26 +4002,6 @@
         let combatMusic = null;
         let youtubeIframeApiPromise = null;
         const MENU_SETTINGS_STORAGE_KEY = 'soulcraft_menu_settings_v1';
-
-        function normalizeSpecialAttackName(name) {
-            return String(name || '').trim().toLowerCase();
-        }
-
-        function isSpecialAttackNameEligible(name) {
-            const normalized = normalizeSpecialAttackName(name);
-            return normalized === 'muhammad' || normalized === 'pkducky';
-        }
-
-        function canPrimeSpecialAttackForSelection(name, character) {
-            const normalizedName = normalizeSpecialAttackName(name);
-            const normalizedCharacter = String(character || '').trim().toLowerCase();
-            return normalizedName === 'muhammad' || (normalizedName === 'pkducky' && normalizedCharacter === 'duck');
-        }
-
-        function shouldEnableSpecialAttack(name, character) {
-            const normalizedCharacter = String(character || '').trim().toLowerCase();
-            return specialUnlockSelectionCharacter === normalizedCharacter && canPrimeSpecialAttackForSelection(name, normalizedCharacter);
-        }
 
         // Mobile detection
         function isMobileDevice() {
@@ -4983,14 +5154,24 @@
             if (element.dataset.customAlphabetText === nextText) {
                 return;
             }
+            if (!nextText.trim()) {
+                element.dataset.customAlphabetText = '';
+                element.textContent = '';
+                return;
+            }
             element.dataset.customAlphabetText = nextText;
-            applyCustomAlphabetToElement(element, element.dataset.customAlphabet === 'title'
-                ? { scale: 1.22, letterSpacing: -1, wordSpacing: 4 }
-                : element.dataset.customAlphabet === 'label'
-                    ? { scale: 0.7, letterSpacing: -1, wordSpacing: 4 }
-                    : element.dataset.customAlphabet === 'button'
-                        ? { scale: 0.66, letterSpacing: -1, wordSpacing: 4 }
-                        : { scale: 0.7, letterSpacing: -1, wordSpacing: 4 });
+            applyCustomAlphabetToElement(
+                element,
+                element.classList.contains('inventory-slot-progress-label')
+                    ? { scale: 0.38, letterSpacing: -1, wordSpacing: 2, paddingX: 0, paddingY: 0, resolutionMultiplier: 2 }
+                    : element.dataset.customAlphabet === 'title'
+                        ? { scale: 1.22, letterSpacing: -1, wordSpacing: 4 }
+                        : element.dataset.customAlphabet === 'label'
+                            ? { scale: 0.7, letterSpacing: -1, wordSpacing: 4 }
+                            : element.dataset.customAlphabet === 'button'
+                                ? { scale: 0.66, letterSpacing: -1, wordSpacing: 4 }
+                                : { scale: 0.7, letterSpacing: -1, wordSpacing: 4 }
+            );
         }
 
         function bindCustomAlphabetInput(input, mirror) {
@@ -5229,7 +5410,7 @@
                 target instanceof Element &&
                 !target.closest('#gameCanvas-wrapper') &&
                 target.closest(
-                    '#run-hud, #progression-feed, #achievement-toggle, #achievement-panel, #souls-leaderboard, #chat-container, #group-toggle, #group-panel, #upgrade-draft-overlay, #mobile-controls, #jump-button, #settings-modal, #modal-overlay'
+                    '#run-hud, #combat-inventory, #progression-feed, #achievement-toggle, #achievement-panel, #souls-leaderboard, #chat-container, #group-toggle, #group-panel, #upgrade-draft-overlay, #settings-modal, #modal-overlay'
                 )
             );
         }
@@ -5346,18 +5527,16 @@
                 beginPinchZoom('game', e.touches);
                 suppressNextCanvasTap = true;
             } else if (e.touches.length === 1 && !chatActive && allAssetsLoaded && !joystickActive) {
-                // Single touch - start auto-fire for shooting
                 isTouchDown = true;
                 const touch = e.touches[0];
                 currentTouchClientX = touch.clientX;
                 currentTouchClientY = touch.clientY;
                 updateAimPreviewFromClientPoint(touch.clientX, touch.clientY);
-                fireProjectileAtScreenPoint(touch.clientX, touch.clientY);
-                
-                // Start auto-fire
-                if (!touchAutoFireInterval) {
+                attackWithSelectedWeaponAtScreenPoint(touch.clientX, touch.clientY);
+
+                if (getSelectedInventorySlot() === INVENTORY_SLOT_FIREBALL && !touchAutoFireInterval) {
                     touchAutoFireInterval = setInterval(() => {
-                        if (!chatActive && allAssetsLoaded && isTouchDown) {
+                        if (!chatActive && allAssetsLoaded && isTouchDown && getSelectedInventorySlot() === INVENTORY_SLOT_FIREBALL) {
                             fireProjectileAtScreenPoint(currentTouchClientX, currentTouchClientY);
                         }
                     }, AUTO_FIRE_RATE_MS);
@@ -5383,6 +5562,9 @@
                 currentTouchClientX = touch.clientX;
                 currentTouchClientY = touch.clientY;
                 updateAimPreviewFromClientPoint(touch.clientX, touch.clientY);
+                if (getSelectedInventorySlot() === INVENTORY_SLOT_LAZER) {
+                    fireLazerAtScreenPoint(touch.clientX, touch.clientY);
+                }
             }
         }
 
@@ -5515,31 +5697,43 @@
             socket.emit('projectile_fire', { angle, distance, dx, dy });
         }
 
-        function isSpecialBeamUsable() {
-            return Boolean(specialAttackEnabledForRun && socket.connected && allAssetsLoaded);
+        function getSelectedInventorySlot() {
+            return Math.round(Number(localInventoryState?.selectedSlot) || INVENTORY_SLOT_FIREBALL);
         }
 
-        function sendSpecialBeamInput(active, clientX = currentMouseClientX, clientY = currentMouseClientY, force = false) {
-            if (!specialAttackEnabledForRun || !socket.connected) {
+        function selectInventorySlot(slot, syncWithServer = true) {
+            const normalizedSlot = Math.round(Number(slot) || INVENTORY_SLOT_FIREBALL);
+            if (normalizedSlot !== INVENTORY_SLOT_FIREBALL && normalizedSlot !== INVENTORY_SLOT_LAZER) {
                 return;
             }
+            localInventoryState.selectedSlot = normalizedSlot;
+            renderCombatInventory();
+            if (syncWithServer && socket.connected) {
+                socket.emit('select_inventory_slot', { slot: normalizedSlot });
+            }
+        }
 
-            if (!active) {
-                specialBeamMouseActive = false;
-                specialBeamInputSentAt = 0;
-                socket.emit('special_attack_update', { active: false });
+        function attackWithSelectedWeaponAtScreenPoint(clientX, clientY) {
+            if (getSelectedInventorySlot() === INVENTORY_SLOT_LAZER) {
+                fireLazerAtScreenPoint(clientX, clientY);
+                return;
+            }
+            fireProjectileAtScreenPoint(clientX, clientY);
+        }
+
+        function fireLazerAtScreenPoint(clientX, clientY) {
+            if (chatActive || isUpgradeDraftActive() || !allAssetsLoaded || !socket.connected) {
                 return;
             }
 
             const now = performance.now();
-            if (!force && now - specialBeamInputSentAt < SPECIAL_BEAM_INPUT_INTERVAL_MS) {
+            if (now - specialBeamInputSentAt < SPECIAL_BEAM_INPUT_INTERVAL_MS) {
                 return;
             }
 
             const { worldX, worldY } = getCanvasWorldPoint(clientX, clientY);
-            specialBeamMouseActive = true;
             specialBeamInputSentAt = now;
-            socket.emit('special_attack_update', { active: true, worldX, worldY });
+            socket.emit('special_attack_fire', { worldX, worldY });
         }
 
         function getLocalRunStats() {
@@ -5560,6 +5754,9 @@
         }
 
         function startAutoFireLoop() {
+            if (getSelectedInventorySlot() !== INVENTORY_SLOT_FIREBALL) {
+                return;
+            }
             if (autoFireInterval) {
                 return;
             }
@@ -5577,9 +5774,11 @@
                 return;
             }
             if (fireImmediately) {
-                fireProjectileAtScreenPoint(currentMouseClientX, currentMouseClientY);
+                attackWithSelectedWeaponAtScreenPoint(currentMouseClientX, currentMouseClientY);
             }
-            startAutoFireLoop();
+            if (getSelectedInventorySlot() === INVENTORY_SLOT_FIREBALL) {
+                startAutoFireLoop();
+            }
         }
 
         function handleJumpStart(e) {
@@ -5602,7 +5801,7 @@
             if (chatActive || isUpgradeDraftActive() || !allAssetsLoaded || joystickActive || suppressNextCanvasTap || e.changedTouches.length === 0) return;
 
             const touch = e.changedTouches[0];
-            fireProjectileAtScreenPoint(touch.clientX, touch.clientY);
+            attackWithSelectedWeaponAtScreenPoint(touch.clientX, touch.clientY);
         }
 
         // WebGL Menu Background System
@@ -5664,6 +5863,7 @@
         let menuRenderFrameId = 0;
         let menuUiFrameId = 0;
         let menuRenderQueued = false;
+        let lastRenderCrashReportAt = 0;
 
         function stopMenuRendering() {
             menuLoopsActive = false;
@@ -5801,10 +6001,14 @@
             const settingsMusicValue = document.getElementById('settings-music-value');
             const exitToMenuBtn = document.getElementById('exit-to-menu-btn');
             const exitToMenuRow = document.getElementById('exit-to-menu-row');
-            await preloadCustomAlphabet().catch((error) => {
-                console.warn('Custom alphabet preload failed during boot:', error);
-            });
             refreshCustomAlphabetUi();
+            preloadCustomAlphabet()
+                .then(() => {
+                    refreshCustomAlphabetUi();
+                })
+                .catch((error) => {
+                    console.warn('Custom alphabet preload failed during boot:', error);
+                });
             
             let targetX = 0, targetY = 0;
             let currX = 0, currY = 0;
@@ -5849,8 +6053,12 @@
             }
             animateUI();
             
-            // Initialize WebGL
-            initGL();
+            // The menu background shader is decorative, so keep it off on mobile to cut startup cost.
+            if (!isMobile) {
+                initGL();
+            } else if (menuCanvas) {
+                menuCanvas.style.display = 'none';
+            }
             let sharedGameAudioContext = null;
             const registeredGameAudioSystems = new Set();
 
@@ -6002,7 +6210,7 @@
             }
 
             function createCombatMusicSystem() {
-                const YOUTUBE_VIDEO_ID = 'IifPuoG8FEY';
+                const COMBAT_MUSIC_VIDEO_IDS = ['IifPuoG8FEY', '8l30E92iNLE'];
                 const MAX_VOLUME = 0.42;
                 const FADE_IN_PER_SECOND = 1.6;
                 const FADE_OUT_PER_SECOND = 1.05;
@@ -6018,6 +6226,26 @@
                 let activeUntilMs = 0;
                 let currentPan = 0;
                 let targetPan = 0;
+                let currentTrackIndex = Math.floor(Math.random() * COMBAT_MUSIC_VIDEO_IDS.length);
+
+                function getCurrentTrackId() {
+                    return COMBAT_MUSIC_VIDEO_IDS[currentTrackIndex] || COMBAT_MUSIC_VIDEO_IDS[0];
+                }
+
+                function advanceCombatTrack(instance) {
+                    if (!instance || !COMBAT_MUSIC_VIDEO_IDS.length) {
+                        return;
+                    }
+
+                    currentTrackIndex = (currentTrackIndex + 1) % COMBAT_MUSIC_VIDEO_IDS.length;
+                    const nextTrackId = getCurrentTrackId();
+                    try {
+                        instance.loadVideoById({
+                            videoId: nextTrackId,
+                            startSeconds: 0,
+                        });
+                    } catch (_error) {}
+                }
 
                 function ensureYouTubeIframeApi() {
                     if (window.YT && typeof window.YT.Player === 'function') {
@@ -6105,7 +6333,7 @@
                             const instance = new YT.Player(host, {
                                 width: '1',
                                 height: '1',
-                                videoId: YOUTUBE_VIDEO_ID,
+                                videoId: getCurrentTrackId(),
                                 playerVars: {
                                     autoplay: 0,
                                     controls: 0,
@@ -6116,7 +6344,7 @@
                                     modestbranding: 1,
                                     playsinline: 1,
                                     rel: 0,
-                                    playlist: YOUTUBE_VIDEO_ID
+                                    playlist: COMBAT_MUSIC_VIDEO_IDS.join(',')
                                 },
                                 events: {
                                     onReady: () => {
@@ -6128,10 +6356,7 @@
                                     },
                                     onStateChange: (event) => {
                                         if (event.data === YT.PlayerState.ENDED) {
-                                            try {
-                                                instance.seekTo(0, true);
-                                                instance.playVideo();
-                                            } catch (_error) {}
+                                            advanceCombatTrack(instance);
                                         }
                                     },
                                     onError: (event) => {
@@ -7646,21 +7871,9 @@
                 }
 
                 selectedCharacter = focused.character;
-                const normalizedCharacter = String(focused.character || '').trim().toLowerCase();
-                if (options.shiftPressed) {
-                    specialUnlockSelectionCharacter = normalizedCharacter;
-                } else if (specialUnlockSelectionCharacter && specialUnlockSelectionCharacter !== normalizedCharacter) {
-                    specialUnlockSelectionCharacter = '';
-                }
                 menuAudio.play('set', 0.7);
                 updateFocusedCardTransforms();
-                if (options.shiftPressed && canPrimeSpecialAttackForSelection(nameInput?.value, focused.character)) {
-                    setFootnote('Secret fire lazer primed. Hold Shift and attack in game.');
-                } else if (options.shiftPressed && isSpecialAttackNameEligible(nameInput?.value)) {
-                    setFootnote('Shift-click registered. Use duck for PKDucky or any soul for Muhammad.');
-                } else {
-                    setFootnote('Press play to start');
-                }
+                setFootnote('Press play to start');
             }
 
             function renderCharacterCarousel() {
@@ -8048,7 +8261,6 @@
                 }
                 
                 myPlayerName = name;
-                specialAttackEnabledForRun = shouldEnableSpecialAttack(name, selectedCharacter);
                 closeSettingsModal();
                 menuAudio.play('play', 0.65);
                 loadingStage = 'Loading';
@@ -8078,8 +8290,7 @@
                     // Now we actually connect to the game server!
                     socket.io.opts.query = {
                         name: myPlayerName,
-                        character: selectedCharacter,
-                        specialUnlock: specialAttackEnabledForRun ? '1' : '0'
+                        character: selectedCharacter
                     };
                     socket.connect();
                 }, 300);
@@ -8877,8 +9088,14 @@
 
         socket.on('disconnect', (reason) => {
             localProgressionState.pendingChoices = null;
+            localInventoryState = {
+                selectedSlot: INVENTORY_SLOT_FIREBALL,
+                lazerCooldownUntilMs: 0,
+                lazerAttackEndsAtMs: 0
+            };
             upgradeSelectionPending = false;
             renderUpgradeDraft();
+            renderCombatInventory();
             runHudElement.style.display = 'none';
             if (reason === 'io server disconnect') {
                 // Server disconnected, reconnect manually
@@ -10357,6 +10574,11 @@
         const runSoulFillElement = document.getElementById('run-soul-fill');
         const runSoulValueElement = document.getElementById('run-soul-value');
         const runLevelBadgeElement = document.getElementById('run-level-badge');
+        const combatInventoryElement = document.getElementById('combat-inventory');
+        const inventorySlotFireballElement = document.getElementById('inventory-slot-fireball');
+        const inventorySlotLazerElement = document.getElementById('inventory-slot-lazer');
+        const INVENTORY_SLOT_FIREBALL = 1;
+        const INVENTORY_SLOT_LAZER = 2;
         const progressionFeedElement = document.getElementById('progression-feed');
         const achievementToggleElement = document.getElementById('achievement-toggle');
         const achievementToggleCountElement = document.getElementById('achievement-toggle-count');
@@ -10452,6 +10674,40 @@
             runStats: null,
             soulDominion: null
         };
+        let localInventoryState = {
+            selectedSlot: INVENTORY_SLOT_FIREBALL,
+            lazerCooldownUntilMs: 0,
+            lazerAttackEndsAtMs: 0
+        };
+        inventorySlotFireballElement?.addEventListener('click', () => {
+            revealCombatInventory();
+            selectInventorySlot(INVENTORY_SLOT_FIREBALL);
+        });
+        inventorySlotLazerElement?.addEventListener('click', () => {
+            revealCombatInventory();
+            selectInventorySlot(INVENTORY_SLOT_LAZER);
+        });
+        combatInventoryElement?.addEventListener('mouseenter', () => {
+            clearCombatInventoryDockTimer();
+            setCombatInventoryDocked(false);
+        });
+        combatInventoryElement?.addEventListener('mouseleave', () => {
+            scheduleCombatInventoryDock();
+        });
+        combatInventoryElement?.addEventListener('focusin', () => {
+            clearCombatInventoryDockTimer();
+            setCombatInventoryDocked(false);
+        });
+        combatInventoryElement?.addEventListener('focusout', () => {
+            window.setTimeout(() => {
+                if (!combatInventoryElement?.matches(':focus-within')) {
+                    scheduleCombatInventoryDock();
+                }
+            }, 0);
+        });
+        combatInventoryElement?.addEventListener('touchstart', () => {
+            revealCombatInventory();
+        }, { passive: true });
         let achievementPanelOpen = false;
         let upgradeSelectionPending = false;
         let achievementCollectPendingId = '';
@@ -10492,9 +10748,10 @@
         const radialSpriteCache = new Map();
         let enemyHitboxDebugEnabled = false;
         let specialBeamInputSentAt = 0;
-        let specialBeamMouseActive = false;
-        let isSpecialBeamMouseDown = false;
         const SPECIAL_BEAM_INPUT_INTERVAL_MS = 34;
+        const INVENTORY_AUTO_DOCK_DELAY_MS = 1000;
+        const LAZER_COOLDOWN_MS = 15000;
+        const LAZER_ATTACK_DURATION_MS = 2500;
         // Keyboard input handling
         window.addEventListener('keydown', (e) => {
             // Disable movement keys when chat is active
@@ -10511,6 +10768,12 @@
             if (e.key === 'ArrowUp' || e.key === 'w') {
                 e.preventDefault();
                 socket.emit('jump');
+            }
+            if (e.key === '1') {
+                selectInventorySlot(INVENTORY_SLOT_FIREBALL);
+            }
+            if (e.key === '2') {
+                selectInventorySlot(INVENTORY_SLOT_LAZER);
             }
             
             // Manual respawn with 'R' key
@@ -10818,9 +11081,6 @@
             chatActive = true;
             isMouseDown = false;
             stopAutoFireLoop();
-            if (specialBeamMouseActive) {
-                sendSpecialBeamInput(false, 0, 0, true);
-            }
             setChatMinimized(false);
         });
 
@@ -10843,12 +11103,14 @@
             }
         });
 
-        // Mouse event handlers for fireball shooting
+        // Mouse event handlers for combat attacks
         let autoFireInterval = null;
         const AUTO_FIRE_RATE_MS = 150; // Fire every 150ms while holding
         let currentMouseClientX = 0;
         let currentMouseClientY = 0;
         let isMouseDown = false;
+        let combatInventoryDockTimer = null;
+        let combatInventoryHasRendered = false;
 
         // Touch event handlers for fireball shooting (auto-fire)
         let touchAutoFireInterval = null;
@@ -10863,18 +11125,6 @@
                 currentMouseClientY = e.clientY;
                 updateAimPreviewFromClientPoint(e.clientX, e.clientY);
                 refreshPrimaryAttackMode(true);
-                return;
-            }
-
-            if (e.button === 2 && !chatActive && allAssetsLoaded) { // Right click
-                e.preventDefault();
-                currentMouseClientX = e.clientX;
-                currentMouseClientY = e.clientY;
-                updateAimPreviewFromClientPoint(e.clientX, e.clientY);
-                isSpecialBeamMouseDown = true;
-                if (isSpecialBeamUsable()) {
-                    sendSpecialBeamInput(true, e.clientX, e.clientY, true);
-                }
             }
         });
 
@@ -10882,24 +11132,12 @@
             if (e.button === 0) { // Left click release
                 isMouseDown = false;
                 stopAutoFireLoop();
-                return;
-            }
-
-            if (e.button === 2) { // Right click release
-                isSpecialBeamMouseDown = false;
-                if (specialBeamMouseActive) {
-                    sendSpecialBeamInput(false, 0, 0, true);
-                }
             }
         });
 
         canvas.addEventListener('mouseleave', () => {
             isMouseDown = false;
-            isSpecialBeamMouseDown = false;
             stopAutoFireLoop();
-            if (specialBeamMouseActive) {
-                sendSpecialBeamInput(false, 0, 0, true);
-            }
         });
         
         canvas.addEventListener('mousemove', (e) => {
@@ -10907,18 +11145,14 @@
             // Update current mouse position for auto-fire
             currentMouseClientX = e.clientX;
             currentMouseClientY = e.clientY;
-            if (isSpecialBeamMouseDown && isSpecialBeamUsable()) {
-                sendSpecialBeamInput(true, e.clientX, e.clientY);
+            if (isMouseDown && getSelectedInventorySlot() === INVENTORY_SLOT_LAZER) {
+                fireLazerAtScreenPoint(e.clientX, e.clientY);
             }
         });
 
         window.addEventListener('blur', () => {
             isMouseDown = false;
-            isSpecialBeamMouseDown = false;
             stopAutoFireLoop();
-            if (specialBeamMouseActive) {
-                sendSpecialBeamInput(false, 0, 0, true);
-            }
         });
         function getSoulMetaForCount(soulCount) {
             const souls = Math.max(0, Math.round(Number(soulCount) || 0));
@@ -11161,10 +11395,136 @@
             return `${Math.max(0, Math.round(current))}/${Math.max(1, Math.round(max))}`;
         }
 
+        function formatInventoryCountdownMs(ms) {
+            const remainingMs = Math.max(0, Number(ms) || 0);
+            if (remainingMs <= 0) {
+                return '';
+            }
+            if (remainingMs >= 9950) {
+                return `${Math.ceil(remainingMs / 1000)}`;
+            }
+            return `${Math.max(0, Math.ceil(remainingMs / 100) / 10).toFixed(1).replace(/^0\./, '.')}`;
+        }
+
+        function setInventorySlotVisuals(slotElement, state) {
+            if (!slotElement) {
+                return;
+            }
+
+            slotElement.classList.toggle('is-selected', Boolean(state.selected));
+            slotElement.classList.toggle('is-busy', Boolean(state.busy));
+            slotElement.classList.toggle('is-active', Boolean(state.active));
+            slotElement.classList.toggle('is-ready', Boolean(state.ready));
+            slotElement.classList.toggle('is-unavailable', !state.ready && !state.active);
+            slotElement.setAttribute('aria-pressed', state.selected ? 'true' : 'false');
+            slotElement.setAttribute('aria-disabled', (state.ready && !state.active) ? 'false' : 'true');
+            slotElement.title = state.statusText || '';
+
+            const progressFill = slotElement.querySelector('.inventory-slot-fill');
+            const progressLabel = slotElement.querySelector('.inventory-slot-progress-label');
+
+            if (progressFill) {
+                progressFill.style.height = `${Math.max(0, Math.min(100, state.progress * 100))}%`;
+            }
+            if (progressLabel) {
+                setCustomAlphabetText(progressLabel, state.progressText || '');
+            }
+        }
+
+        function clearCombatInventoryDockTimer() {
+            if (combatInventoryDockTimer) {
+                clearTimeout(combatInventoryDockTimer);
+                combatInventoryDockTimer = null;
+            }
+        }
+
+        function setCombatInventoryDocked(docked) {
+            if (!combatInventoryElement) {
+                return;
+            }
+            combatInventoryElement.classList.toggle('is-docked', Boolean(docked));
+        }
+
+        function scheduleCombatInventoryDock() {
+            clearCombatInventoryDockTimer();
+            if (!combatInventoryElement || combatInventoryElement.style.display === 'none') {
+                return;
+            }
+            combatInventoryDockTimer = window.setTimeout(() => {
+                if (!combatInventoryElement.matches(':hover') && !combatInventoryElement.matches(':focus-within')) {
+                    setCombatInventoryDocked(true);
+                }
+            }, INVENTORY_AUTO_DOCK_DELAY_MS);
+        }
+
+        function revealCombatInventory() {
+            setCombatInventoryDocked(false);
+            scheduleCombatInventoryDock();
+        }
+
+        function renderCombatInventory(nowMs = Date.now()) {
+            const me = playerState[socket.id] || authoritativePlayerState[socket.id];
+            if (!combatInventoryElement || !inventorySlotFireballElement || !inventorySlotLazerElement || !me) {
+                if (combatInventoryElement) {
+                    combatInventoryElement.style.display = 'none';
+                    clearCombatInventoryDockTimer();
+                    combatInventoryHasRendered = false;
+                }
+                return;
+            }
+
+            combatInventoryElement.style.display = 'flex';
+            if (!combatInventoryHasRendered) {
+                combatInventoryHasRendered = true;
+                revealCombatInventory();
+            }
+            const runStats = getLocalRunStats();
+            const fireballCastDurationMs = Math.max(180, Math.round((Number(runStats?.attackDuration) || ATTACK_WARMUP_DURATION) * 1000));
+            const fireballAttackStartedAtMs = typeof me.attack_start_time_ms === 'number' ? me.attack_start_time_ms : 0;
+            const fireballCastElapsedMs = me.is_attacking ? Math.max(0, nowMs - fireballAttackStartedAtMs) : fireballCastDurationMs;
+            const fireballCastProgress = me.is_attacking
+                ? Math.max(0, Math.min(1, fireballCastElapsedMs / Math.max(1, fireballCastDurationMs)))
+                : 0;
+
+            const lazerCooldownUntilMs = Math.max(Number(localInventoryState?.lazerCooldownUntilMs) || 0, me.special_beam_active ? nowMs + 1 : 0);
+            const lazerAttackEndsAtMs = Math.max(Number(localInventoryState?.lazerAttackEndsAtMs) || 0, me.special_beam_active ? nowMs + LAZER_ATTACK_DURATION_MS : 0);
+            const lazerActiveRemainingMs = Math.max(0, lazerAttackEndsAtMs - nowMs);
+            const lazerCooldownRemainingMs = Math.max(0, lazerCooldownUntilMs - Math.max(nowMs, lazerAttackEndsAtMs));
+            const lazerCooldownProgress = lazerCooldownRemainingMs > 0
+                ? lazerCooldownRemainingMs / LAZER_COOLDOWN_MS
+                : 0;
+            const lazerAttackProgress = lazerActiveRemainingMs > 0
+                ? Math.max(0, Math.min(1, lazerActiveRemainingMs / LAZER_ATTACK_DURATION_MS))
+                : 0;
+
+            setInventorySlotVisuals(inventorySlotFireballElement, {
+                selected: getSelectedInventorySlot() === INVENTORY_SLOT_FIREBALL,
+                busy: me.is_attacking,
+                active: false,
+                ready: !me.is_attacking,
+                progress: fireballCastProgress,
+                progressText: me.is_attacking ? formatInventoryCountdownMs(Math.max(0, fireballCastDurationMs - fireballCastElapsedMs)) : 'SET',
+                statusText: me.is_attacking ? 'Casting' : 'Ready'
+            });
+
+            setInventorySlotVisuals(inventorySlotLazerElement, {
+                selected: getSelectedInventorySlot() === INVENTORY_SLOT_LAZER,
+                busy: lazerActiveRemainingMs > 0 || lazerCooldownRemainingMs > 0,
+                active: lazerActiveRemainingMs > 0,
+                ready: lazerCooldownRemainingMs <= 0,
+                progress: lazerActiveRemainingMs > 0 ? lazerAttackProgress : lazerCooldownProgress,
+                progressText: lazerActiveRemainingMs > 0
+                    ? formatInventoryCountdownMs(lazerActiveRemainingMs)
+                    : (lazerCooldownRemainingMs > 0 ? formatInventoryCountdownMs(lazerCooldownRemainingMs) : 'SET'),
+                statusText: lazerActiveRemainingMs > 0 ? 'Firing' : (lazerCooldownRemainingMs > 0 ? 'Cooldown' : 'Ready')
+            });
+        }
+
         function updateRunHud() {
             const me = playerState[socket.id] || authoritativePlayerState[socket.id];
             if (!me) {
                 runHudElement.style.display = 'none';
+                renderCombatInventory();
                 lastRunHudSignature = '';
                 return;
             }
@@ -11199,6 +11559,7 @@
             ].join('|');
 
             runHudElement.style.display = 'block';
+            renderCombatInventory();
             if (nextHudSignature === lastRunHudSignature) {
                 return;
             }
@@ -11808,6 +12169,13 @@
                 }
                 renderUpgradeDraft();
             }
+            if (selfState?.inventory) {
+                localInventoryState = {
+                    ...localInventoryState,
+                    ...selfState.inventory
+                };
+            }
+            renderCombatInventory();
 
             if (serverEnemies) {
                 const receivedEnemyIds = new Set();
@@ -17156,50 +17524,52 @@
         }
 
         function draw() {
-            const currentTime = performance.now();
-            if (document.hidden) {
-                lastFrameTime = currentTime;
-                lastPerformanceCheck = currentTime;
-                frameCount = 0;
-                requestAnimationFrame(draw);
-                return;
-            }
-
-            if (renderResolutionDirty) {
-                resizeCanvas();
-            }
-
-            const deltaTime = currentTime - lastFrameTime;
-            const activeFrameInterval = allAssetsLoaded ? frameInterval : Math.max(frameInterval, 1000 / 20);
-
-            frameCount++;
-            if (isLowQualityModeEnabled() && currentTime - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
-                const actualFps = (frameCount * 1000) / Math.max(1, currentTime - lastPerformanceCheck);
-                const targetFpsCap = isMobile ? MOBILE_FPS_CAP : HIGH_END_FPS_CAP;
-                const nextFpsCap = actualFps < 50 ? LOW_END_FPS_CAP : targetFpsCap;
-
-                if (fpsCap !== nextFpsCap) {
-                    fpsCap = nextFpsCap;
-                    frameInterval = 1000 / fpsCap;
-                    isLowEnd = fpsCap === LOW_END_FPS_CAP;
-                    syncResponsivenessProfile();
+            try {
+                const currentTime = performance.now();
+                renderCombatInventory(Date.now());
+                if (document.hidden) {
+                    lastFrameTime = currentTime;
+                    lastPerformanceCheck = currentTime;
+                    frameCount = 0;
+                    requestAnimationFrame(draw);
+                    return;
                 }
 
-                frameCount = 0;
-                lastPerformanceCheck = currentTime;
-            }
+                if (renderResolutionDirty) {
+                    resizeCanvas();
+                }
 
-            // 2. Frame Rate Limiter
-            if (deltaTime < activeFrameInterval) {
-                requestAnimationFrame(draw);
-                return;
-            }
+                const deltaTime = currentTime - lastFrameTime;
+                const activeFrameInterval = allAssetsLoaded ? frameInterval : Math.max(frameInterval, 1000 / 20);
 
-            // Update last frame time (with adjustment for drift)
-            lastFrameTime = currentTime - (deltaTime % activeFrameInterval);
+                frameCount++;
+                if (isLowQualityModeEnabled() && currentTime - lastPerformanceCheck > PERFORMANCE_CHECK_INTERVAL) {
+                    const actualFps = (frameCount * 1000) / Math.max(1, currentTime - lastPerformanceCheck);
+                    const targetFpsCap = isMobile ? MOBILE_FPS_CAP : HIGH_END_FPS_CAP;
+                    const nextFpsCap = actualFps < 50 ? LOW_END_FPS_CAP : targetFpsCap;
 
-            // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
-            if (ctx && canvas) {
+                    if (fpsCap !== nextFpsCap) {
+                        fpsCap = nextFpsCap;
+                        frameInterval = 1000 / fpsCap;
+                        isLowEnd = fpsCap === LOW_END_FPS_CAP;
+                        syncResponsivenessProfile();
+                    }
+
+                    frameCount = 0;
+                    lastPerformanceCheck = currentTime;
+                }
+
+                // 2. Frame Rate Limiter
+                if (deltaTime < activeFrameInterval) {
+                    requestAnimationFrame(draw);
+                    return;
+                }
+
+                // Update last frame time (with adjustment for drift)
+                lastFrameTime = currentTime - (deltaTime % activeFrameInterval);
+
+                // --- YOUR EXISTING RENDERING CODE STARTS HERE ---
+                if (ctx && canvas) {
                 const nowMs = Date.now();
                 const renderServerTimeMs = nowMs - renderDelayMs - serverClockOffsetMs;
                 updateInterpolatedRenderState(currentTime, renderServerTimeMs);
@@ -17971,10 +18341,34 @@
                     gl.drawArrays(gl.TRIANGLES, 0, 6);
                 }
 
-                if (groupTrackerCtx && groupTrackerCanvas) {
-                    groupTrackerCtx.clearRect(0, 0, groupTrackerCanvas.width, groupTrackerCanvas.height);
-                    drawGroupMateIndicators(groupTrackerCtx);
+                    if (groupTrackerCtx && groupTrackerCanvas) {
+                        groupTrackerCtx.clearRect(0, 0, groupTrackerCanvas.width, groupTrackerCanvas.height);
+                        drawGroupMateIndicators(groupTrackerCtx);
+                    }
                 }
+            } catch (error) {
+                console.error('Render loop error:', error);
+                const nowMs = Date.now();
+                if (nowMs - lastRenderCrashReportAt > 5000) {
+                    lastRenderCrashReportAt = nowMs;
+                    reportClientRuntimeError({
+                        type: 'render-loop-error',
+                        message: error?.message ?? 'Render loop error',
+                        stack: error?.stack,
+                    });
+                }
+                if (!isLowQualityModeEnabled()) {
+                    menuSettings.lowQualityMode = true;
+                    applyLowQualityMode();
+                }
+                try {
+                    if (canvas) {
+                        canvas.style.background = '#000';
+                    }
+                    if (glCanvas) {
+                        glCanvas.style.display = 'none';
+                    }
+                } catch (_error) {}
             }
 
             requestAnimationFrame(draw);

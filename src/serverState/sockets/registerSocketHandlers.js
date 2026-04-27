@@ -25,19 +25,10 @@ const {
 } = require('../state/progression/system');
 const { emitProgressionNotification } = require('../state/progression/notifications');
 
-function normalizeSpecialAttackName(name) {
-  return String(name ?? '').trim().toLowerCase();
-}
-
-function canUnlockSpecialAttack({ name, character, requestedUnlock }) {
-  if (!requestedUnlock) {
-    return false;
-  }
-
-  const normalizedName = normalizeSpecialAttackName(name);
-  const normalizedCharacter = String(character ?? '').trim().toLowerCase();
-  return normalizedName === 'muhammad' || (normalizedName === 'pkducky' && normalizedCharacter === 'duck');
-}
+const INVENTORY_SLOT_FIREBALL = 1;
+const INVENTORY_SLOT_LAZER = 2;
+const LAZER_ATTACK_DURATION_SECONDS = 2.5;
+const LAZER_COOLDOWN_SECONDS = 15;
 
 function resetSpecialBeamState(player) {
   player.special_beam_requested = false;
@@ -50,6 +41,20 @@ function resetSpecialBeamState(player) {
   player.special_beam_to_y = 0;
   player.special_beam_started_at = 0;
   player.special_beam_damage_accumulator = 0;
+}
+
+function clearPendingProjectileAttack(player) {
+  player.is_attacking = false;
+  player.attack_start_time = 0;
+  player.pending_projectile_angle = null;
+  player.pending_projectile_vx = 0;
+  player.pending_projectile_vy = 0;
+  player.pending_projectile_distance = 0;
+  player.queued_projectile_angle = null;
+  player.queued_projectile_vx = 0;
+  player.queued_projectile_vy = 0;
+  player.queued_projectile_distance = 0;
+  player.queued_projectile_direction = null;
 }
 
 /**
@@ -109,6 +114,47 @@ function registerSocketHandlers(input) {
     player.pending_projectile_vx = vx;
     player.pending_projectile_vy = vy;
     player.pending_projectile_distance = targetDistance;
+  }
+
+  function fireLazerAttack(player, payload) {
+    const now = Date.now() / 1000;
+    if (player.is_dying || player.is_attacking) {
+      return;
+    }
+
+    const targetX = Number(payload?.worldX);
+    const targetY = Number(payload?.worldY);
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      return;
+    }
+
+    const clampedTargetX = Math.max(
+      state.mapBounds.min_x - SPECIAL_BEAM_RANGE,
+      Math.min(targetX, state.mapBounds.max_x + SPECIAL_BEAM_RANGE)
+    );
+    const clampedTargetY = Math.max(
+      state.mapBounds.min_y - SPECIAL_BEAM_RANGE,
+      Math.min(targetY, state.mapBounds.max_y + SPECIAL_BEAM_RANGE)
+    );
+
+    if (player.special_beam_requested || player.special_beam_active) {
+      player.special_beam_target_x = clampedTargetX;
+      player.special_beam_target_y = clampedTargetY;
+      return;
+    }
+    if (now < (Number(player.lazer_cooldown_until) || 0)) {
+      return;
+    }
+
+    resetSpecialBeamState(player);
+    clearPendingProjectileAttack(player);
+    player.special_beam_requested = true;
+    player.special_beam_target_x = clampedTargetX;
+    player.special_beam_target_y = clampedTargetY;
+    player.special_beam_started_at = now;
+    player.special_beam_ends_at = now + LAZER_ATTACK_DURATION_SECONDS;
+    player.lazer_cooldown_until = now + LAZER_ATTACK_DURATION_SECONDS + LAZER_COOLDOWN_SECONDS;
+    player.action = 'attack';
   }
 
   handleConnect({ socket, io, state });
@@ -230,53 +276,27 @@ function registerSocketHandlers(input) {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
     if (isPlayerDrafting(player)) return;
+    if ((player.selected_inventory_slot || INVENTORY_SLOT_FIREBALL) !== INVENTORY_SLOT_FIREBALL) return;
     if (player.special_beam_requested || player.special_beam_active) return;
     queueOrStartProjectileAttack(player, data);
   });
 
-  socket.on('special_attack_update', (data) => {
+  socket.on('select_inventory_slot', (data) => {
+    const player = state.players.get(socket.id);
+    if (!player) return;
+    const requestedSlot = Math.round(Number(data?.slot));
+    if (requestedSlot !== INVENTORY_SLOT_FIREBALL && requestedSlot !== INVENTORY_SLOT_LAZER) {
+      return;
+    }
+    player.selected_inventory_slot = requestedSlot;
+  });
+
+  socket.on('special_attack_fire', (data) => {
     const player = state.players.get(socket.id);
     if (!player || !player.is_ready) return;
-    if (!player.special_attack_unlocked || isPlayerDrafting(player) || player.is_dying) {
-      resetSpecialBeamState(player);
-      return;
-    }
-
-    const wantsActive = Boolean(data?.active);
-    if (!wantsActive) {
-      resetSpecialBeamState(player);
-      return;
-    }
-
-    const targetX = Number(data?.worldX);
-    const targetY = Number(data?.worldY);
-    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
-      resetSpecialBeamState(player);
-      return;
-    }
-
-    player.special_beam_requested = true;
-    player.special_beam_target_x = Math.max(
-      state.mapBounds.min_x - SPECIAL_BEAM_RANGE,
-      Math.min(targetX, state.mapBounds.max_x + SPECIAL_BEAM_RANGE)
-    );
-    player.special_beam_target_y = Math.max(
-      state.mapBounds.min_y - SPECIAL_BEAM_RANGE,
-      Math.min(targetY, state.mapBounds.max_y + SPECIAL_BEAM_RANGE)
-    );
-    if (!player.special_beam_started_at) {
-      player.special_beam_started_at = Date.now() / 1000;
-    }
-
-    player.is_attacking = false;
-    player.attack_start_time = 0;
-    player.pending_projectile_angle = null;
-    player.pending_projectile_vx = 0;
-    player.pending_projectile_vy = 0;
-    player.queued_projectile_angle = null;
-    player.queued_projectile_vx = 0;
-    player.queued_projectile_vy = 0;
-    player.queued_projectile_direction = null;
+    if (isPlayerDrafting(player)) return;
+    if ((player.selected_inventory_slot || INVENTORY_SLOT_FIREBALL) !== INVENTORY_SLOT_LAZER) return;
+    fireLazerAttack(player, data);
   });
 
   socket.on('select_upgrade', (data) => {
@@ -652,7 +672,6 @@ function registerSocketHandlers(input) {
 function handleConnect(input) {
   const nameQuery = input.socket.handshake?.query?.name;
   const characterQuery = input.socket.handshake?.query?.character;
-  const specialUnlockQuery = input.socket.handshake?.query?.specialUnlock;
   const playerName = String(nameQuery ?? `Player_${input.socket.id.slice(0, 4)}`).slice(0, 15);
 
   const characterInfo = resolveCharacterSelection({
@@ -660,11 +679,6 @@ function handleConnect(input) {
     requestedCharacter: characterQuery,
   });
   const character = characterInfo.character;
-  const specialAttackUnlocked = canUnlockSpecialAttack({
-    name: playerName,
-    character,
-    requestedUnlock: specialUnlockQuery === '1' || specialUnlockQuery === 'true',
-  });
 
   const spawnPoint = pickSpawnPoint({ state: input.state });
 
@@ -688,7 +702,7 @@ function handleConnect(input) {
     death_time: 0,
     is_attacking: false,
     attack_start_time: 0,
-    special_attack_unlocked: specialAttackUnlocked,
+    selected_inventory_slot: INVENTORY_SLOT_FIREBALL,
     special_beam_requested: false,
     special_beam_active: false,
     special_beam_target_x: 0,
@@ -698,7 +712,9 @@ function handleConnect(input) {
     special_beam_to_x: 0,
     special_beam_to_y: 0,
     special_beam_started_at: 0,
+    special_beam_ends_at: 0,
     special_beam_damage_accumulator: 0,
+    lazer_cooldown_until: 0,
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
@@ -808,6 +824,9 @@ function respawnPlayer(input) {
   player.death_time = 0;
   player.is_attacking = false;
   player.attack_start_time = 0;
+  player.selected_inventory_slot = INVENTORY_SLOT_FIREBALL;
+  player.lazer_cooldown_until = 0;
+  player.special_beam_ends_at = 0;
   resetSpecialBeamState(player);
   player.pending_projectile_angle = null;
   player.pending_projectile_vx = 0;

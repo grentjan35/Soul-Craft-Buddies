@@ -503,6 +503,8 @@ function createAssetsRouter(deps) {
   const publicStrikerSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds', 'striker'), publicStrikerSounds);
   const publicGuiAssets = new Set(['jump_button.png', 'play.png']);
   const publicGuiAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'GUI'), publicGuiAssets);
+  const publicIconAssets = new Set(['fireball.png', 'lazer.png']);
+  const publicIconAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'icons'), publicIconAssets);
   const guiAlphabetLookup = new Map();
 
   try {
@@ -814,6 +816,20 @@ function createAssetsRouter(deps) {
     }
 
     sendPublicCachedFile(res, publicGuiAssetFiles, assetName);
+  });
+
+  router.get('/icons/:name', async (req, res) => {
+    const assetName = String(req.params.name ?? '').trim().toLowerCase();
+    if (!publicIconAssets.has(assetName)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('icons', assetName), assetName)) {
+      return;
+    }
+
+    sendPublicCachedFile(res, publicIconAssetFiles, assetName);
   });
 
   router.post('/api/request_asset', (req, res) => {

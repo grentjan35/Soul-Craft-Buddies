@@ -427,6 +427,11 @@ function broadcastState(input) {
       ...basePayload,
       self: {
         progression: getPlayerProgressionPayload(player),
+        inventory: {
+          selectedSlot: Math.max(1, Math.min(2, Math.round(Number(player.selected_inventory_slot) || 1))),
+          lazerCooldownUntilMs: player.lazer_cooldown_until ? Math.round(player.lazer_cooldown_until * 1000) : 0,
+          lazerAttackEndsAtMs: player.special_beam_ends_at ? Math.round(player.special_beam_ends_at * 1000) : 0,
+        },
       },
       fireballs: fireballsPayload,
       explosions: explosionsPayload,
@@ -1092,10 +1097,11 @@ function applySpecialBeamDamage(input) {
 }
 
 function updateSpecialBeams(input) {
+  const nowSec = Date.now() / 1000;
   for (const [sid, player] of input.state.players.entries()) {
     const wantsBeam =
       Boolean(player.special_beam_requested) &&
-      Boolean(player.special_attack_unlocked) &&
+      nowSec < (Number(player.special_beam_ends_at) || 0) &&
       !player.is_dying &&
       player.is_ready &&
       !isPlayerDrafting(player);
