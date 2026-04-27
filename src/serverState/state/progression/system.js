@@ -10,6 +10,10 @@ const CARD_RARITY_META = {
   legendary: { label: 'Legendary', weight: 14, accent: '#ffb347', glow: 'rgba(255, 189, 88, 0.44)' },
 };
 
+const BASE_FIREBALL_CAST_DURATION = 0.2;
+const EXTRA_FIREBALL_CAST_DURATION_PER_PROJECTILE = 0.92;
+const MIN_ATTACK_DURATION = 0.2;
+
 const SOUL_TIER_RULES = Object.freeze([
   {
     threshold: 0,
@@ -76,7 +80,7 @@ const BASE_PLAYER_RUN_STATS = Object.freeze({
   fireballSpeedMultiplier: 0.68,
   fireballRenderScale: 0.5,
   fireballRadiusScale: 0.48,
-  attackDuration: 1.02,
+  attackDuration: BASE_FIREBALL_CAST_DURATION,
 });
 
 const ACHIEVEMENT_RULES = Object.freeze([
@@ -308,6 +312,7 @@ function buildUpgradeCatalog() {
       values: [0.04, 0.05, 0.06, 0.08, 0.1, 0.12],
       apply: (stats, value) => { stats.attackDuration *= 1 - value; },
       describe: (value) => `Cast time ${percentLabel(-value)} faster.`,
+      isAvailable: (_player, progression) => (Number(progression?.runStats?.fireballProjectileCount) || 1) > 1,
     }),
     createFamilyDefinition({
       family: 'fireball_crit',
@@ -335,6 +340,7 @@ function buildUpgradeCatalog() {
       values: [1, 1, 1, 1, 1, 1],
       apply: (stats, value, tierIndex) => {
         stats.fireballProjectileCount += value;
+        stats.attackDuration += EXTRA_FIREBALL_CAST_DURATION_PER_PROJECTILE * value;
         stats.fireballProjectileSpreadDeg = Math.min(28, stats.fireballProjectileSpreadDeg + 1.5 + tierIndex * 0.8);
       },
       describe: (_value, tierIndex) => `Launch ${tierIndex >= 3 ? 'an extra blazing shard' : 'another fireball'} per cast.`,
@@ -615,7 +621,7 @@ function getPlayerRunStats(player) {
     fireballRange: baseStats.fireballRange * bonuses.fireballRangeMultiplier,
     fireballDropDistance: baseStats.fireballDropDistance,
     fireballSpeedMultiplier: baseStats.fireballSpeedMultiplier * bonuses.fireballSpeedMultiplier,
-    attackDuration: Math.max(0.22, baseStats.attackDuration * bonuses.attackDurationMultiplier),
+    attackDuration: Math.max(MIN_ATTACK_DURATION, baseStats.attackDuration * bonuses.attackDurationMultiplier),
   };
 
   progression.cachedDerivedRunStats = {
@@ -675,6 +681,9 @@ function rollUpgradeChoices(player) {
   const pool = [];
 
   for (const family of UPGRADE_CATALOG.families) {
+    if (typeof family.isAvailable === 'function' && !family.isAvailable(player, progression)) {
+      continue;
+    }
     const card = getCurrentCardForFamily(progression, family);
     if (!card) {
       continue;
@@ -869,7 +878,7 @@ function applyUpgradeSelection(player, cardId) {
   card.applyStats(progression.runStats);
   progression.runStats.damageReduction = clamp(progression.runStats.damageReduction, 0, 0.72);
   progression.runStats.fireballCritChance = clamp(progression.runStats.fireballCritChance, 0, 0.85);
-  progression.runStats.attackDuration = Math.max(0.24, progression.runStats.attackDuration);
+  progression.runStats.attackDuration = Math.max(MIN_ATTACK_DURATION, progression.runStats.attackDuration);
   progression.runStats.fireballProjectileCount = Math.max(1, Math.round(progression.runStats.fireballProjectileCount));
   progression.runStats.regainPerSecond = Math.max(0, progression.runStats.regainPerSecond);
   markRunStatsDirty(progression);

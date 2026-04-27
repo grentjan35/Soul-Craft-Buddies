@@ -9090,6 +9090,7 @@
             localProgressionState.pendingChoices = null;
             localInventoryState = {
                 selectedSlot: INVENTORY_SLOT_FIREBALL,
+                fireballCooldownUntilMs: 0,
                 lazerCooldownUntilMs: 0,
                 lazerAttackEndsAtMs: 0
             };
@@ -10676,6 +10677,7 @@
         };
         let localInventoryState = {
             selectedSlot: INVENTORY_SLOT_FIREBALL,
+            fireballCooldownUntilMs: 0,
             lazerCooldownUntilMs: 0,
             lazerAttackEndsAtMs: 0
         };
@@ -10738,7 +10740,7 @@
         const FIREBALL_RADIUS = FIREBALL_SIZE / 2;
         const EXPLOSION_RADIUS = 40;
         const EXPLOSION_DURATION = 0.5;
-        const ATTACK_WARMUP_DURATION = 0.5;
+        const ATTACK_WARMUP_DURATION = 0.2;
         let screenShakeTrauma = 0;
         let screenShakeOffsetX = 0;
         let screenShakeOffsetY = 0;
@@ -11479,11 +11481,17 @@
                 revealCombatInventory();
             }
             const runStats = getLocalRunStats();
-            const fireballCastDurationMs = Math.max(180, Math.round((Number(runStats?.attackDuration) || ATTACK_WARMUP_DURATION) * 1000));
+            const fireballCastDurationMs = Math.max(100, Math.round((Number(runStats?.attackDuration) || ATTACK_WARMUP_DURATION) * 1000));
             const fireballAttackStartedAtMs = typeof me.attack_start_time_ms === 'number' ? me.attack_start_time_ms : 0;
             const fireballCastElapsedMs = me.is_attacking ? Math.max(0, nowMs - fireballAttackStartedAtMs) : fireballCastDurationMs;
             const fireballCastProgress = me.is_attacking
                 ? Math.max(0, Math.min(1, fireballCastElapsedMs / Math.max(1, fireballCastDurationMs)))
+                : 0;
+            const fireballCooldownUntilMs = Number(localInventoryState?.fireballCooldownUntilMs) || 0;
+            const fireballCooldownRemainingMs = Math.max(0, fireballCooldownUntilMs - nowMs);
+            const fireballCooldownTotalMs = Math.max(100, fireballCooldownUntilMs > fireballAttackStartedAtMs ? fireballCooldownUntilMs - fireballAttackStartedAtMs : 180);
+            const fireballCooldownProgress = fireballCooldownRemainingMs > 0
+                ? Math.max(0, Math.min(1, fireballCooldownRemainingMs / Math.max(1, fireballCooldownTotalMs)))
                 : 0;
 
             const lazerCooldownUntilMs = Math.max(Number(localInventoryState?.lazerCooldownUntilMs) || 0, me.special_beam_active ? nowMs + 1 : 0);
@@ -11499,12 +11507,14 @@
 
             setInventorySlotVisuals(inventorySlotFireballElement, {
                 selected: getSelectedInventorySlot() === INVENTORY_SLOT_FIREBALL,
-                busy: me.is_attacking,
+                busy: me.is_attacking || fireballCooldownRemainingMs > 0,
                 active: false,
-                ready: !me.is_attacking,
-                progress: fireballCastProgress,
-                progressText: me.is_attacking ? formatInventoryCountdownMs(Math.max(0, fireballCastDurationMs - fireballCastElapsedMs)) : 'SET',
-                statusText: me.is_attacking ? 'Casting' : 'Ready'
+                ready: !me.is_attacking && fireballCooldownRemainingMs <= 0,
+                progress: me.is_attacking ? fireballCastProgress : fireballCooldownProgress,
+                progressText: me.is_attacking
+                    ? formatInventoryCountdownMs(Math.max(0, fireballCastDurationMs - fireballCastElapsedMs))
+                    : (fireballCooldownRemainingMs > 0 ? formatInventoryCountdownMs(fireballCooldownRemainingMs) : 'SET'),
+                statusText: me.is_attacking ? 'Casting' : (fireballCooldownRemainingMs > 0 ? 'Cooldown' : 'Ready')
             });
 
             setInventorySlotVisuals(inventorySlotLazerElement, {

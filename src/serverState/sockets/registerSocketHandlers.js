@@ -4,6 +4,7 @@ const {
   FIREBALL_POWER_MIN,
   FIREBALL_POWER_MAX,
   FIREBALL_MAX_DISTANCE,
+  FIREBALL_COOLDOWN,
   SPECIAL_BEAM_RANGE,
 } = require('../state/constants');
 const { GroupManager } = require('../groups/groupManager');
@@ -28,7 +29,7 @@ const { emitProgressionNotification } = require('../state/progression/notificati
 const INVENTORY_SLOT_FIREBALL = 1;
 const INVENTORY_SLOT_LAZER = 2;
 const LAZER_ATTACK_DURATION_SECONDS = 2.5;
-const LAZER_COOLDOWN_SECONDS = 15;
+const LAZER_COOLDOWN_SECONDS = 10;
 
 function resetSpecialBeamState(player) {
   player.special_beam_requested = false;
@@ -69,10 +70,13 @@ function registerSocketHandlers(input) {
 
   function queueOrStartProjectileAttack(player, payload) {
     const runStats = getPlayerRunStats(player);
-    const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
+    const attackDuration = Math.max(0.1, Number(runStats.attackDuration) || ATTACK_DURATION);
     const queueWindow = Math.min(0.1, attackDuration * 0.35);
     const nowMs = Date.now();
     const now = nowMs / 1000;
+    if (now < (Number(player.fireball_cooldown_until) || 0)) {
+      return;
+    }
     const requestedDx = Number(payload?.dx);
     const requestedDy = Number(payload?.dy);
     const requestedDistance = Number(payload?.distance);
@@ -108,6 +112,7 @@ function registerSocketHandlers(input) {
 
     player.is_attacking = true;
     player.attack_start_time = now;
+    player.fireball_cooldown_until = now + FIREBALL_COOLDOWN;
     player.action = 'attack';
     player.direction = direction;
     player.pending_projectile_angle = angle;
@@ -715,6 +720,7 @@ function handleConnect(input) {
     special_beam_ends_at: 0,
     special_beam_damage_accumulator: 0,
     lazer_cooldown_until: 0,
+    fireball_cooldown_until: 0,
     pending_projectile_angle: null,
     pending_projectile_vx: 0,
     pending_projectile_vy: 0,
@@ -826,6 +832,7 @@ function respawnPlayer(input) {
   player.attack_start_time = 0;
   player.selected_inventory_slot = INVENTORY_SLOT_FIREBALL;
   player.lazer_cooldown_until = 0;
+  player.fireball_cooldown_until = 0;
   player.special_beam_ends_at = 0;
   resetSpecialBeamState(player);
   player.pending_projectile_angle = null;

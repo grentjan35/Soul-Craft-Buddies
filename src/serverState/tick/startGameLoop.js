@@ -431,6 +431,7 @@ function broadcastState(input) {
           selectedSlot: Math.max(1, Math.min(2, Math.round(Number(player.selected_inventory_slot) || 1))),
           lazerCooldownUntilMs: player.lazer_cooldown_until ? Math.round(player.lazer_cooldown_until * 1000) : 0,
           lazerAttackEndsAtMs: player.special_beam_ends_at ? Math.round(player.special_beam_ends_at * 1000) : 0,
+          fireballCooldownUntilMs: player.fireball_cooldown_until ? Math.round(player.fireball_cooldown_until * 1000) : 0,
         },
       },
       fireballs: fireballsPayload,
@@ -768,7 +769,7 @@ function updateGameState(input) {
 
     if (p.is_attacking) {
       const attackStart = p.attack_start_time ?? 0;
-      const attackDuration = Math.max(0.18, Number(runStats.attackDuration) || ATTACK_DURATION);
+      const attackDuration = Math.max(0.1, Number(runStats.attackDuration) || ATTACK_DURATION);
       if (nowSec - attackStart >= attackDuration) {
         if (typeof p.pending_projectile_angle === 'number') {
           spawnPlayerFireball({
