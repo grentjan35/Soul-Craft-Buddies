@@ -17723,7 +17723,7 @@
                     (renderState.worldX - cameraX) * cameraZoom,
                     (renderState.worldY - frameMetrics.drawH / 2 - cameraY) * cameraZoom,
                     Math.max(chestGlowRadiusX, chestGlowRadiusY) * cameraZoom * renderState.scale,
-                    1.1 * rarityScale * renderState.opacity * (0.92 + 0.08 * Math.sin(flowPhase * 1.3)) // Brighter but still reduced, scaled by rarity
+                    0.9 * rarityScale * renderState.opacity * (0.90 + 0.10 * Math.sin(flowPhase * 1.3)) // Moderate brightness, scaled by rarity
                 );
             }
 
