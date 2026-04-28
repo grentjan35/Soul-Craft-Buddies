@@ -2603,7 +2603,7 @@
             image-rendering: crisp-edges;
         }
 
-        /* Chat Input Styling */
+        /* Chat Input Styling - CHAT DISABLED */
         #chat-container {
             position: fixed;
             bottom: 10px;
@@ -2612,7 +2612,8 @@
             font-family: 'EB Garamond', serif;
             width: var(--adaptive-chat-width);
             max-width: calc(100vw - (var(--adaptive-chat-edge) * 2));
-            display: none;
+            display: none !important;
+            visibility: hidden;
             touch-action: manipulation;
             flex-direction: column;
             align-items: flex-end;
@@ -11067,7 +11068,6 @@
         function updateChatNotificationBadges() {
             chatMinimizedBadgeGlobal?.classList.toggle('is-visible', unreadChatCounts.global > 0);
             chatMinimizedBadgeGroup?.classList.toggle('is-visible', unreadChatCounts.group > 0);
-            chatMinimizedAlert?.classList.toggle('is-visible', (unreadChatCounts.global + unreadChatCounts.group) > 0);
         }
 
         function clearUnreadForActiveChannel() {
@@ -11079,18 +11079,25 @@
             if (!chatContainer || !chatBox || !chatToggle || !chatMinimizedButton) {
                 return;
             }
-
-            chatContainer.classList.toggle('is-minimized', chatMinimized);
-            chatBox.classList.toggle('expanded', chatExpanded && !chatMinimized);
-            chatBox.classList.toggle('collapsed', !chatExpanded && !chatMinimized);
-            chatBox.classList.toggle('is-minimized', chatMinimized);
-            chatBox.style.display = chatMinimized ? 'none' : 'flex';
-            chatMinimizedButton.style.display = chatMinimized ? 'inline-flex' : 'none';
-            chatToggle.textContent = chatMinimized ? '+' : '-';
-            chatToggle.title = chatMinimized ? 'Open Chat' : 'Close Chat';
-
-            if (!chatMinimized && chatExpanded) {
-                scrollChatToBottom(true);
+            
+            if (chatMinimized) {
+                chatContainer.classList.add('is-minimized');
+                chatBox.classList.add('is-hidden');
+                chatMinimizedButton.classList.remove('is-hidden');
+                chatMinimizedButton.classList.add('is-visible');
+            } else {
+                chatContainer.classList.remove('is-minimized');
+                chatBox.classList.remove('is-hidden');
+                chatMinimizedButton.classList.add('is-hidden');
+                chatMinimizedButton.classList.remove('is-visible');
+            }
+            
+            if (chatExpanded) {
+                chatBox.classList.add('is-expanded');
+                chatToggle.textContent = '▲';
+            } else {
+                chatBox.classList.remove('is-expanded');
+                chatToggle.textContent = '▼';
             }
         }
 
@@ -11185,47 +11192,48 @@
             chatInput?.focus();
         });
 
-        chatInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                const message = chatInput.value.trim();
-                if (message.length > 0) {
-                    // Send chat message to server
-                    socket.emit('chat_message', { message, channel: activeChatChannel });
-                    chatInput.value = '';
-                } else {
-                }
-                // Always unfocus chat after Enter (whether message was sent or not)
-                chatInput.blur();
-                chatActive = false;
-                chatJustClosed = true; // Set flag to prevent immediate reopening
-                // Keep chat box visible - don't hide it
-                
-                // Clear the flag after a short delay
-                setTimeout(() => {
-                    chatJustClosed = false;
-                }, 100);
-            } else if (e.key === 'Escape') {
-                chatInput.value = '';
-                chatInput.blur();
-                chatActive = false;
-                chatJustClosed = true; // Set flag to prevent immediate reopening
-                // Keep chat box visible on escape too
-                setTimeout(() => {
-                    chatJustClosed = false;
-                }, 100);
-            }
-        });
-        chatInput.addEventListener('focus', () => {
-            chatActive = true;
-            isMouseDown = false;
-            stopAutoFireLoop();
-            setChatMinimized(false);
-        });
+        // Chat input disabled
+        // chatInput.addEventListener('keydown', (e) => {
+        //     if (e.key === 'Enter') {
+        //         e.preventDefault();
+        //         const message = chatInput.value.trim();
+        //         if (message.length > 0) {
+        //             // Send chat message to server
+        //             socket.emit('chat_message', { message, channel: activeChatChannel });
+        //             chatInput.value = '';
+        //         } else {
+        //         }
+        //         // Always unfocus chat after Enter (whether message was sent or not)
+        //         chatInput.blur();
+        //         chatActive = false;
+        //         chatJustClosed = true; // Set flag to prevent immediate reopening
+        //         // Keep chat box visible - don't hide it
+        //         // Clear the flag after a short delay
+        //         setTimeout(() => {
+        //             chatJustClosed = false;
+        //         }, 100);
+        //     } else if (e.key === 'Escape') {
+        //         chatInput.value = '';
+        //         chatInput.blur();
+        //         chatActive = false;
+        //         chatJustClosed = true; // Set flag to prevent immediate reopening
+        //         // Keep chat box visible on escape too
+        //         setTimeout(() => {
+        //             chatJustClosed = false;
+        //         }, 100);
+        //     }
+        // });
+        // Chat input event listeners disabled
+        // chatInput.addEventListener('focus', () => {
+        //     chatActive = true;
+        //     isMouseDown = false;
+        //     stopAutoFireLoop();
+        //     setChatMinimized(false);
+        // });
 
-        chatInput.addEventListener('blur', () => {
-            chatActive = false;
-        });
+        // chatInput.addEventListener('blur', () => {
+        //     chatActive = false;
+        // });
         updateChatChannelButtons();
         updateChatChrome();
         updateChatNotificationBadges();
@@ -12827,25 +12835,25 @@
             }
         });
 
-        // Handle chat messages from server
-        socket.on('chat_message', (data) => {
-            const { sid, name, message, timestamp, channel } = data;
-            const state = playerState[sid] || authoritativePlayerState[sid];
+        // Chat functionality disabled - client side
+        // socket.on('chat_message', (data) => {
+        //     const { sid, name, message, timestamp, channel } = data;
+        //     const state = playerState[sid] || authoritativePlayerState[sid];
             
-            // Add to floating messages above player head
-            chatMessages[sid] = {
-                text: message,
-                startTime: timestamp || Date.now(),
-                opacity: 1.0,
-                scale: 1.0,
-                x: Number.isFinite(state?.x) ? state.x : null,
-                y: Number.isFinite(state?.y) ? state.y : null
-            };
+        //     // Add to floating messages above player head
+        //     chatMessages[sid] = {
+        //         text: message,
+        //         startTime: timestamp || Date.now(),
+        //         opacity: 1.0,
+        //         scale: 1.0,
+        //         x: Number.isFinite(state?.x) ? state.x : null,
+        //         y: Number.isFinite(state?.y) ? state.y : null
+        //     };
             
-            // Add to chat box
-            addMessageToChatBox(sid, name, message, channel || 'global');
+        //     // Add to chat box
+        //     addMessageToChatBox(sid, name, message, channel || 'global');
             
-        });
+        // });
 
         // Handle projectile created event from server
         socket.on('projectile_created', (data) => {

@@ -219,45 +219,46 @@ function registerSocketHandlers(input) {
     }
   });
 
-  socket.on('chat_message', (data) => {
-    const player = state.players.get(socket.id);
-    if (!player || !player.is_ready) return;
+  // Chat functionality disabled
+  // socket.on('chat_message', (data) => {
+  //   const player = state.players.get(socket.id);
+  //   if (!player || !player.is_ready) return;
 
-    const messageRaw = String(data?.message ?? '').trim();
-    if (!messageRaw) return;
+  //   const messageRaw = String(data?.message ?? '').trim();
+  //   if (!messageRaw) return;
 
-    const message = messageRaw.length > 50 ? messageRaw.slice(0, 50) : messageRaw;
+  //   const message = messageRaw.length > 50 ? messageRaw.slice(0, 50) : messageRaw;
 
-    const forbiddenWords = ['fuck', 'shit', 'cunt', 'bitch', 'ass'];
-    const messageLower = message.toLowerCase();
-    for (const word of forbiddenWords) {
-      if (messageLower.includes(word)) return;
-    }
+  //   const forbiddenWords = ['fuck', 'shit', 'cunt', 'bitch', 'ass'];
+  //   const messageLower = message.toLowerCase();
+  //   for (const word of forbiddenWords) {
+  //     if (messageLower.includes(word)) return;
+  //   }
 
-    const chatChannel = data?.channel === 'group' ? 'group' : 'global';
-    const payload = {
-      sid: socket.id,
-      name: String(player.name ?? `P${socket.id.slice(0, 4)}`),
-      message,
-      timestamp: Date.now(),
-      channel: chatChannel,
-    };
+  //   const chatChannel = data?.channel === 'group' ? 'group' : 'global';
+  //   const payload = {
+  //     sid: socket.id,
+  //     name: String(player.name ?? `P${socket.id.slice(0, 4)}`),
+  //     message,
+  //     timestamp: Date.now(),
+  //     channel: chatChannel,
+  //   };
 
-    if (chatChannel === 'group') {
-      const groupInfo = groupManager.getGroupInfo(socket.id);
-      if (!groupInfo) {
-        socket.emit('group_error', { reason: 'You must be in a group to use group chat' });
-        return;
-      }
+  //   if (chatChannel === 'group') {
+  //     const groupInfo = groupManager.getGroupInfo(socket.id);
+  //     if (!groupInfo) {
+  //       socket.emit('group_error', { reason: 'You must be in a group to use group chat' });
+  //       return;
+  //     }
 
-      for (const memberId of groupInfo.members) {
-        io.to(memberId).emit('chat_message', payload);
-      }
-      return;
-    }
+  //     for (const memberId of groupInfo.members) {
+  //       io.to(memberId).emit('chat_message', payload);
+  //     }
+  //     return;
+  //   }
 
-    io.emit('chat_message', payload);
-  });
+  //   io.emit('chat_message', payload);
+  // });
 
   socket.on('respawn_request', () => {
     const player = state.players.get(socket.id);
