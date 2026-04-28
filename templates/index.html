@@ -8,6 +8,9 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="shortcut icon" href="/favicon.ico">
     <title>SoulClash - Combat RPG</title>
+    <link rel="preconnect" href="/" crossorigin>
+    <link rel="preload" href="/socket.io/socket.io.min.js" as="script" crossorigin>
+    <link rel="preload" href="/audio/menu/full.wav" as="audio" type="audio/wav">
     <script src="/socket.io/socket.io.min.js"></script>
     <style>
         :root {
@@ -4027,6 +4030,58 @@
         const isMobile = isMobileDevice();
         let mobileLayoutPresets = [];
         let activeMobileLayoutPreset = null;
+
+        // Web Worker image decoder for off-thread image decoding
+        let imageDecoderWorker = null;
+        let imageDecoderCallbacks = new Map();
+        let imageDecoderId = 0;
+
+        function initImageDecoderWorker() {
+            if (typeof Worker === 'undefined' || isMobile) {
+                // Workers not supported or mobile (avoid extra threads on mobile)
+                return false;
+            }
+            try {
+                imageDecoderWorker = new Worker('/workers/imageDecoder.js');
+                imageDecoderWorker.onmessage = function(e) {
+                    const { id, success, bitmap, error } = e.data;
+                    const callback = imageDecoderCallbacks.get(id);
+                    if (!callback) return;
+                    
+                    imageDecoderCallbacks.delete(id);
+                    if (success) {
+                        callback.resolve(bitmap);
+                    } else {
+                        callback.reject(new Error(error));
+                    }
+                };
+                imageDecoderWorker.onerror = function(e) {
+                    console.warn('Image decoder worker error:', e);
+                    imageDecoderWorker = null;
+                };
+                return true;
+            } catch (err) {
+                console.warn('Failed to init image decoder worker:', err);
+                imageDecoderWorker = null;
+                return false;
+            }
+        }
+
+        async function decodeImageBitmap(blob, options) {
+            // Try worker first if available
+            if (imageDecoderWorker) {
+                const id = ++imageDecoderId;
+                return new Promise((resolve, reject) => {
+                    imageDecoderCallbacks.set(id, { resolve, reject });
+                    imageDecoderWorker.postMessage({ id, blob, options }, [blob]);
+                });
+            }
+            // Fallback to main thread
+            return createImageBitmap(blob, options || {});
+        }
+
+        // Initialize worker early (non-blocking)
+        const workerInitialized = initImageDecoderWorker();
 
         function clampNumber(value, min, max, fallback) {
             const numeric = Number(value);
@@ -9318,16 +9373,26 @@
 
                 const assetNames = Object.keys(characterMetadata);
                 
-                // Get token for character asset access
-                const characterToken = await getCharacterToken(assignedCharacter);
-                const alphabetPromise = preloadCustomAlphabet();
-                const chestAssetsLoadPromise = loadChestAssets();
+                // Get token for character asset access - start fetch immediately but don't block
+                const characterTokenPromise = getCharacterToken(assignedCharacter);
+                
+                // Start non-critical assets loading in background (don't block gameplay start)
+                const alphabetPromise = preloadCustomAlphabet().catch((err) => {
+                    console.warn('Custom alphabet preload failed:', err);
+                });
+                const chestAssetsLoadPromise = loadChestAssets().catch((err) => {
+                    console.warn('Chest assets preload failed:', err);
+                });
                 
                 // Load all assets in parallel using tokenized endpoint for security
                 const loadPromises = assetNames.map(async (name, index) => {
-                    const assetUrl = `/api/character_assets/${characterToken}/${assignedCharacter}/${name}`;
+                    const token = await characterTokenPromise;
+                    const assetUrl = `/api/character_assets/${token}/${assignedCharacter}/${name}`;
                     const blob = await fetchProtectedBlob(assetUrl, 'image/png');
-                    const asset = await createImageBitmap(blob);
+                    const asset = await decodeImageBitmap(blob).catch(() => {
+                        // Fallback to main thread if worker fails
+                        return createImageBitmap(blob);
+                    });
                     characterAssets[name] = asset;
                     
                     // Calculate progress based on both character assets and additional loading stages
@@ -9338,7 +9403,8 @@
                     return asset;
                 });
                 
-                await Promise.all([Promise.all(loadPromises), alphabetPromise, chestAssetsLoadPromise]);
+                // Only block on critical character assets - alphabet and chests load in background
+                await Promise.all(loadPromises);
                 
                 // Store assets in the multi-character cache
                 playerCharacterAssets[assignedCharacter] = {...characterAssets};
