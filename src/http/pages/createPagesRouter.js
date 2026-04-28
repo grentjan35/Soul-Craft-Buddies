@@ -1,14 +1,62 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 
 /**
  * Creates routes for server-rendered pages.
  * We use sendFile to keep the current HTML templates unchanged.
- * @param {{templatesDir: string}} deps
+ * @param {{templatesDir: string, staticDir: string}} deps
  * @returns {import('express').Router}
  */
 function createPagesRouter(deps) {
   const router = express.Router();
+
+  // Public favicon routes - no token required
+  const faviconDir = path.join(deps.staticDir, 'assets', 'general', 'favicon');
+
+  router.get('/favicon.ico', (_req, res) => {
+    const faviconPath = path.join(faviconDir, 'favicon.ico');
+    if (!fs.existsSync(faviconPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('image/x-icon');
+    res.sendFile(faviconPath);
+  });
+
+  router.get('/favicon-16x16.png', (_req, res) => {
+    const iconPath = path.join(faviconDir, 'favicon-16x16.png');
+    if (!fs.existsSync(iconPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('image/png');
+    res.sendFile(iconPath);
+  });
+
+  router.get('/favicon-32x32.png', (_req, res) => {
+    const iconPath = path.join(faviconDir, 'favicon-32x32.png');
+    if (!fs.existsSync(iconPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('image/png');
+    res.sendFile(iconPath);
+  });
+
+  router.get('/apple-touch-icon.png', (_req, res) => {
+    const iconPath = path.join(faviconDir, 'apple-touch-icon.png');
+    if (!fs.existsSync(iconPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('image/png');
+    res.sendFile(iconPath);
+  });
 
   router.get('/', (_req, res) => {
     res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');

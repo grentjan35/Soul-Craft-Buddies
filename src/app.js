@@ -21,7 +21,7 @@ async function createApp(config) {
   app.use(express.json({ limit: '2mb' }));
 
   app.use(createHealthRouter());
-  app.use(createPagesRouter({ templatesDir: config.templatesDir }));
+  app.use(createPagesRouter({ templatesDir: config.templatesDir, staticDir: config.staticDir }));
   app.use(createMapsRouter({ dataDir: config.dataDir, staticDir: config.staticDir }));
   app.use(
     createAssetsRouter({
