@@ -1109,7 +1109,7 @@ function updateSpecialBeams(input) {
       nowSec < (Number(player.special_beam_ends_at) || 0) &&
       !player.is_dying &&
       player.is_ready &&
-      !isPlayerDrafting(player);
+      true; // Allow laser to continue during card roll
 
     if (!wantsBeam) {
       resetSpecialBeamState(player);

@@ -34,7 +34,7 @@ const { emitProgressionNotification } = require('../state/progression/notificati
 const INVENTORY_SLOT_FIREBALL = 1;
 const INVENTORY_SLOT_LAZER = 2;
 const LAZER_ATTACK_DURATION_SECONDS = 2.5;
-const LAZER_COOLDOWN_SECONDS = 10;
+const LAZER_COOLDOWN_SECONDS = 5;
 
 function resetSpecialBeamState(player) {
   player.special_beam_requested = false;

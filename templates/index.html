@@ -5770,7 +5770,7 @@
         }
 
         function fireLazerAtScreenPoint(clientX, clientY) {
-            if (chatActive || isUpgradeDraftActive() || !allAssetsLoaded || !socket.connected) {
+            if (chatActive || !allAssetsLoaded || !socket.connected) {
                 return;
             }
 
@@ -10884,7 +10884,7 @@
         let specialBeamInputSentAt = 0;
         const SPECIAL_BEAM_INPUT_INTERVAL_MS = 34;
         const INVENTORY_AUTO_DOCK_DELAY_MS = 1000;
-        const LAZER_COOLDOWN_MS = 15000;
+        const LAZER_COOLDOWN_MS = 5000;
         const LAZER_ATTACK_DURATION_MS = 2500;
         // Keyboard input handling
         window.addEventListener('keydown', (e) => {
