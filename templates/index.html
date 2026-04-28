@@ -57,7 +57,7 @@
             --adaptive-hud-label-font-size: 0.95rem;
             --adaptive-feed-width: 560px;
             --adaptive-feed-gap: 10px;
-            --adaptive-toast-width: 520px;
+            --adaptive-toast-width: 280px;
             --adaptive-toast-padding-y: 14px;
             --adaptive-toast-padding-x: 18px;
             --adaptive-leaderboard-width: 340px;
@@ -849,6 +849,7 @@
         }
         .progression-toast {
             width: min(100%, var(--adaptive-toast-width));
+            max-width: 280px;
             padding: var(--adaptive-toast-padding-y) var(--adaptive-toast-padding-x);
             border-radius: 0;
             color: #f7efdb;
@@ -863,6 +864,8 @@
             cursor: pointer;
             touch-action: pan-y;
             will-change: transform, opacity;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
         .progression-toast.player_kill {
             box-shadow:
@@ -3305,6 +3308,10 @@
 
         .modal-title {
             font-size: 16px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: normal;
+            max-width: 100%;
         }
 
         .modal-close {
@@ -3327,6 +3334,8 @@
             padding: 16px 14px;
             color: #f8efd9;
             font-size: 14px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         .modal-body p {
@@ -3946,6 +3955,8 @@
 
                 float dynamicDist = distance(p, dynamicLight.xy);
                 float dynamicFactor = smoothstep(dynamicLight.z, 0.0, dynamicDist) * dynamicLight.w;
+                // Much sharper falloff: significantly brighter center, fades aggressively with distance
+                dynamicFactor = pow(dynamicFactor, 4.0);
                 finalLight += vec3(1.0, 0.48, 0.16) * dynamicFactor * 0.95;
                 dynamicVisibility = max(dynamicVisibility, dynamicFactor);
             }
@@ -5553,8 +5564,18 @@
                 beginPinchZoom('game', e.touches);
                 suppressNextCanvasTap = true;
             } else if (e.touches.length === 1 && !chatActive && allAssetsLoaded && !joystickActive) {
-                isTouchDown = true;
                 const touch = e.touches[0];
+
+                // Check if player tapped on a chest first (mobile chest interaction)
+                const tappedChest = getChestAtScreenPosition(touch.clientX, touch.clientY);
+                if (tappedChest?.id) {
+                    socket.emit('chest_interact', { chestId: tappedChest.id });
+                    // Show feedback that tap was registered
+                    suppressNextCanvasTap = true;
+                    return;
+                }
+
+                isTouchDown = true;
                 currentTouchClientX = touch.clientX;
                 currentTouchClientY = touch.clientY;
                 updateAimPreviewFromClientPoint(touch.clientX, touch.clientY);
@@ -10749,7 +10770,7 @@
                 innerGlow: 'rgba(255, 242, 190, __A__)',
                 outerGlow: 'rgba(255, 187, 82, __A__)',
                 mist: 'rgba(255, 210, 130, __A__)',
-                lightStrength: 0.78,
+                lightStrength: 1.2,
                 alertStrength: 1,
             },
             rare: {
@@ -14732,6 +14753,50 @@
             return nearestChest;
         }
 
+        /**
+         * Check if a screen tap is on a chest and player is close enough to interact.
+         * Input: screenX, screenY - touch coordinates in screen space
+         * Output: chest object if tapped on an interactable chest, null otherwise
+         */
+        function getChestAtScreenPosition(screenX, screenY, now = Date.now()) {
+            const localPlayer = getPlayerState(socket.id) || authoritativePlayerState[socket.id];
+            if (!localPlayer) {
+                return null;
+            }
+
+            // Convert screen coordinates to world coordinates
+            const worldX = screenX + cameraX;
+            const worldY = screenY + cameraY;
+
+            const tapRadius = 60; // Tapping tolerance in screen pixels
+
+            for (const chestId in chestState) {
+                const chest = chestState[chestId];
+                if (!isChestClientInteractable(chest, now)) {
+                    continue;
+                }
+
+                // Check player proximity first
+                const interactRadius = Math.max(24, Number(chest.interact_radius) || CHEST_PROMPT_RADIUS);
+                const playerDistance = Math.hypot((Number(chest.x) || 0) - localPlayer.x, (Number(chest.y) || 0) - localPlayer.y);
+                if (playerDistance > interactRadius + 10) {
+                    continue; // Too far to interact
+                }
+
+                // Convert chest world position to screen position
+                const chestScreenX = (Number(chest.x) || 0) - cameraX;
+                const chestScreenY = (Number(chest.y) || 0) - cameraY;
+
+                // Check if tap is within tolerance of chest screen position
+                const tapDistance = Math.hypot(chestScreenX - screenX, chestScreenY - screenY);
+                if (tapDistance <= tapRadius) {
+                    return chest;
+                }
+            }
+
+            return null;
+        }
+
         function isChestClientInteractable(chest, now = Date.now()) {
             if (!chest || chest.opened_at_ms || chest.despawn_started_at_ms) {
                 return false;
@@ -14785,15 +14850,8 @@
         }
 
         function pushChestArrivalToast(data) {
-            let message = 'A treasure pulse flares somewhere nearby.';
-            let caption = 'Treasure stirs';
-            if (data?.rarity === 'rare') {
-                message = 'A rare treasure pulse streaks across the map.';
-                caption = 'Rare treasure';
-            } else if (data?.rarity === 'mythic') {
-                message = 'A mythic treasure pulse tears through the battlefield.';
-                caption = 'Mythic treasure';
-            }
+            let message = '';
+            let caption = '';
 
             pushProgressionToast({
                 type: 'chest',
@@ -15008,10 +15066,12 @@
                 }
 
                 const progress = clamp01(elapsed / alert.duration);
-                const fade = elapsed < alert.duration
-                    ? 1
-                    : 0.94;
-                const pulse = 0.96 + Math.sin(now * 0.012 + alert.x * 0.01 + alert.y * 0.008) * 0.18;
+                // Animation: start small, grow large, fade out, pulsate 3 times
+                const growthScale = easeOutCubic(progress); // Start small, grow large
+                const pulsePhase = progress * Math.PI * 6; // 3 complete cycles (6 * PI)
+                const pulseIntensity = 0.5 + 0.5 * Math.sin(pulsePhase - Math.PI / 2); // Oscillate 0-1, start dim
+                const fade = progress < 0.8 ? 1 : 1 - (progress - 0.8) / 0.2; // Fade out in last 20%
+                const pulse = 0.5 + pulseIntensity * 0.5; // Combine with base intensity
                 const angle = Math.atan2(dy, dx);
                 const dirX = Math.cos(angle);
                 const dirY = Math.sin(angle);
@@ -15029,18 +15089,18 @@
                 const profile = getChestVisualProfile(alert.rarity);
                 const alertStrength = Math.max(1, Number(profile.alertStrength) || 1);
                 const accentRgb = hexToRgb(profile.accent, [126, 201, 255]);
-                const coolRgb = [214, 247, 255];
-                const deepRgb = [78, 165, 255];
+                const coolRgb = [255, 220, 100];
+                const deepRgb = [255, 140, 0];
                 const isLeftEdge = clampedX <= minEdgeInset + 2;
                 const isRightEdge = clampedX >= viewportCanvas.width - minEdgeInset - 2;
                 const isTopEdge = clampedY <= minEdgeInset + 2;
                 const isBottomEdge = clampedY >= viewportCanvas.height - minEdgeInset - 2;
                 const verticalEdge = isLeftEdge || isRightEdge;
-                const plumeWidth = (verticalEdge ? 126 + pulse * 28 : 220 + pulse * 48) * alertStrength;
-                const plumeHeight = (verticalEdge ? 250 + pulse * 56 : 122 + pulse * 28) * alertStrength;
+                const plumeWidth = (verticalEdge ? 126 + pulse * 28 : 220 + pulse * 48) * alertStrength * growthScale;
+                const plumeHeight = (verticalEdge ? 250 + pulse * 56 : 122 + pulse * 28) * alertStrength * growthScale;
                 const coreWidth = plumeWidth * 0.62;
                 const coreHeight = plumeHeight * 0.66;
-                const inwardOffset = (28 + pulse * 10) * alertStrength;
+                const inwardOffset = (28 + pulse * 10) * alertStrength * growthScale;
                 const edgeAnchorX = isLeftEdge
                     ? 0
                     : (isRightEdge ? viewportCanvas.width : clampedX);
@@ -15062,11 +15122,11 @@
                 targetCtx.rect(0, 0, viewportCanvas.width, viewportCanvas.height);
                 targetCtx.clip();
 
-                drawLowQualityGlow(targetCtx, outerX, outerY, outerRadius, coolRgb, accentRgb, 1.7 * fade * alertStrength);
-                drawLowQualityEllipseGlow(targetCtx, edgeAnchorX, edgeAnchorY, plumeWidth, plumeHeight, accentRgb, deepRgb, 2.3 * fade * alertStrength);
-                drawLowQualityEllipseGlow(targetCtx, plumeX, plumeY, plumeWidth * 0.92, plumeHeight * 0.96, accentRgb, deepRgb, 1.82 * fade * alertStrength);
-                drawLowQualityEllipseGlow(targetCtx, coreX, coreY, coreWidth, coreHeight, coolRgb, accentRgb, 1.94 * fade * alertStrength);
-                drawLowQualityEllipseGlow(targetCtx, highlightX, highlightY, coreWidth * 0.54, coreHeight * 0.6, coolRgb, accentRgb, 1.46 * fade * alertStrength);
+                drawLowQualityGlow(targetCtx, outerX, outerY, outerRadius, coolRgb, accentRgb, 1.7 * fade * pulseIntensity * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, edgeAnchorX, edgeAnchorY, plumeWidth, plumeHeight, accentRgb, deepRgb, 2.3 * fade * pulseIntensity * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, plumeX, plumeY, plumeWidth * 0.92, plumeHeight * 0.96, accentRgb, deepRgb, 1.82 * fade * pulseIntensity * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, coreX, coreY, coreWidth, coreHeight, coolRgb, accentRgb, 1.94 * fade * pulseIntensity * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, highlightX, highlightY, coreWidth * 0.54, coreHeight * 0.6, coolRgb, accentRgb, 1.46 * fade * pulseIntensity * alertStrength);
 
                 if (verticalEdge) {
                     const streakOffset = isLeftEdge ? 1 : -1;
@@ -15074,11 +15134,11 @@
                         targetCtx,
                         edgeAnchorX - streakOffset * 28,
                         edgeAnchorY,
-                        (54 + pulse * 12) * alertStrength,
+                        (54 + pulse * 12) * alertStrength * growthScale,
                         plumeHeight * 0.74,
                         coolRgb,
                         accentRgb,
-                        1.18 * fade * alertStrength
+                        1.18 * fade * pulseIntensity * alertStrength
                     );
                 } else {
                     const streakOffset = isTopEdge ? 1 : -1;
@@ -15087,10 +15147,10 @@
                         edgeAnchorX,
                         edgeAnchorY - streakOffset * 28,
                         plumeWidth * 0.74,
-                        (54 + pulse * 12) * alertStrength,
+                        (54 + pulse * 12) * alertStrength * growthScale,
                         coolRgb,
                         accentRgb,
-                        1.18 * fade * alertStrength
+                        1.18 * fade * pulseIntensity * alertStrength
                     );
                 }
                 targetCtx.restore();
@@ -17640,7 +17700,7 @@
                         renderState.worldY - frameMetrics.drawH,
                         frameMetrics.drawW * 2,
                         frameMetrics.drawH * 2,
-                        140,
+                        Math.max(canvas.width, canvas.height), // Large padding for screen-sized glow
                         visibleBounds
                     )
                 ) {
@@ -17651,13 +17711,19 @@
                 const openBoost = renderState.chest.opened_at_ms
                     ? 0.82 + (1 - renderState.openedProgress) * 1.18
                     : 0.46 + renderState.openingProgress * 0.7;
+                // Chest glow: massive screen-sized glow with flowing animation, scaled by rarity
+                const flowPhase = now * 0.003; // Slow flowing animation
+                const flowScale = 0.9 + 0.1 * Math.sin(flowPhase); // Gentle size pulsation
+                const rarityScale = profile.lightStrength || 1.0; // Scale by rarity (normal: 0.78, rare: 1.08, mythic: 1.42)
+                const chestGlowRadiusX = canvas.width * 0.8 * flowScale * (0.8 + 0.2 * rarityScale); // Larger radius for higher rarity
+                const chestGlowRadiusY = canvas.height * 0.8 * flowScale * (0.8 + 0.2 * rarityScale);
                 pushDynamicLight(
                     lights,
                     maxLights,
                     (renderState.worldX - cameraX) * cameraZoom,
-                    (renderState.worldY - frameMetrics.drawH * 0.08 - cameraY) * cameraZoom,
-                    (170 + profile.lightStrength * 110 + openBoost * 80) * cameraZoom * renderState.scale,
-                    (0.2 + profile.lightStrength * 0.12 + openBoost * 0.12) * renderState.opacity
+                    (renderState.worldY - frameMetrics.drawH / 2 - cameraY) * cameraZoom,
+                    Math.max(chestGlowRadiusX, chestGlowRadiusY) * cameraZoom * renderState.scale,
+                    1.1 * rarityScale * renderState.opacity * (0.92 + 0.08 * Math.sin(flowPhase * 1.3)) // Brighter but still reduced, scaled by rarity
                 );
             }
 
