@@ -505,6 +505,7 @@ function createAssetsRouter(deps) {
   const publicGuiAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'GUI'), publicGuiAssets);
   const publicIconAssets = new Set(['fireball.png', 'lazer.png']);
   const publicIconAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'icons'), publicIconAssets);
+  const allowedGeneralAssetFolders = new Set(['chests']);
   const guiAlphabetLookup = new Map();
 
   try {
@@ -935,6 +936,38 @@ function createAssetsRouter(deps) {
       payload: {
         type: 'enemy',
         enemyType,
+        asset_sid: assetSession.sessionId,
+      },
+      expiresInSeconds: 60,
+    });
+
+    res.json({ token });
+  });
+
+  router.post('/api/request_general_token', (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).json({ error: assetSession.reason });
+      return;
+    }
+
+    const folder = String(req.body?.folder ?? req.body?.category ?? '').trim().toLowerCase();
+    if (!allowedGeneralAssetFolders.has(folder)) {
+      res.status(404).json({ error: 'General asset folder not found' });
+      return;
+    }
+
+    const folderPath = path.join(deps.staticDir, 'assets', 'general', folder);
+    if (!fs.existsSync(folderPath)) {
+      res.status(404).json({ error: 'General asset folder not found' });
+      return;
+    }
+
+    const token = signToken({
+      secretKey: deps.secretKey,
+      payload: {
+        type: 'general',
+        folder,
         asset_sid: assetSession.sessionId,
       },
       expiresInSeconds: 60,
@@ -1390,6 +1423,34 @@ function createAssetsRouter(deps) {
     res.json(metadata);
   });
 
+  router.get('/api/general_metadata/:folder', (req, res) => {
+    const folder = String(req.params.folder ?? '').trim().toLowerCase();
+    if (!allowedGeneralAssetFolders.has(folder)) {
+      res.status(404).send(`General asset folder ${folder} not found`);
+      return;
+    }
+
+    const metadataPath = path.join(
+      deps.staticDir,
+      'assets',
+      'general',
+      folder,
+      `metadata_${folder}.json`
+    );
+
+    if (!fs.existsSync(metadataPath)) {
+      res.status(404).send(`General asset folder ${folder} not found`);
+      return;
+    }
+
+    try {
+      const raw = fs.readFileSync(metadataPath, 'utf8');
+      res.json(JSON.parse(raw));
+    } catch {
+      res.status(500).send('Server error');
+    }
+  });
+
   router.post('/api/save_enemy_metadata', (req, res) => {
     const enemyType = String(req.body?.type ?? req.body?.enemyType ?? '').trim().toLowerCase();
     if (!enemyType) {
@@ -1465,6 +1526,54 @@ function createAssetsRouter(deps) {
       res,
       fullPath: assetPath,
       downloadName: `${enemyType}_${assetName}.png`,
+    });
+  });
+
+  router.get('/api/general_asset/:token/:folder/:assetName', async (req, res) => {
+    const assetSession = verifyAssetSession({ secretKey: deps.secretKey, req });
+    if (!assetSession.ok) {
+      res.status(assetSession.status).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const token = String(req.params.token ?? '');
+    const folder = String(req.params.folder ?? '').trim().toLowerCase();
+    const assetName = String(req.params.assetName ?? '').trim().toLowerCase();
+    if (!allowedGeneralAssetFolders.has(folder)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    const verified = verifyToken({ secretKey: deps.secretKey, token });
+    if (!verified.ok) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const payload = verified.payload;
+    if (
+      payload.type !== 'general' ||
+      payload.folder !== folder ||
+      !tokenMatchesAssetSession({ payload, assetSessionId: assetSession.sessionId })
+    ) {
+      res.status(403).send('<h1>Access Denied</h1>');
+      return;
+    }
+
+    const assetPath = path.join(deps.staticDir, 'assets', 'general', folder, `${assetName}.png`);
+    if (!fs.existsSync(assetPath)) {
+      res.status(404).send('<h1>Not Found</h1>');
+      return;
+    }
+
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('general', folder, `${assetName}.png`), `${folder}_${assetName}.png`, { protectedResponse: true })) {
+      return;
+    }
+
+    sendProtectedBinaryFile({
+      res,
+      fullPath: assetPath,
+      downloadName: `${folder}_${assetName}.png`,
     });
   });
 

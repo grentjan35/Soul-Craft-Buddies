@@ -1,0 +1,32 @@
+{
+  "normal": {
+    "asset": "normal",
+    "frames": 9,
+    "grid": "3x3",
+    "closedFrame": 0,
+    "openStartFrame": 1,
+    "openEndFrame": 8,
+    "scale": 1,
+    "openAnimationMs": 820
+  },
+  "rare": {
+    "asset": "rare",
+    "frames": 9,
+    "grid": "3x3",
+    "closedFrame": 0,
+    "openStartFrame": 1,
+    "openEndFrame": 8,
+    "scale": 1.08,
+    "openAnimationMs": 900
+  },
+  "mythic": {
+    "asset": "mythic",
+    "frames": 9,
+    "grid": "3x3",
+    "closedFrame": 0,
+    "openStartFrame": 1,
+    "openEndFrame": 8,
+    "scale": 1.18,
+    "openAnimationMs": 1040
+  }
+}

@@ -5282,6 +5282,32 @@
             }
         }
 
+        async function getGeneralToken(folderName) {
+            try {
+                const response = await fetchWithAssetSession('/api/request_general_token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ folder: folderName })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Failed to get general token: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!data.token) {
+                    throw new Error('General token missing from response');
+                }
+
+                return data.token;
+            } catch (error) {
+                console.error('Error getting general token:', error);
+                throw error;
+            }
+        }
+
         async function getCharacterSelectionManifest() {
             const response = await fetchWithAssetSession('/api/character_selection_manifest');
             if (!response.ok) {
@@ -8876,6 +8902,9 @@
         const enemyAssetPromisesByType = {};
         const loadingEnemyTypes = new Set();
         const failedEnemyTypes = new Set();
+        const chestAssetsByRarity = {};
+        let chestMetadata = null;
+        let chestAssetsPromise = null;
         let characterMetadata = null;
         let assignedCharacter = null;
         let allAssetsLoaded = false;
@@ -9094,6 +9123,12 @@
                 lazerCooldownUntilMs: 0,
                 lazerAttackEndsAtMs: 0
             };
+            chestSpawnAlerts.length = 0;
+            chestOpenBursts.length = 0;
+            chestSoulBursts.length = 0;
+            for (const chestId in chestState) {
+                delete chestState[chestId];
+            }
             upgradeSelectionPending = false;
             renderUpgradeDraft();
             renderCombatInventory();
@@ -9261,6 +9296,7 @@
                 // Get token for character asset access
                 const characterToken = await getCharacterToken(assignedCharacter);
                 const alphabetPromise = preloadCustomAlphabet();
+                const chestAssetsLoadPromise = loadChestAssets();
                 
                 // Load all assets in parallel using tokenized endpoint for security
                 const loadPromises = assetNames.map(async (name, index) => {
@@ -9277,7 +9313,7 @@
                     return asset;
                 });
                 
-                await Promise.all([Promise.all(loadPromises), alphabetPromise]);
+                await Promise.all([Promise.all(loadPromises), alphabetPromise, chestAssetsLoadPromise]);
                 
                 // Store assets in the multi-character cache
                 playerCharacterAssets[assignedCharacter] = {...characterAssets};
@@ -9427,6 +9463,46 @@
             })();
 
             return enemyAssetPromisesByType[enemyType];
+        }
+
+        async function loadChestAssets() {
+            if (chestMetadata && chestAssetsByRarity.normal && chestAssetsByRarity.rare && chestAssetsByRarity.mythic) {
+                return chestAssetsByRarity;
+            }
+            if (chestAssetsPromise) {
+                return chestAssetsPromise;
+            }
+
+            chestAssetsPromise = (async () => {
+                const metadataResponse = await fetch('/api/general_metadata/chests');
+                if (!metadataResponse.ok) {
+                    throw new Error(`Failed to fetch chest metadata: ${metadataResponse.status}`);
+                }
+
+                chestMetadata = await metadataResponse.json();
+                const chestToken = await getGeneralToken('chests');
+                const rarityEntries = Object.entries(chestMetadata || {});
+
+                await Promise.all(rarityEntries.map(async ([rarity, meta]) => {
+                    const assetName = typeof meta?.asset === 'string' && meta.asset.trim()
+                        ? meta.asset.trim()
+                        : rarity;
+                    const blob = await fetchProtectedBlob(
+                        `/api/general_asset/${chestToken}/chests/${encodeURIComponent(assetName)}`,
+                        'image/png'
+                    );
+                    chestAssetsByRarity[rarity] = await createImageBitmap(blob);
+                }));
+
+                return chestAssetsByRarity;
+            })();
+
+            try {
+                return await chestAssetsPromise;
+            } catch (error) {
+                chestAssetsPromise = null;
+                throw error;
+            }
         }
 
         function updateLoadingScreen() {
@@ -10562,6 +10638,10 @@
         const enemyAmbientAudioState = {};
         const enemyFootstepFrameCounters = {};
         const soulState = {};
+        const chestState = {};
+        const chestSpawnAlerts = [];
+        const chestOpenBursts = [];
+        const chestSoulBursts = [];
         const soulPickupEffects = [];
         const leaderboardElement = document.getElementById('souls-leaderboard');
         const leaderboardBody = document.getElementById('souls-leaderboard-body');
@@ -10662,6 +10742,36 @@
             soul: 'SOUL',
             potion: 'HEAL'
         };
+        const CHEST_RARITY_VISUALS = {
+            normal: {
+                label: 'Normal',
+                accent: '#f7d484',
+                innerGlow: 'rgba(255, 242, 190, __A__)',
+                outerGlow: 'rgba(255, 187, 82, __A__)',
+                mist: 'rgba(255, 210, 130, __A__)',
+                lightStrength: 0.78,
+                alertStrength: 1,
+            },
+            rare: {
+                label: 'Rare',
+                accent: '#8fd6ff',
+                innerGlow: 'rgba(220, 248, 255, __A__)',
+                outerGlow: 'rgba(84, 182, 255, __A__)',
+                mist: 'rgba(118, 170, 255, __A__)',
+                lightStrength: 1.08,
+                alertStrength: 1.4,
+            },
+            mythic: {
+                label: 'Mythic',
+                accent: '#ff9d56',
+                innerGlow: 'rgba(255, 244, 210, __A__)',
+                outerGlow: 'rgba(255, 112, 48, __A__)',
+                mist: 'rgba(255, 170, 92, __A__)',
+                lightStrength: 1.42,
+                alertStrength: 1.9,
+            }
+        };
+        const CHEST_PROMPT_RADIUS = 110;
         let localProgressionState = {
             level: 1,
             xp: 0,
@@ -10776,6 +10886,12 @@
             }
             if (e.key === '2') {
                 selectInventorySlot(INVENTORY_SLOT_LAZER);
+            }
+            if ((e.key === 'e' || e.key === 'E') && !e.repeat) {
+                const interactableChest = getNearestChestForInteraction();
+                if (interactableChest?.id && isChestClientInteractable(interactableChest)) {
+                    socket.emit('chest_interact', { chestId: interactableChest.id });
+                }
             }
             
             // Manual respawn with 'R' key
@@ -12016,6 +12132,7 @@
                 enemy_removed: serverEnemyRemoved,
                 fairies: serverFairies,
                 souls: serverSouls,
+                chests: serverChests,
                 fireballs: serverFireballs,
                 explosions: serverExplosions,
                 self: selfState
@@ -12346,7 +12463,36 @@
                     }
                 }
             }
-            
+
+            if (serverChests) {
+                const receivedChestIds = new Set();
+                if (Object.keys(serverChests).length > 0 && !chestMetadata) {
+                    loadChestAssets().catch((error) => {
+                        console.warn('Chest assets failed to load.', error);
+                    });
+                }
+
+                for (const [chestId, chestEntry] of Object.entries(serverChests)) {
+                    receivedChestIds.add(chestId);
+                    const previousChest = chestState[chestId] || null;
+                    chestState[chestId] = {
+                        ...(previousChest || {}),
+                        ...chestEntry,
+                        id: chestId,
+                    };
+
+                    if (!previousChest?.arrival_announced && !chestEntry?.opened_at_ms && !chestEntry?.despawn_started_at_ms) {
+                        announceChestArrival(chestState[chestId]);
+                    }
+                }
+
+                for (const chestId in chestState) {
+                    if (!receivedChestIds.has(chestId)) {
+                        delete chestState[chestId];
+                    }
+                }
+            }
+             
             // Update fairy data from server
             if (serverFairies) {
                 reusableActiveFairyIds.clear();
@@ -12526,6 +12672,12 @@
                 currentMap.decor = [];
             }
             refreshCurrentMapDecorStats();
+            chestSpawnAlerts.length = 0;
+            chestOpenBursts.length = 0;
+            chestSoulBursts.length = 0;
+            for (const chestId in chestState) {
+                delete chestState[chestId];
+            }
             fairies = [];
             soulPickupEffects.length = 0;
             for (const fairyId in authoritativeFairyState) {
@@ -12538,6 +12690,39 @@
             await loadMapBackgrounds(currentMap);
             warmMapEnemyAssets(currentMap);
             convertMapToPlatforms();
+        });
+
+        socket.on('chest_spawned', (data) => {
+            if (!data?.id) {
+                return;
+            }
+
+            chestState[data.id] = {
+                ...(chestState[data.id] || {}),
+                ...data,
+                id: data.id,
+            };
+            announceChestArrival(data, { force: true });
+        });
+
+        socket.on('chest_opened', (data) => {
+            if (!data?.id) {
+                return;
+            }
+
+            if (chestState[data.id]) {
+                chestState[data.id].opened_at_ms = Number(data.opened_at_ms) || Date.now();
+                chestState[data.id].claimed_by_sid = data.opened_by_sid || null;
+            }
+            pushChestOpenBurst(data);
+            pushChestSoulBurst(data);
+            addDistanceShake(
+                Number(data?.x) || 0,
+                Number(data?.y) || 0,
+                data?.rarity === 'mythic' ? 82 : 58,
+                920,
+                data?.rarity === 'mythic' ? 0.72 : (data?.rarity === 'rare' ? 0.5 : 0.36)
+            );
         });
 
         // Handle player died event from server
@@ -12810,6 +12995,18 @@
                 startTime: typeof data.collected_at_ms === 'number' ? data.collected_at_ms : Date.now(),
                 duration: 180
             });
+
+            if (targetSid === socket.id) {
+                const soulValue = Math.max(1, Math.round(Number(soul.value) || 1));
+                const soulSize = Math.max(1, Number(soul.size) || 1);
+                const pickupVolume = Math.min(1.15, 0.72 + soulValue * 0.07 + (soulSize - 1) * 0.08);
+                if (combatAudio && typeof combatAudio.playSoulCollectedLocal === 'function') {
+                    combatAudio.playSoulCollectedLocal(
+                        pickupVolume,
+                        `soul-collected-local|${data?.collected_at_ms || Date.now()}|${soul.id || Math.random()}`
+                    ).catch(() => {});
+                }
+            }
         });
 
         // Group System Socket Handlers
@@ -14384,6 +14581,658 @@
                 return { x: state.x, y: state.y };
             }
             return null;
+        }
+
+        function getChestVisualProfile(rarity) {
+            return CHEST_RARITY_VISUALS[rarity] || CHEST_RARITY_VISUALS.normal;
+        }
+
+        function easeOutCubic(t) {
+            const clamped = Math.max(0, Math.min(1, t));
+            return 1 - Math.pow(1 - clamped, 3);
+        }
+
+        function withAlpha(template, alpha) {
+            return String(template || '').replace('__A__', Math.max(0, alpha).toFixed(3));
+        }
+
+        function getChestMetadataEntry(rarity) {
+            return chestMetadata && typeof chestMetadata === 'object'
+                ? (chestMetadata[rarity] || null)
+                : null;
+        }
+
+        function getChestRenderState(chest, now = Date.now()) {
+            if (!chest) {
+                return null;
+            }
+
+            const image = chestAssetsByRarity[chest.rarity];
+            const meta = getChestMetadataEntry(chest.rarity);
+            if (!image || !meta) {
+                return null;
+            }
+
+            const [colsRaw, rowsRaw] = String(meta.grid || '1x1').split('x').map(Number);
+            const cols = Math.max(1, colsRaw || 1);
+            const rows = Math.max(1, rowsRaw || 1);
+            const totalFrames = Math.max(1, Number(meta.frames) || cols * rows);
+            const closedFrame = Math.max(0, Math.min(totalFrames - 1, Number(meta.closedFrame) || 0));
+            const openStartFrame = Math.max(closedFrame, Math.min(totalFrames - 1, Number.isFinite(meta.openStartFrame) ? Number(meta.openStartFrame) : Math.min(totalFrames - 1, closedFrame + 1)));
+            const openEndFrame = Math.max(openStartFrame, Math.min(totalFrames - 1, Number.isFinite(meta.openEndFrame) ? Number(meta.openEndFrame) : (totalFrames - 1)));
+            const openAnimationMs = Math.max(180, Number(meta.openAnimationMs) || 820);
+            const landingDurationMs = Math.max(1, Number(chest.landing_duration_ms) || 1200);
+            const spawnTimeMs = Number(chest.spawn_time_ms) || now;
+            const spawnElapsedMs = Math.max(0, now - spawnTimeMs);
+            const landingProgress = clamp01(spawnElapsedMs / landingDurationMs);
+            const landed = landingProgress >= 0.999;
+            const openingProgress = chest.opening_started_at_ms && !chest.opened_at_ms
+                ? clamp01((now - chest.opening_started_at_ms) / Math.max(1, Number(chest.open_duration_ms) || 1))
+                : 0;
+            const openedProgress = chest.opened_at_ms
+                ? clamp01((now - chest.opened_at_ms) / openAnimationMs)
+                : 0;
+            const despawnProgress = chest.despawn_started_at_ms
+                ? clamp01((now - chest.despawn_started_at_ms) / Math.max(1, Number(chest.despawn_duration_ms) || 760))
+                : 0;
+            const seed = Number.isFinite(chest.renderSeed)
+                ? chest.renderSeed
+                : stableStringNoise(`chest:${chest.id || `${chest.x}|${chest.y}`}`) * 13;
+            chest.renderSeed = seed;
+
+            const startY = Number.isFinite(chest.spawn_from_y) ? chest.spawn_from_y : chest.y - 240;
+            let worldY = startY + (Number(chest.y) - startY) * easeOutCubic(landingProgress);
+            const fallShake = landed ? 0 : (1 - landingProgress) * (chest.rarity === 'mythic' ? 10 : 7);
+            const idleHover = landed ? Math.sin(now * 0.003 + seed) * (chest.opened_at_ms ? 1.3 : 3.4) : 0;
+            const swayX = landed
+                ? Math.sin(now * 0.0024 + seed * 1.6) * 2.4
+                : Math.sin(now * 0.034 + seed * 1.8) * fallShake;
+            worldY += idleHover + (landed ? 0 : Math.cos(now * 0.041 + seed) * fallShake);
+
+            let frameIndex = closedFrame;
+            if (chest.opened_at_ms) {
+                const frameProgress = Math.max(0, Math.min(1, openedProgress));
+                frameIndex = openStartFrame + Math.round((openEndFrame - openStartFrame) * frameProgress);
+            }
+
+            const spawnScale = landed ? 1 : 0.72 + landingProgress * 0.28;
+            const openBurstScale = chest.opened_at_ms
+                ? 1 + (1 - openedProgress) * 0.16
+                : 1 + openingProgress * 0.05;
+            const despawnScale = 1 - despawnProgress * 0.72;
+            const scale = Math.max(0.16, (Number(meta.scale) || 1) * spawnScale * openBurstScale * despawnScale);
+            const opacity = Math.max(0, 1 - despawnProgress * 0.96);
+
+            return {
+                chest,
+                image,
+                meta,
+                cols,
+                rows,
+                frameIndex,
+                worldX: Number(chest.x) + swayX,
+                worldY,
+                landingProgress,
+                openingProgress,
+                openedProgress,
+                despawnProgress,
+                landed,
+                scale,
+                opacity,
+                seed
+            };
+        }
+
+        function getChestFrameMetrics(renderState) {
+            if (!renderState?.image) {
+                return null;
+            }
+
+            const frameW = renderState.image.width / renderState.cols;
+            const frameH = renderState.image.height / renderState.rows;
+            const frameX = (renderState.frameIndex % renderState.cols) * frameW;
+            const frameY = Math.floor(renderState.frameIndex / renderState.cols) * frameH;
+            const maxWorldSize = 72 * renderState.scale;
+            const spriteScale = maxWorldSize / Math.max(frameW, frameH);
+
+            return {
+                frameX,
+                frameY,
+                frameW,
+                frameH,
+                drawW: frameW * spriteScale,
+                drawH: frameH * spriteScale,
+            };
+        }
+
+        function getNearestChestForInteraction() {
+            const localPlayer = getPlayerState(socket.id) || authoritativePlayerState[socket.id];
+            if (!localPlayer) {
+                return null;
+            }
+
+            let nearestChest = null;
+            let nearestDistance = Infinity;
+            for (const chestId in chestState) {
+                const chest = chestState[chestId];
+                if (!chest || chest.opened_at_ms || chest.despawn_started_at_ms) {
+                    continue;
+                }
+
+                const interactRadius = Math.max(24, Number(chest.interact_radius) || CHEST_PROMPT_RADIUS);
+                const distance = Math.hypot((Number(chest.x) || 0) - localPlayer.x, (Number(chest.y) || 0) - localPlayer.y);
+                if (distance > interactRadius + 18 || distance >= nearestDistance) {
+                    continue;
+                }
+
+                nearestDistance = distance;
+                nearestChest = chest;
+            }
+
+            return nearestChest;
+        }
+
+        function isChestClientInteractable(chest, now = Date.now()) {
+            if (!chest || chest.opened_at_ms || chest.despawn_started_at_ms) {
+                return false;
+            }
+
+            return now >= (Number(chest.available_at_ms) || 0);
+        }
+
+        function getChestAlertEdgeInset(viewportCanvas = canvas) {
+            if (!viewportCanvas) {
+                return 96;
+            }
+
+            return Math.max(72, Math.min(viewportCanvas.width, viewportCanvas.height) * 0.14);
+        }
+
+        function isChestVisibleOnScreen(chest, viewportCanvas = canvas, now = Date.now()) {
+            if (!chest || !viewportCanvas) {
+                return false;
+            }
+
+            const renderState = getChestRenderState(chest, now);
+            const frameMetrics = getChestFrameMetrics(renderState);
+            if (!renderState || !frameMetrics) {
+                return false;
+            }
+
+            const drawX = renderState.worldX - cameraX;
+            const drawY = renderState.worldY - cameraY - frameMetrics.drawH / 2;
+            const left = drawX - frameMetrics.drawW / 2;
+            const top = drawY - frameMetrics.drawH / 2;
+            const right = left + frameMetrics.drawW;
+            const bottom = top + frameMetrics.drawH;
+            const padding = 4;
+
+            return right >= -padding
+                && left <= viewportCanvas.width + padding
+                && bottom >= -padding
+                && top <= viewportCanvas.height + padding;
+        }
+
+        function pushChestSpawnAlert(data) {
+            chestSpawnAlerts.push({
+                id: String(data?.id || `chest_alert_${Date.now()}`),
+                rarity: String(data?.rarity || 'normal'),
+                x: Number(data?.x) || 0,
+                y: Number(data?.y) || 0,
+                startTime: Number(data?.spawn_time_ms) || Date.now(),
+                duration: Math.max(10000, Number(data?.alert_duration_ms) || 10000),
+            });
+        }
+
+        function pushChestArrivalToast(data) {
+            let message = 'A treasure pulse flares somewhere nearby.';
+            let caption = 'Treasure stirs';
+            if (data?.rarity === 'rare') {
+                message = 'A rare treasure pulse streaks across the map.';
+                caption = 'Rare treasure';
+            } else if (data?.rarity === 'mythic') {
+                message = 'A mythic treasure pulse tears through the battlefield.';
+                caption = 'Mythic treasure';
+            }
+
+            pushProgressionToast({
+                type: 'chest',
+                title: 'Chest spawned',
+                message,
+                xp: 0,
+                caption,
+            });
+        }
+
+        function announceChestArrival(data, options = {}) {
+            const chestId = String(data?.id || '').trim();
+            if (!chestId) {
+                return;
+            }
+
+            const existingChest = chestState[chestId] || null;
+            if (existingChest?.arrival_announced) {
+                return;
+            }
+
+            const now = Date.now();
+            const alertDuration = Math.max(1200, Number(data?.alert_duration_ms) || 5000);
+            const spawnTimeMs = Number(data?.spawn_time_ms) || now;
+            const shouldAlert = options.force === true || (now - spawnTimeMs) <= alertDuration;
+            chestState[chestId] = {
+                ...(existingChest || {}),
+                ...data,
+                id: chestId,
+                arrival_announced: true,
+            };
+
+            if (!shouldAlert) {
+                return;
+            }
+
+            pushChestSpawnAlert(chestState[chestId]);
+            pushChestArrivalToast(chestState[chestId]);
+        }
+
+        function pushChestOpenBurst(data) {
+            chestOpenBursts.push({
+                id: String(data?.id || `chest_burst_${Date.now()}`),
+                rarity: String(data?.rarity || 'normal'),
+                x: Number(data?.x) || 0,
+                y: Number(data?.y) || 0,
+                startTime: Number(data?.opened_at_ms) || Date.now(),
+                duration: 920,
+            });
+        }
+
+        function pushChestSoulBurst(data) {
+            const rewardSouls = Math.max(1, Math.round(Number(data?.reward_souls) || 0));
+            const particleCount = Math.max(8, Math.min(28, rewardSouls));
+            const startTime = Number(data?.opened_at_ms) || Date.now();
+            const rarity = String(data?.rarity || 'normal');
+            const x = Number(data?.x) || 0;
+            const y = Number(data?.y) || 0;
+            const particles = [];
+
+            for (let index = 0; index < particleCount; index += 1) {
+                const spread = index / Math.max(1, particleCount - 1);
+                const angle = (-1.9 + spread * 0.9) + (Math.random() - 0.5) * 0.2;
+                const speed = 42 + Math.random() * 86;
+                particles.push({
+                    angle,
+                    speed,
+                    lift: 56 + Math.random() * 54,
+                    drift: (Math.random() - 0.5) * 18,
+                    size: 0.8 + Math.random() * 0.7,
+                    tint: Math.floor(Math.random() * 3),
+                });
+            }
+
+            chestSoulBursts.push({
+                id: String(data?.id || `chest_soul_burst_${Date.now()}`),
+                rarity,
+                x,
+                y,
+                startTime,
+                duration: 900,
+                particles,
+            });
+        }
+
+        function drawChestOpenBursts(now = Date.now(), visibleBounds = null) {
+            if (!chestOpenBursts.length) {
+                return;
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            pruneArrayInPlace(chestOpenBursts, (burst) => {
+                const elapsed = now - burst.startTime;
+                if (elapsed >= burst.duration) {
+                    return false;
+                }
+
+                const progress = clamp01(elapsed / burst.duration);
+                const radius = 30 + progress * 86;
+                if (visibleBounds && !isWorldRectVisible(burst.x - radius, burst.y - radius, radius * 2, radius * 2, 80, visibleBounds)) {
+                    return true;
+                }
+
+                const profile = getChestVisualProfile(burst.rarity);
+                const drawX = burst.x - cameraX;
+                const drawY = burst.y - cameraY - 18;
+                const flare = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, radius);
+                flare.addColorStop(0, withAlpha(profile.innerGlow, 0.26 * (1 - progress)));
+                flare.addColorStop(0.42, withAlpha(profile.outerGlow, 0.2 * (1 - progress * 0.5)));
+                flare.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = flare;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = withAlpha(profile.outerGlow, 0.4 * (1 - progress));
+                ctx.lineWidth = Math.max(1.2, 6 * (1 - progress));
+                ctx.beginPath();
+                ctx.arc(drawX, drawY, radius * (0.52 + progress * 0.44), 0, Math.PI * 2);
+                ctx.stroke();
+                return true;
+            });
+            ctx.restore();
+        }
+
+        function drawChestSoulBursts(now = Date.now(), visibleBounds = null) {
+            if (!chestSoulBursts.length) {
+                return;
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            for (let i = chestSoulBursts.length - 1; i >= 0; i -= 1) {
+                const burst = chestSoulBursts[i];
+                const elapsed = now - burst.startTime;
+                const progress = clamp01(elapsed / Math.max(1, burst.duration));
+                if (progress >= 1) {
+                    chestSoulBursts.splice(i, 1);
+                    continue;
+                }
+
+                const visibilityRadius = 180;
+                if (visibleBounds && !isWorldRectVisible(burst.x - visibilityRadius, burst.y - visibilityRadius, visibilityRadius * 2, visibilityRadius * 2, 80, visibleBounds)) {
+                    continue;
+                }
+
+                const profile = getChestVisualProfile(burst.rarity);
+                for (const particle of burst.particles) {
+                    const travel = particle.speed * progress;
+                    const worldX = burst.x + Math.cos(particle.angle) * travel + particle.drift * progress;
+                    const worldY = burst.y - Math.sin(progress * Math.PI) * particle.lift + Math.sin(particle.angle) * travel * 0.18;
+                    const drawX = worldX - cameraX;
+                    const drawY = worldY - cameraY - 10;
+                    const radius = (8 + (1 - progress) * 7) * particle.size;
+                    const alpha = (1 - progress) * 0.92;
+                    const palette = getSoulPalette(particle.tint);
+                    const glow = ctx.createRadialGradient(drawX, drawY, 0, drawX, drawY, radius * 3.4);
+                    glow.addColorStop(0, palette.mid);
+                    glow.addColorStop(0.34, profile.innerGlow.replace('__A__', Math.max(0, alpha * 0.8).toFixed(3)));
+                    glow.addColorStop(0.62, palette.glow);
+                    glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = glow;
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY, radius * 3.4, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = palette.core;
+                    ctx.beginPath();
+                    ctx.arc(drawX, drawY, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+        function drawChestDirectionAlerts(targetCtx = ctx, viewportCanvas = canvas, now = Date.now()) {
+            if (!chestSpawnAlerts.length) {
+                return;
+            }
+
+            const localPlayer = getPlayerState(socket.id) || authoritativePlayerState[socket.id];
+            if (!localPlayer || !targetCtx || !viewportCanvas) {
+                return;
+            }
+
+            const centerX = viewportCanvas.width / 2;
+            const centerY = viewportCanvas.height / 2;
+            const edgeInset = getChestAlertEdgeInset(viewportCanvas);
+            const edgePadding = Math.max(12, edgeInset * 0.08);
+            const minEdgeInset = edgeInset - edgePadding;
+
+            targetCtx.save();
+            targetCtx.globalCompositeOperation = 'lighter';
+            pruneArrayInPlace(chestSpawnAlerts, (alert) => {
+                const elapsed = now - alert.startTime;
+                const linkedChest = chestState[alert.id] || null;
+                if (linkedChest?.opened_at_ms || linkedChest?.despawn_started_at_ms) {
+                    return false;
+                }
+
+                if (linkedChest && isChestVisibleOnScreen(linkedChest, viewportCanvas, now)) {
+                    return false;
+                }
+
+                const dx = alert.x - localPlayer.x;
+                const dy = alert.y - localPlayer.y;
+                if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) {
+                    return true;
+                }
+
+                const progress = clamp01(elapsed / alert.duration);
+                const fade = elapsed < alert.duration
+                    ? 1
+                    : 0.94;
+                const pulse = 0.96 + Math.sin(now * 0.012 + alert.x * 0.01 + alert.y * 0.008) * 0.18;
+                const angle = Math.atan2(dy, dx);
+                const dirX = Math.cos(angle);
+                const dirY = Math.sin(angle);
+                const toEdgeX = Math.abs(dirX) > 0.0001
+                    ? ((dirX > 0 ? viewportCanvas.width - minEdgeInset : minEdgeInset) - centerX) / dirX
+                    : Number.POSITIVE_INFINITY;
+                const toEdgeY = Math.abs(dirY) > 0.0001
+                    ? ((dirY > 0 ? viewportCanvas.height - minEdgeInset : minEdgeInset) - centerY) / dirY
+                    : Number.POSITIVE_INFINITY;
+                const edgeDistance = Math.min(toEdgeX, toEdgeY);
+                const anchorX = centerX + dirX * edgeDistance;
+                const anchorY = centerY + dirY * edgeDistance;
+                const clampedX = Math.max(minEdgeInset, Math.min(viewportCanvas.width - minEdgeInset, anchorX));
+                const clampedY = Math.max(minEdgeInset, Math.min(viewportCanvas.height - minEdgeInset, anchorY));
+                const profile = getChestVisualProfile(alert.rarity);
+                const alertStrength = Math.max(1, Number(profile.alertStrength) || 1);
+                const accentRgb = hexToRgb(profile.accent, [126, 201, 255]);
+                const coolRgb = [214, 247, 255];
+                const deepRgb = [78, 165, 255];
+                const isLeftEdge = clampedX <= minEdgeInset + 2;
+                const isRightEdge = clampedX >= viewportCanvas.width - minEdgeInset - 2;
+                const isTopEdge = clampedY <= minEdgeInset + 2;
+                const isBottomEdge = clampedY >= viewportCanvas.height - minEdgeInset - 2;
+                const verticalEdge = isLeftEdge || isRightEdge;
+                const plumeWidth = (verticalEdge ? 126 + pulse * 28 : 220 + pulse * 48) * alertStrength;
+                const plumeHeight = (verticalEdge ? 250 + pulse * 56 : 122 + pulse * 28) * alertStrength;
+                const coreWidth = plumeWidth * 0.62;
+                const coreHeight = plumeHeight * 0.66;
+                const inwardOffset = (28 + pulse * 10) * alertStrength;
+                const edgeAnchorX = isLeftEdge
+                    ? 0
+                    : (isRightEdge ? viewportCanvas.width : clampedX);
+                const edgeAnchorY = isTopEdge
+                    ? 0
+                    : (isBottomEdge ? viewportCanvas.height : clampedY);
+                const outerX = edgeAnchorX + dirX * (10 + alertStrength * 3);
+                const outerY = edgeAnchorY + dirY * (10 + alertStrength * 3);
+                const plumeX = edgeAnchorX - dirX * inwardOffset;
+                const plumeY = edgeAnchorY - dirY * inwardOffset;
+                const coreX = edgeAnchorX - dirX * (inwardOffset * 0.46);
+                const coreY = edgeAnchorY - dirY * (inwardOffset * 0.46);
+                const highlightX = edgeAnchorX - dirX * (10 + alertStrength * 3);
+                const highlightY = edgeAnchorY - dirY * (10 + alertStrength * 3);
+                const outerRadius = Math.max(plumeWidth, plumeHeight) * 0.92;
+
+                targetCtx.save();
+                targetCtx.beginPath();
+                targetCtx.rect(0, 0, viewportCanvas.width, viewportCanvas.height);
+                targetCtx.clip();
+
+                drawLowQualityGlow(targetCtx, outerX, outerY, outerRadius, coolRgb, accentRgb, 1.7 * fade * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, edgeAnchorX, edgeAnchorY, plumeWidth, plumeHeight, accentRgb, deepRgb, 2.3 * fade * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, plumeX, plumeY, plumeWidth * 0.92, plumeHeight * 0.96, accentRgb, deepRgb, 1.82 * fade * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, coreX, coreY, coreWidth, coreHeight, coolRgb, accentRgb, 1.94 * fade * alertStrength);
+                drawLowQualityEllipseGlow(targetCtx, highlightX, highlightY, coreWidth * 0.54, coreHeight * 0.6, coolRgb, accentRgb, 1.46 * fade * alertStrength);
+
+                if (verticalEdge) {
+                    const streakOffset = isLeftEdge ? 1 : -1;
+                    drawLowQualityEllipseGlow(
+                        targetCtx,
+                        edgeAnchorX - streakOffset * 28,
+                        edgeAnchorY,
+                        (54 + pulse * 12) * alertStrength,
+                        plumeHeight * 0.74,
+                        coolRgb,
+                        accentRgb,
+                        1.18 * fade * alertStrength
+                    );
+                } else {
+                    const streakOffset = isTopEdge ? 1 : -1;
+                    drawLowQualityEllipseGlow(
+                        targetCtx,
+                        edgeAnchorX,
+                        edgeAnchorY - streakOffset * 28,
+                        plumeWidth * 0.74,
+                        (54 + pulse * 12) * alertStrength,
+                        coolRgb,
+                        accentRgb,
+                        1.18 * fade * alertStrength
+                    );
+                }
+                targetCtx.restore();
+                return true;
+            });
+            targetCtx.restore();
+        }
+
+        function drawChestInteractionPrompt(now = Date.now(), visibleBounds = null) {
+            const chest = getNearestChestForInteraction();
+            if (!chest) {
+                return;
+            }
+
+            const renderState = getChestRenderState(chest, now);
+            const frameMetrics = getChestFrameMetrics(renderState);
+            if (!renderState || !frameMetrics) {
+                return;
+            }
+            if (!isWorldRectVisible(renderState.worldX - frameMetrics.drawW, renderState.worldY - frameMetrics.drawH * 1.5, frameMetrics.drawW * 2, frameMetrics.drawH * 2, 40, visibleBounds)) {
+                return;
+            }
+
+            const screenX = renderState.worldX - cameraX;
+            const screenY = renderState.worldY - cameraY - frameMetrics.drawH * 0.95;
+            const rarityLabel = getChestVisualProfile(chest.rarity).label;
+            let promptText = `Press E - ${rarityLabel} chest`;
+            const availableAtMs = Number(chest.available_at_ms) || 0;
+            if (availableAtMs > now) {
+                promptText = `${rarityLabel} chest stabilizing - ${((availableAtMs - now) / 1000).toFixed(1)}s`;
+            } else if (chest.opener_sid && chest.opener_sid !== socket.id && !chest.opened_at_ms) {
+                promptText = `${rarityLabel} chest opening`;
+            } else if (chest.opener_sid === socket.id && chest.opening_started_at_ms && !chest.opened_at_ms) {
+                const remainingMs = Math.max(0, (Number(chest.open_duration_ms) || 0) - (now - chest.opening_started_at_ms));
+                promptText = `Opening - ${(remainingMs / 1000).toFixed(1)}s`;
+            }
+
+            drawCustomAlphabetText(ctx, promptText, screenX, screenY, {
+                align: 'center',
+                scale: 0.42,
+                letterSpacing: -1,
+                wordSpacing: 3,
+                fillStyle: '#fff6d8',
+                strokeStyle: '#140b03',
+                strokeWidth: 3,
+                fallbackFont: 'bold 12px "EB Garamond", serif',
+            });
+
+            if (availableAtMs <= now && chest.opener_sid === socket.id && chest.opening_started_at_ms && !chest.opened_at_ms) {
+                const progress = clamp01((now - chest.opening_started_at_ms) / Math.max(1, Number(chest.open_duration_ms) || 1));
+                const barWidth = 110;
+                const barHeight = 8;
+                ctx.save();
+                ctx.fillStyle = 'rgba(18, 10, 4, 0.7)';
+                ctx.fillRect(screenX - barWidth / 2, screenY + 12, barWidth, barHeight);
+                ctx.fillStyle = getChestVisualProfile(chest.rarity).accent;
+                ctx.fillRect(screenX - barWidth / 2, screenY + 12, barWidth * progress, barHeight);
+                ctx.strokeStyle = 'rgba(255, 236, 180, 0.9)';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(screenX - barWidth / 2, screenY + 12, barWidth, barHeight);
+                ctx.restore();
+            }
+        }
+
+        function drawChests(now = Date.now(), visibleBounds = null) {
+            if (!chestMetadata) {
+                return;
+            }
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'source-over';
+
+            for (const chestId in chestState) {
+                const chest = chestState[chestId];
+                const renderState = getChestRenderState(chest, now);
+                const frameMetrics = getChestFrameMetrics(renderState);
+                if (!renderState || !frameMetrics || renderState.opacity <= 0.01) {
+                    continue;
+                }
+
+                const worldLeft = renderState.worldX - frameMetrics.drawW / 2;
+                const worldTop = renderState.worldY - frameMetrics.drawH + 10;
+                if (!isWorldRectVisible(worldLeft, worldTop, frameMetrics.drawW, frameMetrics.drawH, 96, visibleBounds)) {
+                    continue;
+                }
+
+                const profile = getChestVisualProfile(chest.rarity);
+                const drawX = renderState.worldX - cameraX;
+                const drawY = renderState.worldY - cameraY - frameMetrics.drawH / 2;
+                const auraPulse = 0.88 + Math.sin(now * 0.006 + renderState.seed) * 0.12;
+                const landingGlow = renderState.landed ? 1 : renderState.landingProgress;
+                const openBoost = chest.opened_at_ms
+                    ? 0.8 + (1 - renderState.openedProgress) * 1.1
+                    : 0.35 + renderState.openingProgress * 0.7;
+                const glowRadius = (48 + (profile.lightStrength * 34) + openBoost * 24) * renderState.scale * auraPulse;
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                const auraGradient = ctx.createRadialGradient(drawX, drawY - 4, 0, drawX, drawY - 4, glowRadius * 1.2);
+                auraGradient.addColorStop(0, withAlpha(profile.innerGlow, 0.12 * renderState.opacity * landingGlow));
+                auraGradient.addColorStop(0.42, withAlpha(profile.outerGlow, 0.16 * renderState.opacity * openBoost));
+                auraGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = auraGradient;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY - 4, glowRadius * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                const mistGradient = ctx.createRadialGradient(drawX, drawY + frameMetrics.drawH * 0.1, 0, drawX, drawY + frameMetrics.drawH * 0.1, glowRadius * 0.9);
+                mistGradient.addColorStop(0, withAlpha(profile.mist, 0.16 * renderState.opacity));
+                mistGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+                ctx.fillStyle = mistGradient;
+                ctx.beginPath();
+                ctx.arc(drawX, drawY + frameMetrics.drawH * 0.1, glowRadius * 0.9, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                ctx.globalAlpha = renderState.opacity;
+                ctx.drawImage(
+                    renderState.image,
+                    frameMetrics.frameX,
+                    frameMetrics.frameY,
+                    frameMetrics.frameW,
+                    frameMetrics.frameH,
+                    drawX - frameMetrics.drawW / 2,
+                    drawY - frameMetrics.drawH / 2,
+                    frameMetrics.drawW,
+                    frameMetrics.drawH
+                );
+                ctx.restore();
+
+                ctx.save();
+                ctx.fillStyle = `rgba(12, 6, 2, ${0.18 * renderState.opacity})`;
+                ctx.beginPath();
+                ctx.ellipse(drawX, renderState.worldY - cameraY - 2, frameMetrics.drawW * 0.28, frameMetrics.drawH * 0.08, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            ctx.restore();
+            drawChestSoulBursts(now, visibleBounds);
+            drawChestOpenBursts(now, visibleBounds);
         }
 
         function getAudioListenerState() {
@@ -16774,6 +17623,44 @@
                 );
             }
 
+            for (const chestId in chestState) {
+                const renderState = getChestRenderState(chestState[chestId], now);
+                if (!renderState) {
+                    continue;
+                }
+
+                const frameMetrics = getChestFrameMetrics(renderState);
+                if (!frameMetrics) {
+                    continue;
+                }
+                if (
+                    visibleBounds &&
+                    !isWorldRectVisible(
+                        renderState.worldX - frameMetrics.drawW,
+                        renderState.worldY - frameMetrics.drawH,
+                        frameMetrics.drawW * 2,
+                        frameMetrics.drawH * 2,
+                        140,
+                        visibleBounds
+                    )
+                ) {
+                    continue;
+                }
+
+                const profile = getChestVisualProfile(renderState.chest.rarity);
+                const openBoost = renderState.chest.opened_at_ms
+                    ? 0.82 + (1 - renderState.openedProgress) * 1.18
+                    : 0.46 + renderState.openingProgress * 0.7;
+                pushDynamicLight(
+                    lights,
+                    maxLights,
+                    (renderState.worldX - cameraX) * cameraZoom,
+                    (renderState.worldY - frameMetrics.drawH * 0.08 - cameraY) * cameraZoom,
+                    (170 + profile.lightStrength * 110 + openBoost * 80) * cameraZoom * renderState.scale,
+                    (0.2 + profile.lightStrength * 0.12 + openBoost * 0.12) * renderState.opacity
+                );
+            }
+
             for (let index = 0; index < currentMapFireDecor.length; index += 1) {
                 const decor = currentMapFireDecor[index];
                 const x = Number(decor?.x) || 0;
@@ -17337,15 +18224,15 @@
             let style;
             if (styleKey === 'enemy:gargoyle') {
                 style = {
-                    glowOuter: ['rgba(210, 142, 255, __A__)', 'rgba(112, 42, 198, __A__)', 0.5],
-                    glowInner: ['rgba(248, 224, 255, __A__)', 'rgba(160, 72, 255, __A__)', 0.44],
-                    trailGlow: ['rgba(210, 168, 255, __A__)', 'rgba(108, 34, 194, __A__)', 0.22],
-                    trailPalette: ['#140018', '#2f0849', '#5e1aa1', '#8f41e0', '#c889ff', '#f4d9ff'],
-                    trailSecondaryPalette: ['#100014', '#25053c', '#4f1384', '#7d34ca', '#c06fff', '#edd0ff'],
-                    corePalette: ['#19001d', '#39065e', '#6a1bb0', '#9d48f2', '#d297ff', '#f8e4ff'],
-                    coreSecondaryPalette: ['#170018', '#310752', '#5c1798', '#8b38dc', '#cb84ff'],
-                    coreTertiaryPalette: ['#120012', '#2c0547', '#521087', '#8734d8', '#c67aff', '#f7e1ff'],
-                    coreQuaternaryPalette: ['#1d0224', '#430a68', '#7b1cc5', '#ae55ff', '#e2b1ff']
+                    glowOuter: ['rgba(226, 176, 255, __A__)', 'rgba(96, 18, 188, __A__)', 0.58],
+                    glowInner: ['rgba(252, 238, 255, __A__)', 'rgba(182, 74, 255, __A__)', 0.5],
+                    trailGlow: ['rgba(222, 176, 255, __A__)', 'rgba(98, 18, 194, __A__)', 0.28],
+                    trailPalette: ['#0f0016', '#24003c', '#46007a', '#7425ca', '#b468ff', '#f0d6ff'],
+                    trailSecondaryPalette: ['#0c0011', '#1d0032', '#390065', '#6520b4', '#a85dff', '#e9cbff'],
+                    corePalette: ['#14001b', '#2f0053', '#5a129e', '#9338ef', '#cf91ff', '#fbebff'],
+                    coreSecondaryPalette: ['#110015', '#290048', '#4d0d8b', '#8030db', '#bf7cff', '#f4ddff'],
+                    coreTertiaryPalette: ['#0d0011', '#21003a', '#430074', '#7123c4', '#b165ff', '#f5deff'],
+                    coreQuaternaryPalette: ['#16001f', '#320056', '#61119f', '#9a40f3', '#d6a0ff', '#fff2ff']
                 };
             } else {
                 style = {
@@ -17413,13 +18300,13 @@
                     const shockwaveRadius = explosionRadius * (0.55 + progress * 3.4);
 
                     const glowOuter = isGargoyleExplosion
-                        ? ['rgba(241, 226, 255, __A__)', 'rgba(117, 34, 194, __A__)', alpha * 0.7]
+                        ? ['rgba(244, 232, 255, __A__)', 'rgba(96, 18, 188, __A__)', alpha * 0.78]
                         : ['rgba(255, 245, 210, __A__)', 'rgba(255, 92, 20, __A__)', alpha * 0.7];
                     const glowMid = isGargoyleExplosion
-                        ? ['rgba(250, 242, 255, __A__)', 'rgba(170, 92, 255, __A__)', flashAlpha]
+                        ? ['rgba(252, 244, 255, __A__)', 'rgba(186, 88, 255, __A__)', flashAlpha * 1.04]
                         : ['rgba(255, 255, 240, __A__)', 'rgba(255, 186, 70, __A__)', flashAlpha];
                     const glowCore = isGargoyleExplosion
-                        ? ['rgba(255, 249, 255, __A__)', 'rgba(216, 175, 255, __A__)', flashAlpha * 1.15]
+                        ? ['rgba(255, 248, 255, __A__)', 'rgba(222, 166, 255, __A__)', flashAlpha * 1.22]
                         : ['rgba(255, 255, 250, __A__)', 'rgba(255, 228, 145, __A__)', flashAlpha * 1.15];
 
                     drawFireballGlow(explosion.x, explosion.y, smokeRadius * 1.5, glowOuter[0], glowOuter[1], glowOuter[2]);
@@ -17654,6 +18541,7 @@
                     drawBurnMarks(nowMs, visibleBounds);
                     drawChargingFireballs(renderServerTimeMs, visibleBounds);
                     drawSouls(nowMs, effectVisibleBounds);
+                    drawChests(nowMs, effectVisibleBounds);
 
                     // Debug mode: Show collision boxes and platforms
                     if (debugMode) {
@@ -17967,6 +18855,8 @@
                         }
                     }
                 }
+
+                drawChestInteractionPrompt(nowMs, effectVisibleBounds);
 
                 // Draw fairies
                 if (fairies && fairies.length > 0) {
@@ -18297,6 +19187,7 @@
                 // --- END CHAT MESSAGES ---
 
                 ctx.restore();
+                drawChestDirectionAlerts(ctx, canvas, nowMs);
                 drawSpecialBeamScreenOverlay(nowMs);
 
                 if (shouldUseLowQualityPresentation()) {

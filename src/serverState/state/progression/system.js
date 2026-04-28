@@ -11,7 +11,7 @@ const CARD_RARITY_META = {
 };
 
 const BASE_FIREBALL_CAST_DURATION = 0.2;
-const EXTRA_FIREBALL_CAST_DURATION_PER_PROJECTILE = 0.92;
+const EXTRA_FIREBALL_CAST_DURATION_PER_PROJECTILE = 0.4;
 const MIN_ATTACK_DURATION = 0.2;
 
 const SOUL_TIER_RULES = Object.freeze([
@@ -858,6 +858,39 @@ function clampPlayerHealthToMax(player, healDelta = 0) {
   return maxHealth;
 }
 
+function applyCardRewardToPlayer(player, card) {
+  const progression = ensurePlayerProgression(player);
+  const family = UPGRADE_CATALOG.families.find((entry) => entry.family === card.family);
+  const currentRank = Math.max(0, progression.upgradeLevels[card.family] || 0);
+  const targetTier = Math.max(currentRank + 1, Math.round(Number(card.tier) || (currentRank + 1)));
+  const cardsToApply = family
+    ? family.cards.slice(currentRank, targetTier)
+    : [card];
+  const previousMaxHealth = progression.runStats.maxHealth;
+
+  for (const nextCard of cardsToApply) {
+    nextCard.applyStats(progression.runStats);
+    progression.selectedCards.push({
+      id: nextCard.id,
+      title: nextCard.title,
+      rarity: nextCard.rarity,
+      tier: nextCard.tier,
+    });
+  }
+
+  progression.runStats.damageReduction = clamp(progression.runStats.damageReduction, 0, 0.72);
+  progression.runStats.fireballCritChance = clamp(progression.runStats.fireballCritChance, 0, 0.85);
+  progression.runStats.attackDuration = Math.max(MIN_ATTACK_DURATION, progression.runStats.attackDuration);
+  progression.runStats.fireballProjectileCount = Math.max(1, Math.round(progression.runStats.fireballProjectileCount));
+  progression.runStats.regainPerSecond = Math.max(0, progression.runStats.regainPerSecond);
+  markRunStatsDirty(progression);
+  progression.upgradeLevels[card.family] = Math.max(currentRank, targetTier);
+
+  const newMaxHealth = Math.max(1, Math.round(progression.runStats.maxHealth));
+  const healDelta = newMaxHealth > previousMaxHealth ? newMaxHealth - previousMaxHealth : 0;
+  clampPlayerHealthToMax(player, healDelta);
+}
+
 function applyUpgradeSelection(player, cardId) {
   const progression = ensurePlayerProgression(player);
   if (!Array.isArray(progression.pendingChoices) || progression.pendingChoices.length === 0) {
@@ -874,34 +907,64 @@ function applyUpgradeSelection(player, cardId) {
     return { ok: false, reason: 'Card missing' };
   }
 
-  const previousMaxHealth = progression.runStats.maxHealth;
-  card.applyStats(progression.runStats);
-  progression.runStats.damageReduction = clamp(progression.runStats.damageReduction, 0, 0.72);
-  progression.runStats.fireballCritChance = clamp(progression.runStats.fireballCritChance, 0, 0.85);
-  progression.runStats.attackDuration = Math.max(MIN_ATTACK_DURATION, progression.runStats.attackDuration);
-  progression.runStats.fireballProjectileCount = Math.max(1, Math.round(progression.runStats.fireballProjectileCount));
-  progression.runStats.regainPerSecond = Math.max(0, progression.runStats.regainPerSecond);
-  markRunStatsDirty(progression);
-  progression.upgradeLevels[card.family] = (progression.upgradeLevels[card.family] || 0) + 1;
-  progression.selectedCards.push({
-    id: card.id,
-    title: card.title,
-    rarity: card.rarity,
-    tier: card.tier,
-  });
-
+  applyCardRewardToPlayer(player, card);
   progression.pendingChoices = null;
   progression.pendingLevelUps = Math.max(0, progression.pendingLevelUps - 1);
-
-  const newMaxHealth = Math.max(1, Math.round(progression.runStats.maxHealth));
-  const healDelta = newMaxHealth > previousMaxHealth ? newMaxHealth - previousMaxHealth : 0;
-  clampPlayerHealthToMax(player, healDelta);
   maybeQueueLevelUpChoices(player);
 
   return {
     ok: true,
     card: serializeCard(card),
   };
+}
+
+function awardChestCard(player, options = {}) {
+  const progression = ensurePlayerProgression(player);
+  const allowedRarities = Array.isArray(options.allowedRarities) && options.allowedRarities.length > 0
+    ? new Set(options.allowedRarities.map((rarity) => String(rarity).trim().toLowerCase()))
+    : new Set(CARD_RARITY_ORDER);
+  const rarityWeightMultipliers = options.rarityWeightMultipliers && typeof options.rarityWeightMultipliers === 'object'
+    ? options.rarityWeightMultipliers
+    : null;
+  const levelBoost = Math.max(0, Math.round(Number(options.levelBoost) || 0));
+  const effectiveLevel = progression.level + levelBoost;
+  const pool = [];
+
+  for (const family of UPGRADE_CATALOG.families) {
+    if (typeof family.isAvailable === 'function' && !family.isAvailable(player, progression)) {
+      continue;
+    }
+
+    const currentRank = Math.max(0, progression.upgradeLevels[family.family] || 0);
+    for (const card of family.cards.slice(currentRank)) {
+      if (!card || !allowedRarities.has(card.rarity)) {
+        continue;
+      }
+      if (effectiveLevel < card.minLevel) {
+        continue;
+      }
+
+      const rarityWeightMultiplier = rarityWeightMultipliers && Number.isFinite(Number(rarityWeightMultipliers[card.rarity]))
+        ? Math.max(0, Number(rarityWeightMultipliers[card.rarity]))
+        : 1;
+      pool.push({
+        ...card,
+        rollWeight: card.weight
+          * (1 + CARD_RARITY_ORDER.indexOf(card.rarity) * 0.22)
+          * levelWeightBonus(effectiveLevel, card.rarity)
+          * rarityWeightMultiplier,
+      });
+    }
+  }
+
+  const [selectedCard] = pickWeightedCards(pool, 1);
+  if (!selectedCard) {
+    return null;
+  }
+
+  applyCardRewardToPlayer(player, selectedCard);
+  maybeQueueLevelUpChoices(player);
+  return serializeCard(selectedCard);
 }
 
 function getPlayerProgressionPayload(player) {
@@ -953,6 +1016,7 @@ module.exports = {
   CARD_RARITY_META,
   UPGRADE_CATALOG,
   applyUpgradeSelection,
+  awardChestCard,
   clampPlayerHealthToMax,
   collectAchievementReward,
   consumeAggroUnlockNotification,

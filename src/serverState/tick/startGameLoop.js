@@ -31,6 +31,7 @@ const {
   updateEnemies,
 } = require('../enemies/runtime');
 const { updateFairies } = require('../state/fairies/fairySystem');
+const { serializeChestsForState, updateChests } = require('../state/chests/chestSystem');
 const {
   dropSoulsForPlayerDeath,
   serializeSoulsForState,
@@ -278,6 +279,7 @@ function startGameLoop(input) {
       updateSpecialBeams({ state: input.state, dt, io: input.io });
       syncEnemyDirector(input.state, input.io);
       updateFairies({ fairies: input.state.fairies, dt });
+      updateChests({ state: input.state, io: input.io });
       updateSouls({ state: input.state, dt, io: input.io });
       updateFireballs({ state: input.state, dt, io: input.io });
       updateExplosions({ state: input.state, io: input.io });
@@ -375,12 +377,14 @@ function broadcastState(input) {
       }))
     : undefined;
   const soulsPayload = serializeSoulsForState(input.state);
+  const chestsPayload = serializeChestsForState(input.state);
   const basePayload = {
     ts,
     seq: input.state.stateSeq,
     players: playersPayload,
     fairies: fairiesPayload,
     souls: soulsPayload,
+    chests: chestsPayload,
     world_sleeping: Boolean(input.worldSleeping),
   };
 

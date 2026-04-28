@@ -10,6 +10,7 @@ const {
 const { loadEnemyCatalog } = require('../../enemies/catalog');
 const { initializeFairies } = require('./fairies/fairySystem');
 const { ensureSoulState } = require('./souls/soulSystem');
+const { ensureChestState } = require('./chests/chestSystem');
 const { resetEnemiesForState } = require('../enemies/runtime');
 const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
 const { buildPlatformsFromMap } = require('./platforms/buildPlatformsFromMap');
@@ -98,9 +99,13 @@ function createInitialState(input) {
     groups: new Map(),
     pendingGroupInvites: new Map(),
     activeHealings: new Map(),
+    chests: new Map(),
+    nextChestId: 1,
+    nextChestSpawnAtMs: Date.now() + 30_000,
   };
 
   ensureSoulState(state);
+  ensureChestState(state);
   resetEnemiesForState({ state });
   return state;
 }

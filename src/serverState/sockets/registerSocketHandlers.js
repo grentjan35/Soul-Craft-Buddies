@@ -14,6 +14,11 @@ const { dropSoulsForPlayerDeath, serializeSoulsForState } = require('../state/so
 const { resolveCharacterSelection } = require('./characters/loadCharacters');
 const { despawnEnemiesSpawnedForPlayer, resetEnemiesForState } = require('../enemies/runtime');
 const {
+  clearChestInteractionForPlayer,
+  handleChestInteractRequest,
+  resetChestStateForMap,
+} = require('../state/chests/chestSystem');
+const {
   applyUpgradeSelection,
   clampPlayerHealthToMax,
   collectAchievementReward,
@@ -302,6 +307,24 @@ function registerSocketHandlers(input) {
     if (isPlayerDrafting(player)) return;
     if ((player.selected_inventory_slot || INVENTORY_SLOT_FIREBALL) !== INVENTORY_SLOT_LAZER) return;
     fireLazerAttack(player, data);
+  });
+
+  socket.on('chest_interact', (data) => {
+    const player = state.players.get(socket.id);
+    if (!player || !player.is_ready) return;
+    if (isPlayerDrafting(player)) return;
+
+    const chestId = String(data?.chestId ?? '').trim();
+    if (!chestId) {
+      return;
+    }
+
+    handleChestInteractRequest({
+      state,
+      io,
+      socketId: socket.id,
+      chestId,
+    });
   });
 
   socket.on('select_upgrade', (data) => {
@@ -779,6 +802,7 @@ function handleDisconnect(input) {
   };
 
   dropSoulsForPlayerDeath(input.state, input.io, player);
+  clearChestInteractionForPlayer(input.state, input.socket.id);
   despawnEnemiesSpawnedForPlayer(input.state, input.socket.id);
   input.state.deadBodies.set(input.socket.id, deathData);
   input.io.emit('player_dying', deathData);
@@ -893,6 +917,7 @@ function handleLoadMap(input) {
   input.state.enemyDefinitions = loadEnemyCatalog({ staticDir: input.state.config.staticDir });
   input.state.enemySpawns = [];
   resetEnemiesForState({ state: input.state });
+  resetChestStateForMap(input.state);
 
   const player = input.state.players.get(input.socket.id);
   if (player) {
