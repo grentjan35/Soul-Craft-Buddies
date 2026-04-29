@@ -34,6 +34,18 @@ function getEnemyAssetPath(staticDir, enemyType, assetName) {
   return { assetPath: pngPath, ext: 'png' };
 }
 
+/**
+ * Get general asset path with WebP-first fallback to PNG.
+ */
+function getGeneralAssetPath(staticDir, folder, assetName) {
+  const webpPath = path.join(staticDir, 'assets', 'general', folder, `${assetName}.webp`);
+  if (fs.existsSync(webpPath)) {
+    return { assetPath: webpPath, ext: 'webp' };
+  }
+  const pngPath = path.join(staticDir, 'assets', 'general', folder, `${assetName}.png`);
+  return { assetPath: pngPath, ext: 'png' };
+}
+
 function listAvailableCharacterCards(staticDir) {
   const characterDir = path.join(staticDir, 'assets', 'characters');
   const cardsDir = path.join(staticDir, 'assets', 'cards');
@@ -1382,6 +1394,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log('fallback');
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1426,6 +1439,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log('fallback');
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1548,6 +1562,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log('fallback');
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1586,20 +1601,21 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const assetPath = path.join(deps.staticDir, 'assets', 'general', folder, `${assetName}.png`);
+    const { assetPath, ext } = getGeneralAssetPath(deps.staticDir, folder, assetName);
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('general', folder, `${assetName}.png`), `${folder}_${assetName}.png`, { protectedResponse: true })) {
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('general', folder, `${assetName}.${ext}`), `${folder}_${assetName}.${ext}`, { protectedResponse: true })) {
       return;
     }
 
+    console.log('fallback');
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
-      downloadName: `${folder}_${assetName}.png`,
+      downloadName: `${folder}_${assetName}.${ext}`,
     });
   });
 
