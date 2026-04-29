@@ -8,6 +8,32 @@ const { resolveUnderBaseDir } = require('../../utils/pathSafety');
 const { signToken, verifyToken } = require('./tokenService');
 const { loadManifest } = require('./manifestService');
 
+/**
+ * Get character asset path with WebP-first fallback to PNG.
+ * Tries .webp first, falls back to .png for backward compatibility.
+ * Returns the path and the extension that was found.
+ */
+function getCharacterAssetPath(staticDir, character, asset) {
+  const webpPath = path.join(staticDir, 'assets', 'characters', character, `${asset}.webp`);
+  if (fs.existsSync(webpPath)) {
+    return { assetPath: webpPath, ext: 'webp' };
+  }
+  const pngPath = path.join(staticDir, 'assets', 'characters', character, `${asset}.png`);
+  return { assetPath: pngPath, ext: 'png' };
+}
+
+/**
+ * Get enemy asset path with WebP-first fallback to PNG.
+ */
+function getEnemyAssetPath(staticDir, enemyType, assetName) {
+  const webpPath = path.join(staticDir, 'assets', 'enemies', enemyType, `${assetName}.webp`);
+  if (fs.existsSync(webpPath)) {
+    return { assetPath: webpPath, ext: 'webp' };
+  }
+  const pngPath = path.join(staticDir, 'assets', 'enemies', enemyType, `${assetName}.png`);
+  return { assetPath: pngPath, ext: 'png' };
+}
+
 function listAvailableCharacterCards(staticDir) {
   const characterDir = path.join(staticDir, 'assets', 'characters');
   const cardsDir = path.join(staticDir, 'assets', 'cards');
@@ -1346,20 +1372,20 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const assetPath = path.join(deps.staticDir, 'assets', 'characters', character, `${asset}.png`);
+    const { assetPath, ext } = getCharacterAssetPath(deps.staticDir, character, asset);
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('characters', character, `${asset}.png`), `${character}_${asset}.png`, { protectedResponse: true })) {
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('characters', character, `${asset}.${ext}`), `${character}_${asset}.${ext}`, { protectedResponse: true })) {
       return;
     }
 
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
-      downloadName: `${character}_${asset}.png`,
+      downloadName: `${character}_${asset}.${ext}`,
     });
   });
 
@@ -1389,21 +1415,21 @@ function createAssetsRouter(deps) {
   router.get('/api/character_preview_asset/:character/:assetName', async (req, res) => {
     const character = String(req.params.character ?? '').trim().toLowerCase();
     const assetName = String(req.params.assetName ?? '').trim().toLowerCase();
-    const assetPath = path.join(deps.staticDir, 'assets', 'characters', character, `${assetName}.png`);
+    const { assetPath, ext } = getCharacterAssetPath(deps.staticDir, character, assetName);
 
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('characters', character, `${assetName}.png`), `${character}_${assetName}.png`, { protectedResponse: true })) {
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('characters', character, `${assetName}.${ext}`), `${character}_${assetName}.${ext}`, { protectedResponse: true })) {
       return;
     }
 
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
-      downloadName: `${character}_${assetName}.png`,
+      downloadName: `${character}_${assetName}.${ext}`,
     });
   });
 
@@ -1511,21 +1537,21 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const assetPath = path.join(deps.staticDir, 'assets', 'enemies', enemyType, `${assetName}.png`);
+    const { assetPath, ext } = getEnemyAssetPath(deps.staticDir, enemyType, assetName);
 
     if (!fs.existsSync(assetPath)) {
       res.status(404).send('<h1>Not Found</h1>');
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('enemies', enemyType, `${assetName}.png`), `${enemyType}_${assetName}.png`, { protectedResponse: true })) {
+    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('enemies', enemyType, `${assetName}.${ext}`), `${enemyType}_${assetName}.${ext}`, { protectedResponse: true })) {
       return;
     }
 
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
-      downloadName: `${enemyType}_${assetName}.png`,
+      downloadName: `${enemyType}_${assetName}.${ext}`,
     });
   });
 
