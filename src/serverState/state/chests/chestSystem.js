@@ -5,6 +5,10 @@ const {
   recordProgressionMetric,
 } = require('../progression/system');
 const { emitProgressionNotification } = require('../progression/notifications');
+const { PLAYER_MAX_HEALTH } = require('../constants');
+
+// Souls from chests heal the same amount as collected souls
+const SOUL_HEAL_PER_VALUE = 12;
 
 const CHEST_SPAWN_INTERVAL_MS = 30_000;
 const CHEST_ALERT_DURATION_MS = 10_000;
@@ -409,6 +413,13 @@ function openChest(input) {
 
   const previousSoulCount = Math.max(0, Math.round(Number(opener.soul_count) || 0));
   opener.soul_count = previousSoulCount + rewardSouls;
+
+  // Heal the opener based on souls gained from chest (same as collecting dropped souls)
+  const maxHealth = Math.max(1, Number(opener.max_health) || PLAYER_MAX_HEALTH);
+  if (Number.isFinite(opener.health)) {
+    opener.health = Math.min(maxHealth, opener.health + rewardSouls * SOUL_HEAL_PER_VALUE);
+  }
+
   const unlockedAchievements = recordProgressionMetric(opener, 'soulsCollected', rewardSouls);
   const cardReward = Math.random() <= rarityConfig.cardChance
     ? awardChestCard(opener, {

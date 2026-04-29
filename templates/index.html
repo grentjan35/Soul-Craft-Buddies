@@ -679,7 +679,7 @@
             position: fixed;
             left: var(--progression-feed-left);
             top: var(--progression-feed-top);
-            z-index: 230;
+            z-index: 210;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
@@ -693,7 +693,7 @@
             position: fixed;
             right: 18px;
             top: 84px;
-            z-index: 230;
+            z-index: 210;
             min-width: 138px;
             display: none;
             align-items: center;
@@ -745,7 +745,7 @@
             position: fixed;
             right: 18px;
             top: 140px;
-            z-index: 230;
+            z-index: 210;
             width: min(360px, calc(100vw - 28px));
             max-height: min(60vh, 520px);
             display: flex;
@@ -5619,17 +5619,27 @@
 
         function handleCanvasTouchStart(e) {
             e.preventDefault();
+            // Use changedTouches to handle new touches on canvas, even if other touches are active elsewhere (joystick)
+            const newTouches = e.changedTouches;
+            if (newTouches.length === 0 || chatActive || !allAssetsLoaded) {
+                return;
+            }
+
+            // Handle pinch zoom when exactly 2 touches are active (both on canvas)
             if (e.touches.length === 2) {
                 beginPinchZoom('game', e.touches);
                 suppressNextCanvasTap = true;
-            } else if (e.touches.length === 1 && !chatActive && allAssetsLoaded && !joystickActive) {
-                const touch = e.touches[0];
+                return;
+            }
+
+            // Process each new touch that started on the canvas
+            for (let i = 0; i < newTouches.length; i += 1) {
+                const touch = newTouches[i];
 
                 // Check if player tapped on a chest first (mobile chest interaction)
                 const tappedChest = getChestAtScreenPosition(touch.clientX, touch.clientY);
                 if (tappedChest?.id) {
                     socket.emit('chest_interact', { chestId: tappedChest.id });
-                    // Show feedback that tap was registered
                     suppressNextCanvasTap = true;
                     return;
                 }

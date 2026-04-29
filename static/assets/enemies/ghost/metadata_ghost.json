@@ -1,0 +1,90 @@
+{
+  "id": "ghost",
+  "type": "ghost",
+  "displayName": "Ghost",
+  "size": 0.20,
+  "scale": 0.20,
+  "frameSize": {
+    "w": 533,
+    "h": 555
+  },
+  "hitbox": {
+    "x": 209,
+    "y": 101,
+    "w": 205,
+    "h": 320
+  },
+  "normalized": {
+    "x": 0.39212,
+    "y": 0.181982,
+    "w": 0.384615,
+    "h": 0.576577
+  },
+  "stats": {
+    "maxHealth": 1000,
+    "contactDamage": 100,
+    "respawnDelayMs": 7000,
+    "minSoulsRequired": 990
+  },
+  "behavior": {
+    "movementMode": "flying",
+    "attackMode": "melee",
+    "canPassThroughWalls": true,
+    "stealthy": true,
+    "isHiddenUntilAttack": true,
+    "detectionRadius": 1800,
+    "leashRadius": 2500,
+    "wanderRadius": 400,
+    "moveSpeed": 350,
+    "verticalMoveSpeed": 220,
+    "telegraphDurationMs": 600,
+    "lungeDurationMs": 1200,
+    "attackCooldownMs": 1800,
+    "attackRange": 480,
+    "lungeSpeed": 950,
+    "lungeLift": 0,
+    "jumpForce": 720,
+    "stuckJumpDelayMs": 360,
+    "doubleJumpDelayMs": 760,
+    "despawnAfterDeathMs": 1500,
+    "hoverHeight": 220,
+    "hoverVariance": 150,
+    "hoverBobAmplitude": 45,
+    "hoverBobSpeed": 2.2,
+    "projectileSpeed": 0,
+    "projectileDamage": 0,
+    "projectileScale": 1,
+    "projectileRadiusScale": 1,
+    "projectileYOffset": 0,
+    "projectileOffsetX": 0,
+    "swarmLikelihood": 0.8,
+    "preferredGroupSize": 4
+  },
+  "animations": {
+    "idle": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "run": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "fly"
+    },
+    "attack": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "attack"
+    },
+    "death": {
+      "frames": 9,
+      "grid": "3x3",
+      "asset": "death"
+    },
+    "prepare": {
+      "frames": 4,
+      "grid": "3x3",
+      "asset": "attack"
+    }
+  }
+}

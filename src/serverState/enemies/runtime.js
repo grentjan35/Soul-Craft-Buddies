@@ -35,6 +35,8 @@ const SLIME_SPLAT_RADIUS = 30;
 const GARGOYLE_PERCH_OPACITY = 0.3;
 const GARGOYLE_ACTIVE_OPACITY = 1;
 const GARGOYLE_AMBUSH_TRIGGER_RADIUS = 42;
+const GHOST_PASSIVE_OPACITY = 0.3;
+const GHOST_ACTIVE_OPACITY = 1;
 const STRIKER_ASCEND_DURATION_SECONDS = 0.7;
 const STRIKER_SLAM_IMPACT_WINDOW_SECONDS = 0.18;
 const STRIKER_TOUCH_DAMAGE_COOLDOWN_SECONDS = 0.65;
@@ -80,6 +82,13 @@ const ENEMY_PRESSURE_ALERTS = Object.freeze({
     message: 'A striker has locked onto the fight nearby. Keep moving.',
     cooldownMs: 60000,
   },
+  ghost: {
+    type: 'danger',
+    title: 'Ghosts Are Manifesting',
+    caption: 'Threat Nearby',
+    message: 'Spectral entities are materializing nearby. Ghosts are closing in.',
+    cooldownMs: 55000,
+  },
 });
 
 function isFlyingEnemy(definition) {
@@ -118,6 +127,16 @@ function isStrikerEnemy(input) {
     return input === 'striker';
   }
   return input.type === 'striker' || input.id === 'striker';
+}
+
+function isGhostEnemy(input) {
+  if (!input) {
+    return false;
+  }
+  if (typeof input === 'string') {
+    return input === 'ghost';
+  }
+  return input.type === 'ghost' || input.id === 'ghost';
 }
 
 function usesProjectileAttackForEnemy(enemy, definition) {
@@ -285,6 +304,15 @@ function clampEnemyToBounds(state, definition, enemy) {
 }
 
 function resolveEnemyHorizontalCollisions(state, definition, enemy, prevX, nearbyPlatforms) {
+  const isGhostAttacking = isGhostEnemy(definition) && (
+    enemy.brain_state === 'prepare' ||
+    enemy.brain_state === 'lunge' ||
+    enemy.brain_state === 'recover'
+  );
+  if (isGhostAttacking) {
+    return;
+  }
+
   const prevHitbox = getEnemyHitboxForPosition(definition, prevX, enemy.y);
 
   for (const platform of nearbyPlatforms) {
@@ -317,6 +345,15 @@ function resolveEnemyHorizontalCollisions(state, definition, enemy, prevX, nearb
 }
 
 function resolveEnemyVerticalCollisions(state, definition, enemy, prevY, nearbyPlatforms) {
+  const isGhostAttacking = isGhostEnemy(definition) && (
+    enemy.brain_state === 'prepare' ||
+    enemy.brain_state === 'lunge' ||
+    enemy.brain_state === 'recover'
+  );
+  if (isGhostAttacking) {
+    return;
+  }
+
   const prevHitbox = getEnemyHitboxForPosition(definition, enemy.x, prevY);
 
   for (const platform of nearbyPlatforms) {
@@ -481,7 +518,9 @@ function getEnemyLevelForType(worldThreatLevel, enemyType) {
   }
 
   const typeBias = enemyType === 'striker'
-    ? 2
+    ? 4
+    : enemyType === 'ghost'
+      ? 5
     : enemyType === 'gargoyle'
       ? 1
       : enemyType === 'bat'
@@ -1599,7 +1638,7 @@ function buildEnemyInstance(spawn, definition) {
     gargoyle_mode: startsAsPerchedGargoyle ? 'perch' : (isGargoyleEnemy(definition) ? 'swoop' : null),
     gargoyle_mode_until: nowSec + 2.4 + Math.random() * 2.6,
     gargoyle_perch_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
-    render_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY,
+    render_opacity: startsAsPerchedGargoyle ? GARGOYLE_PERCH_OPACITY : (isGhostEnemy(definition) ? GHOST_PASSIVE_OPACITY : GARGOYLE_ACTIVE_OPACITY),
     stealth_broken: false,
     spawned_for_sid: typeof spawn.spawned_for_sid === 'string' ? spawn.spawned_for_sid : null,
     attack_repeat_next_at: 0,
@@ -1981,6 +2020,24 @@ function createProceduralEnemySpawns(state) {
       continue;
     }
 
+    const minSoulsRequired = definition.stats?.minSoulsRequired ?? 0;
+    if (minSoulsRequired > 0) {
+      let hasPlayerWithEnoughSouls = false;
+      for (const player of state.players.values()) {
+        if (!player || player.is_dying) {
+          continue;
+        }
+        const soulCount = Math.max(0, Math.round(Number(player.soul_count) || 0));
+        if (soulCount >= minSoulsRequired) {
+          hasPlayerWithEnoughSouls = true;
+          break;
+        }
+      }
+      if (!hasPlayerWithEnoughSouls) {
+        continue;
+      }
+    }
+
     const targetCount = getEnemyTargetCount(state, enemyType, worldThreatLevel);
     const enemyLevel = rollEnemySpawnLevel(worldThreatLevel, enemyType);
     if (targetCount <= 0 || enemyLevel <= 0) {
@@ -2062,6 +2119,24 @@ function syncEnemyDirector(state, io) {
     const desiredLevel = getEnemyLevelForType(worldThreatLevel, enemyType);
     if (!definition || targetCount <= 0 || desiredLevel <= 0) {
       continue;
+    }
+
+    const minSoulsRequired = definition.stats?.minSoulsRequired ?? 0;
+    if (minSoulsRequired > 0) {
+      let hasPlayerWithEnoughSouls = false;
+      for (const player of state.players.values()) {
+        if (!player || player.is_dying) {
+          continue;
+        }
+        const soulCount = Math.max(0, Math.round(Number(player.soul_count) || 0));
+        if (soulCount >= minSoulsRequired) {
+          hasPlayerWithEnoughSouls = true;
+          break;
+        }
+      }
+      if (!hasPlayerWithEnoughSouls) {
+        continue;
+      }
     }
 
     const existingCount = existingCountsByType.get(enemyType) || 0;
@@ -2239,7 +2314,12 @@ function beginLunge(enemy, targetPlayer, nowSec, definition) {
   enemy.vx = dirX * definition.behavior.lungeSpeed;
   enemy.jump_launch_vx = 0;
   enemy.knockback_vx = 0;
-  enemy.vy = -definition.behavior.lungeLift + Math.min(0, dirY) * 180;
+  if (isGhostEnemy(definition)) {
+    const lungeDuration = secondsFromMs(definition.behavior.lungeDurationMs);
+    enemy.vy = dirY * (distance / Math.max(0.1, lungeDuration)) * 0.9;
+  } else {
+    enemy.vy = -definition.behavior.lungeLift + Math.min(0, dirY) * 180;
+  }
   enemy.on_ground = false;
   enemy.lunge_until = nowSec + secondsFromMs(definition.behavior.lungeDurationMs);
   enemy.attack_cooldown_until = nowSec + secondsFromMs(
@@ -2318,6 +2398,14 @@ function updateGargoyleMode(state, enemy, definition, targetPlayer, nowSec) {
   enemy.render_opacity = !enemy.stealth_broken && enemy.gargoyle_mode === 'perch' && !isActivelyAttacking
     ? GARGOYLE_PERCH_OPACITY
     : GARGOYLE_ACTIVE_OPACITY;
+}
+
+function updateGhostOpacity(enemy, definition) {
+  if (!isGhostEnemy(definition)) {
+    return;
+  }
+
+  enemy.render_opacity = GHOST_PASSIVE_OPACITY;
 }
 
 function beginRecover(enemy, nowSec) {
@@ -2589,6 +2677,9 @@ function getFlyingEnemyTargetY(enemy, definition, targetPlayer, nowSec) {
   const bobOffset = Math.sin(nowSec * bobSpeed + stableEnemyPhase(enemy)) * bobAmplitude;
 
   if (targetPlayer) {
+    if (isGhostEnemy(definition)) {
+      return targetPlayer.y + bobOffset;
+    }
     const desiredBaseY = targetPlayer.y + (enemy.attack_altitude_bias ?? -definition.behavior.hoverHeight);
     const minY = targetPlayer.y - definition.behavior.hoverHeight - definition.behavior.hoverVariance;
     const maxY = targetPlayer.y + Math.min(52, definition.behavior.hoverVariance * 0.28);
@@ -3046,7 +3137,7 @@ function stageEnemyRespawn(enemy, definition, nowSec) {
   enemy.gargoyle_mode = isGargoyleEnemy(definition) ? (Math.random() < 0.55 ? 'perch' : 'swoop') : null;
   enemy.gargoyle_mode_until = nowSec + 2.4 + Math.random() * 2.6;
   enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
-  enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.render_opacity = isGhostEnemy(definition) ? GHOST_PASSIVE_OPACITY : (enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY);
   enemy.stealth_broken = false;
   enemy.attack_repeat_next_at = 0;
   enemy.environment_attack_cooldown_until = 0;
@@ -3225,7 +3316,7 @@ function respawnEnemy(state, enemy, definition) {
   enemy.gargoyle_mode = isGargoyleEnemy(definition) ? (Math.random() < 0.55 ? 'perch' : 'swoop') : null;
   enemy.gargoyle_mode_until = enemy.state_started_at + 2.4 + Math.random() * 2.6;
   enemy.gargoyle_perch_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
-  enemy.render_opacity = enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY;
+  enemy.render_opacity = isGhostEnemy(definition) ? GHOST_PASSIVE_OPACITY : (enemy.gargoyle_mode === 'perch' ? GARGOYLE_PERCH_OPACITY : GARGOYLE_ACTIVE_OPACITY);
   enemy.stealth_broken = false;
   enemy.attack_repeat_next_at = 0;
   enemy.environment_attack_cooldown_until = 0;
@@ -3260,6 +3351,7 @@ function updateAliveEnemy(input) {
   const targetPlayer = chooseTargetPlayer(state, enemy, definition, nowSec);
   enemy.target_sid = targetPlayer ? enemy.target_sid : null;
   updateGargoyleMode(state, enemy, definition, targetPlayer, nowSec);
+  updateGhostOpacity(enemy, definition);
   const flying = isFlyingEnemy(definition);
 
   let desiredVelocityX = 0;
@@ -3309,8 +3401,13 @@ function updateAliveEnemy(input) {
           desiredVelocityX = enemy.vx;
         }
       } else {
-        beginLunge(enemy, targetPlayer, nowSec, definition);
-        desiredVelocityX = enemy.vx;
+        if (isGhostEnemy(definition) && targetPlayer && !hasLineOfSightToPlayer(state, enemy, targetPlayer)) {
+          setBrainState(enemy, 'chase', nowSec);
+          enemy.attack_cooldown_until = nowSec + 0.5;
+        } else {
+          beginLunge(enemy, targetPlayer, nowSec, definition);
+          desiredVelocityX = enemy.vx;
+        }
       }
     }
   } else if (enemy.brain_state === 'lunge') {
