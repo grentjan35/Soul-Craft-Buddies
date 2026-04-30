@@ -14003,8 +14003,9 @@
                 achievementAudio.play().catch(() => {});
             }
             
-            // Play danger sound for danger notifications
-            if (data?.type === 'danger') {
+            // Play danger sound for danger notifications (but not for chests)
+            if (data?.type === 'danger' && !data?.title?.toLowerCase().includes('chest')) {
+                console.log('Playing danger.mp3 for:', data?.title || data?.message);
                 const dangerAudio = new Audio('/audio/danger.mp3');
                 dangerAudio.volume = 0.5;
                 dangerAudio.play().catch(() => {});
