@@ -1,3 +1,4 @@
+const http = require('http');
 const { Server } = require('socket.io');
 
 const { createGameServer } = require('../serverState/createGameServer');
@@ -20,6 +21,61 @@ function createSocketServer(input) {
   });
 
   createGameServer({ io, config: input.config });
+
+  // Keep-alive mechanism: request tiny image every 14 minutes if there are active connections
+  // This prevents Render.com from spinning down during active WebSocket gameplay
+  const KEEP_ALIVE_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+  let keepAliveTimer = null;
+
+  const startKeepAlive = () => {
+    if (keepAliveTimer) return;
+
+    keepAliveTimer = setInterval(() => {
+      const activeConnections = io.sockets.sockets.size;
+      if (activeConnections > 0) {
+        // Make minimal HTTP request to keep-alive endpoint (serves local asset, no CDN)
+        const port = input.httpServer.address().port;
+        const options = {
+          hostname: 'localhost',
+          port: port,
+          path: '/keep-alive',
+          method: 'GET',
+        };
+
+        const req = http.request(options, (res) => {
+          // Consume response to avoid memory leak
+          res.resume();
+        });
+
+        req.on('error', (err) => {
+          // Silently ignore errors - keep-alive is best-effort
+        });
+
+        req.end();
+      }
+    }, KEEP_ALIVE_INTERVAL_MS);
+  };
+
+  const stopKeepAlive = () => {
+    if (keepAliveTimer) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+  };
+
+  // Start keep-alive when first client connects, stop when last disconnects
+  io.on('connection', (socket) => {
+    if (io.sockets.sockets.size === 1) {
+      startKeepAlive();
+    }
+
+    socket.on('disconnect', () => {
+      if (io.sockets.sockets.size === 0) {
+        stopKeepAlive();
+      }
+    });
+  });
+
   return io;
 }
 

@@ -441,6 +441,7 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
 
   try {
     assetRecord = await fetchExternalAssetBuffer(externalUrl);
+    console.log(`CDN: ${relativeAssetPath}`);
   } catch {
     // Try WebP/PNG fallback
     const parsedPath = path.parse(relativeAssetPath);
@@ -452,6 +453,7 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
       try {
         assetRecord = await fetchExternalAssetBuffer(fallbackUrl);
         triedFallback = true;
+        console.log(`CDN (fallback): ${fallbackPath}`);
       } catch {
         return false;
       }
@@ -562,6 +564,7 @@ function createAssetsRouter(deps) {
   const publicIconAssetFiles = buildFileLookup(deps.staticDir, path.join('assets', 'icons'), publicIconAssets);
   const allowedGeneralAssetFolders = new Set(['chests']);
   const guiAlphabetLookup = new Map();
+  const keepAliveAssetPath = path.join(deps.staticDir, 'assets', 'general', 'boi.webp');
 
   try {
     const alphabetDir = path.join(deps.staticDir, 'assets', 'GUI', 'alphabet');
@@ -656,6 +659,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=menu/${soundName}`);
     sendPublicCachedFile(res, publicMenuSoundFiles, soundName);
   });
 
@@ -670,6 +674,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=footsteps/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', soundName);
     try {
       if (!fs.statSync(soundPath).isFile()) {
@@ -697,6 +702,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=spider_footsteps/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'spider footsteps', soundName);
     try {
       if (!fs.statSync(soundPath).isFile()) {
@@ -724,6 +730,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=slime_footsteps/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'slime footsteps', soundName);
     try {
       if (!fs.statSync(soundPath).isFile()) {
@@ -751,6 +758,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=gameplay/${soundName}`);
     sendPublicCachedFile(res, publicGameplaySoundFiles, soundName);
   });
 
@@ -765,6 +773,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=fireball/${soundName}`);
     sendPublicCachedFile(res, publicFireballSoundFiles, soundName);
   });
 
@@ -779,6 +788,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=hurt/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'hurt', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
@@ -801,6 +811,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=spider/${soundName}`);
     sendPublicCachedFile(res, publicSpiderSoundFiles, soundName);
   });
 
@@ -815,6 +826,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=bat/${soundName}`);
     sendPublicCachedFile(res, publicBatSoundFiles, soundName);
   });
 
@@ -829,6 +841,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=slime/${soundName}`);
     sendPublicCachedFile(res, publicSlimeSoundFiles, soundName);
   });
 
@@ -843,6 +856,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=gargoyle/${soundName}`);
     sendPublicCachedFile(res, publicGargoyleSoundFiles, soundName);
   });
 
@@ -857,6 +871,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: sound=striker/${soundName}`);
     sendPublicCachedFile(res, publicStrikerSoundFiles, soundName);
   });
 
@@ -871,6 +886,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: gui=${assetName}`);
     sendPublicCachedFile(res, publicGuiAssetFiles, assetName);
   });
 
@@ -885,7 +901,21 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    console.log(`LOCAL: icon=${assetName}`);
     sendPublicCachedFile(res, publicIconAssetFiles, assetName);
+  });
+
+  // Keep-alive endpoint: serves tiny local asset without CDN fallback
+  // Used by internal keep-alive mechanism to prevent Render.com spin-down during gameplay
+  router.get('/keep-alive', (req, res) => {
+    if (!fs.existsSync(keepAliveAssetPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type('.webp');
+    res.sendFile(keepAliveAssetPath);
   });
 
   router.post('/api/request_asset', (req, res) => {
@@ -1411,7 +1441,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`fallback: character=${character}, asset=${asset}.${ext}`);
+    console.log(`LOCAL: character=${character}, asset=${asset}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1456,7 +1486,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`fallback: character=${character}, asset=${assetName}.${ext}`);
+    console.log(`LOCAL: character=${character}, asset=${assetName}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1579,7 +1609,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`fallback: enemy=${enemyType}, asset=${assetName}.${ext}`);
+    console.log(`LOCAL: enemy=${enemyType}, asset=${assetName}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1628,7 +1658,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`fallback: folder=${folder}, asset=${assetName}.${ext}`);
+    console.log(`LOCAL: folder=${folder}, asset=${assetName}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,

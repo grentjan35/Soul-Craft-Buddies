@@ -962,8 +962,9 @@ function awardChestCard(player, options = {}) {
     return null;
   }
 
-  applyCardRewardToPlayer(player, selectedCard);
-  maybeQueueLevelUpChoices(player);
+  // Add chest card to pendingChoices instead of auto-applying
+  // This allows the card selection UI to show the card for player to click
+  progression.pendingChoices = [serializeCard(selectedCard)];
   return serializeCard(selectedCard);
 }
 

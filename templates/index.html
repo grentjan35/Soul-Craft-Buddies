@@ -1038,6 +1038,11 @@
             gap: 18px;
             width: 100%;
         }
+        .upgrade-draft-cards.is-single-card {
+            grid-template-columns: 1fr;
+            max-width: 440px;
+            margin: 0 auto;
+        }
         .upgrade-card {
             position: relative;
             min-height: 370px;
@@ -11916,6 +11921,12 @@
                 upgradeDraftShownAt = Date.now();
                 upgradeDraftInteractionUnlockAt = 0;
                 upgradeDraftPressedCardId = '';
+            }
+            // Center single card (from chest) in the UI
+            if (choices.length === 1) {
+                upgradeDraftCardsElement.classList.add('is-single-card');
+            } else {
+                upgradeDraftCardsElement.classList.remove('is-single-card');
             }
             setCustomAlphabetText(upgradeDraftSubtitleElement, `Level ${Math.max(1, Number(localProgressionState.level) || 1)} Soul${localProgressionState.pendingLevelUps > 1 ? ` - ${localProgressionState.pendingLevelUps} picks waiting` : ''}`);
             const cardsLocked = Date.now() < upgradeDraftInteractionUnlockAt;
