@@ -437,10 +437,27 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
   }
 
   let assetRecord;
+  let triedFallback = false;
+
   try {
     assetRecord = await fetchExternalAssetBuffer(externalUrl);
   } catch {
-    return false;
+    // Try WebP/PNG fallback
+    const parsedPath = path.parse(relativeAssetPath);
+    const fallbackExt = parsedPath.ext.toLowerCase() === '.png' ? '.webp' : '.png';
+    const fallbackPath = path.join(parsedPath.dir, parsedPath.name + fallbackExt);
+    const fallbackUrl = buildExternalAssetUrl(baseUrl, fallbackPath);
+
+    if (fallbackUrl) {
+      try {
+        assetRecord = await fetchExternalAssetBuffer(fallbackUrl);
+        triedFallback = true;
+      } catch {
+        return false;
+      }
+    } else {
+      return false;
+    }
   }
 
   const buffer = assetRecord.buffer;
@@ -1394,7 +1411,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log('fallback');
+    console.log(`fallback: character=${character}, asset=${asset}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1439,7 +1456,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log('fallback');
+    console.log(`fallback: character=${character}, asset=${assetName}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1562,7 +1579,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log('fallback');
+    console.log(`fallback: enemy=${enemyType}, asset=${assetName}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
@@ -1611,7 +1628,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log('fallback');
+    console.log(`fallback: folder=${folder}, asset=${assetName}.${ext}`);
     sendProtectedBinaryFile({
       res,
       fullPath: assetPath,
