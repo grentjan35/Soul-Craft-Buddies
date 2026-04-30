@@ -1,6 +1,7 @@
 const {
   awardChestCard,
   gainPlayerXp,
+  getPlayerRunStats,
   isPlayerDrafting,
   recordProgressionMetric,
 } = require('../progression/system');
@@ -415,9 +416,11 @@ function openChest(input) {
   opener.soul_count = previousSoulCount + rewardSouls;
 
   // Heal the opener based on souls gained from chest (same as collecting dropped souls)
-  const maxHealth = Math.max(1, Number(opener.max_health) || PLAYER_MAX_HEALTH);
+  const playerStats = getPlayerRunStats(opener);
+  const healMultiplier = playerStats ? Math.max(0.5, Number(playerStats.soulHealMultiplier) || 1) : 1;
+  const maxHealth = Math.max(1, Number(playerStats?.maxHealth) || PLAYER_MAX_HEALTH);
   if (Number.isFinite(opener.health)) {
-    opener.health = Math.min(maxHealth, opener.health + rewardSouls * SOUL_HEAL_PER_VALUE);
+    opener.health = Math.min(maxHealth, opener.health + rewardSouls * SOUL_HEAL_PER_VALUE * healMultiplier);
   }
 
   const unlockedAchievements = recordProgressionMetric(opener, 'soulsCollected', rewardSouls);

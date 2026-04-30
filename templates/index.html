@@ -12822,6 +12822,11 @@
                 id: data.id,
             };
             announceChestArrival(data, { force: true });
+            
+            // Play chest notification sound
+            const chestNotificationAudio = new Audio('/audio/chest notification.mp3');
+            chestNotificationAudio.volume = 0.5;
+            chestNotificationAudio.play().catch(() => {});
         });
 
         socket.on('chest_opened', (data) => {
@@ -12842,6 +12847,11 @@
                 920,
                 data?.rarity === 'mythic' ? 0.72 : (data?.rarity === 'rare' ? 0.5 : 0.36)
             );
+            
+            // Play chest open sound
+            const chestOpenAudio = new Audio('/audio/chest open.mp3');
+            chestOpenAudio.volume = 0.6;
+            chestOpenAudio.play().catch(() => {});
         });
 
         // Handle player died event from server
@@ -12860,6 +12870,13 @@
                 window.deathMessages = [];
             }
             window.deathMessages.push(deathMessage);
+            
+            // Play death sound if it's the current player
+            if (sid === socket.id) {
+                const deathAudio = new Audio('/audio/you died.mp3');
+                deathAudio.volume = 0.6;
+                deathAudio.play().catch(() => {});
+            }
         });
 
         // Handle player dying event from server
@@ -13978,6 +13995,20 @@
 
         socket.on('progression_notification', (data) => {
             pushProgressionToast(data);
+            
+            // Play achievement unlocked sound for achievements and chest rewards
+            if (data?.type === 'achievement' || data?.type === 'chest') {
+                const achievementAudio = new Audio('/audio/achievement unlocked.MP3');
+                achievementAudio.volume = 0.5;
+                achievementAudio.play().catch(() => {});
+            }
+            
+            // Play danger sound for danger notifications
+            if (data?.type === 'danger') {
+                const dangerAudio = new Audio('/audio/danger.mp3');
+                dangerAudio.volume = 0.5;
+                dangerAudio.play().catch(() => {});
+            }
         });
 
         socket.on('slime_splatter', (data) => {
