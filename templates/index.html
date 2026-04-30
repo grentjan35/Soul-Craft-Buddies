@@ -12873,7 +12873,7 @@
             
             // Play death sound if it's the current player
             if (sid === socket.id) {
-                const deathAudio = new Audio('/audio/you died.mp3');
+                const deathAudio = new Audio('/audio/you_died.mp3');
                 deathAudio.volume = 0.6;
                 deathAudio.play().catch(() => {});
             }

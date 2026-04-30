@@ -505,7 +505,7 @@ function createAssetsRouter(deps) {
   const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
   const publicSpiderFootstepPattern = /^footstep([2-4])?\.mp3$/;
   const publicSlimeFootstepPattern = /^footstep(\s\((2|3)\))?\.mp3$/;
-  const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3', 'soul_collected.mp3', 'achivement unlocked.MP3', 'chest open.mp3', 'you died.mp3', 'danger.mp3']);
+  const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3', 'soul_collected.mp3', 'achivement unlocked.MP3', 'chest open.mp3', 'you_died.mp3', 'danger.mp3']);
   const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
   const publicPlayerHurtPattern = /^hurt[1-5]?\.mp3$/;
   const publicSpiderSounds = new Set([
