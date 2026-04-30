@@ -12822,11 +12822,6 @@
                 id: data.id,
             };
             announceChestArrival(data, { force: true });
-            
-            // Play chest notification sound
-            const chestNotificationAudio = new Audio('/audio/chest notification.mp3');
-            chestNotificationAudio.volume = 0.5;
-            chestNotificationAudio.play().catch(() => {});
         });
 
         socket.on('chest_opened', (data) => {
