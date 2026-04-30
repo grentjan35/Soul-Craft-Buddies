@@ -567,8 +567,24 @@ function registerSocketHandlers(input) {
         : `${String(joiningPlayer?.name ?? 'That player')} declined your invite to ${group?.name || 'the group'}.`;
       if (invite.type === 'join_request') {
         io.to(invite.requesterId).emit('group_invite_resolved', { inviteId, status: 'rejected', reason: denialMessage });
+        // Notification to requester: leader rejected their join request
+        emitProgressionNotification(io, invite.requesterId, {
+          type: 'error',
+          title: 'Request Denied',
+          message: `${String(leader?.name ?? 'The leader')} rejected your request to join ${group?.name || 'the group'}.`,
+          caption: 'Group',
+          xp: 0,
+        });
       } else {
         io.to(invite.leaderId).emit('group_invite_resolved', { inviteId, status: 'rejected', reason: denialMessage });
+        // Notification to leader: invited player rejected the invite
+        emitProgressionNotification(io, invite.leaderId, {
+          type: 'error',
+          title: 'Invite Declined',
+          message: `${String(joiningPlayer?.name ?? 'That player')} rejected your group invite.`,
+          caption: 'Group',
+          xp: 0,
+        });
       }
       return;
     }
@@ -618,11 +634,27 @@ function registerSocketHandlers(input) {
         status: 'accepted',
         reason: `You joined ${groupInfo?.name || 'the group'}.`,
       });
+      // Notification to requester: leader accepted their join request
+      emitProgressionNotification(io, invite.requesterId, {
+        type: 'success',
+        title: 'Request Accepted',
+        message: `${String(leader?.name ?? 'The leader')} accepted your request to join ${groupInfo?.name || 'the group'}.`,
+        caption: 'Group',
+        xp: 0,
+      });
     } else {
       io.to(invite.leaderId).emit('group_invite_resolved', {
         inviteId,
         status: 'accepted',
         reason: `${String(joiningPlayer.name ?? 'Player')} joined ${groupInfo?.name || 'the group'}.`,
+      });
+      // Notification to leader: invited player accepted the invite
+      emitProgressionNotification(io, invite.leaderId, {
+        type: 'success',
+        title: 'Invite Accepted',
+        message: `${String(joiningPlayer?.name ?? 'Player')} accepted your group invite.`,
+        caption: 'Group',
+        xp: 0,
       });
     }
   });

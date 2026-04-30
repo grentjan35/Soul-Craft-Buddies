@@ -535,7 +535,7 @@
             opacity: 0.96;
         }
         body.mobile-device #combat-inventory {
-            bottom: calc(var(--mobile-controls-height) + env(safe-area-inset-bottom, 0px) + 10px);
+            bottom: max(14px, calc(env(safe-area-inset-bottom, 0px) + 14px));
         }
         .inventory-slot {
             position: relative;
@@ -16103,9 +16103,15 @@
             const frameIdx = enemyAnimFrames[enemyId].frame;
             const frameW = image.width / cols;
             const frameH = image.height / rows;
+            // Calculate scale correction if WebP dimensions differ from metadata frameSize
+            // metadata.frameSize is the expected frame size (fullImageSize / grid)
+            const expectedFrameW = metadata.frameSize?.w || frameW;
+            const expectedFrameH = metadata.frameSize?.h || frameH;
+            const scaleCorrectionX = expectedFrameW / Math.max(1, frameW);
+            const scaleCorrectionY = expectedFrameH / Math.max(1, frameH);
             const renderDims = {
-                width: frameW * (metadata.scale || 0.24),
-                height: frameH * (metadata.scale || 0.24)
+                width: frameW * (metadata.scale || 0.24) * scaleCorrectionX,
+                height: frameH * (metadata.scale || 0.24) * scaleCorrectionY
             };
             enemyRenderDimensions[enemyId] = renderDims;
 
