@@ -10141,8 +10141,8 @@
                     const backgroundBlob = await fetchProtectedBlob(`/api/background/${environmentToken}`, 'image/png');
                     backgroundImage = await createImageBitmap(backgroundBlob);
                 }
-                mapData.backgrounds = [{ asset: 'background_1.png', x: 0, y: 0 }];
-                backgroundImageCache['background_1.png'] = backgroundImage;
+                mapData.backgrounds = [{ asset: 'background_1.webp', x: 0, y: 0 }];
+                backgroundImageCache['background_1.webp'] = backgroundImage;
                 return;
             }
 

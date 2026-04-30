@@ -259,7 +259,7 @@
 
     <script>
         const TILE_SIZE = 32;
-        const BACKGROUND_REFERENCE_ASSET = 'background_1.png';
+        const BACKGROUND_REFERENCE_ASSET = 'background_1.webp';
         const BACKGROUND_REFERENCE_WIDTH = 3200;
         const BACKGROUND_REFERENCE_HEIGHT = 1600;
         const BACKGROUND_TILE_WIDTH = BACKGROUND_REFERENCE_WIDTH / TILE_SIZE;
@@ -873,7 +873,7 @@
             paletteGrid.innerHTML = '';
 
             if (backgroundAssets.length === 0) {
-                paletteGrid.innerHTML = '<div class="empty-state">No background_N.png files were found.</div>';
+                paletteGrid.innerHTML = '<div class="empty-state">No background_N.png or .webp files were found.</div>';
                 document.getElementById('selectedBackgroundInfo').textContent = 'None';
                 return;
             }
@@ -935,13 +935,13 @@
         }
 
         function ensureDefaultBackgroundPlacement() {
-            if (placedBackgrounds.length > 0 || !backgroundImageCache.has('background_1.png')) {
+            if (placedBackgrounds.length > 0 || !backgroundImageCache.has('background_1.webp')) {
                 return;
             }
 
             placedBackgrounds = [{
                 id: nextBackgroundId++,
-                asset: 'background_1.png',
+                asset: 'background_1.webp',
                 x: 0,
                 y: 0
             }];

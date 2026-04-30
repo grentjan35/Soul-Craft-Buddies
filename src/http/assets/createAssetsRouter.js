@@ -152,7 +152,7 @@ function listAvailableBackgrounds(staticDir) {
   try {
     return fs
       .readdirSync(tilesetDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /^background_\d+\.png$/i.test(entry.name))
+      .filter((entry) => entry.isFile() && /^background_\d+\.(png|webp)$/i.test(entry.name))
       .map((entry) => entry.name)
       .sort((a, b) => {
         const aNum = Number(a.match(/\d+/)?.[0] ?? 0);
@@ -177,15 +177,17 @@ function listAvailableBackgroundCompanions(staticDir) {
     const companionByBackground = {};
 
     filenames
-      .filter((name) => /^background_\d+\.png$/i.test(name))
+      .filter((name) => /^background_\d+\.(png|webp)$/i.test(name))
       .forEach((backgroundName) => {
         const index = backgroundName.match(/(\d+)/)?.[1];
         if (!index) {
           return;
         }
 
-        const preferredForeground = `foreground_${index}.png`;
-        const fallbackForeground = `farground_${index}.png`;
+        const preferredForeground = `foreground_${index}.webp`;
+        const fallbackForeground = `foreground_${index}.png`;
+        const preferredFarground = `farground_${index}.webp`;
+        const fallbackFarground = `farground_${index}.png`;
 
         if (filenameSet.has(preferredForeground)) {
           companionByBackground[backgroundName] = preferredForeground;
@@ -194,6 +196,16 @@ function listAvailableBackgroundCompanions(staticDir) {
 
         if (filenameSet.has(fallbackForeground)) {
           companionByBackground[backgroundName] = fallbackForeground;
+          return;
+        }
+
+        if (filenameSet.has(preferredFarground)) {
+          companionByBackground[backgroundName] = preferredFarground;
+          return;
+        }
+
+        if (filenameSet.has(fallbackFarground)) {
+          companionByBackground[backgroundName] = fallbackFarground;
         }
       });
 
@@ -1258,7 +1270,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    const candidateNames = ['background_1.png', 'background.png'];
+    const candidateNames = ['background_1.webp', 'background_1.png', 'background.webp', 'background.png'];
     const bgPath = candidateNames
       .map((name) => path.join(deps.staticDir, 'assets', 'tileset', name))
       .find((fullPath) => fs.existsSync(fullPath));
@@ -1331,7 +1343,7 @@ function createAssetsRouter(deps) {
     }
 
     const filename = path.basename(String(req.params.filename ?? ''));
-    const isSelectableBackground = /^background_\d+\.png$/i.test(filename) && selectableBackgrounds.includes(filename);
+    const isSelectableBackground = /^background_\d+\.(png|webp)$/i.test(filename) && selectableBackgrounds.includes(filename);
     const isKnownCompanion = Object.values(backgroundCompanions).includes(filename);
 
     if (!isSelectableBackground && !isKnownCompanion) {

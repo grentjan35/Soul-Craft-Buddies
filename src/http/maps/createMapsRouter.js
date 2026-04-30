@@ -99,7 +99,7 @@ function createMapsRouter(deps) {
       }
 
       const asset = String(background.asset ?? '').trim();
-      if (!/^background_\d+\.png$/i.test(asset)) {
+      if (!/^background_\d+\.(png|webp)$/i.test(asset)) {
         res.status(400).json({ error: `Invalid background asset: ${asset || '(missing)'}` });
         return;
       }
