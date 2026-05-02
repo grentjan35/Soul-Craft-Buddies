@@ -241,6 +241,81 @@ function checkEnemyPlatformCollision(definition, enemyX, enemyY, platform) {
   );
 }
 
+/**
+ * Swept collision detection: checks if enemy path crossed through a platform.
+ *
+ * Why: Discrete collision (checking only end position) fails when enemy moves
+ * very fast - they can tunnel through thin walls between frames. This function
+ * checks if the path from (prevX, prevY) to (newX, newY) intersects any platform.
+ *
+ * How: Uses AABB sweep test - checks if enemy hitbox swept path overlaps platform
+ * and if the movement direction would cross the platform boundary.
+ *
+ * @param {Object} definition - Enemy type definition with hitbox info
+ * @param {number} prevX - Previous enemy X position
+ * @param {number} prevY - Previous enemy Y position
+ * @param {number} newX - New enemy X position (after velocity applied)
+ * @param {number} newY - New enemy Y position (after velocity applied)
+ * @param {Object} platform - Platform to check against
+ * @returns {boolean} - True if path crosses through the platform (tunneling detected)
+ */
+function checkEnemySweptPlatformCollision(definition, prevX, prevY, newX, newY, platform) {
+  const hitbox = getEnemyHitboxForPosition(definition, newX, newY);
+  const hitboxW = hitbox.width;
+  const hitboxH = hitbox.height;
+
+  // Build swept AABB (bounding box of entire movement)
+  const sweptMinX = Math.min(prevX - hitboxW / 2, newX - hitboxW / 2);
+  const sweptMaxX = Math.max(prevX + hitboxW / 2, newX + hitboxW / 2);
+  const sweptMinY = Math.min(prevY - hitboxH / 2, newY - hitboxH / 2);
+  const sweptMaxY = Math.max(prevY + hitboxH / 2, newY + hitboxH / 2);
+
+  // Quick reject: swept bounds don't overlap platform at all
+  if (sweptMaxX <= platform.x || sweptMinX >= platform.x + platform.w ||
+      sweptMaxY <= platform.y || sweptMinY >= platform.y + platform.h) {
+    return false;
+  }
+
+  // Check if previous position was outside the platform
+  const prevHitbox = getEnemyHitboxForPosition(definition, prevX, prevY);
+  const prevOutsideX = prevHitbox.x + prevHitbox.width <= platform.x || prevHitbox.x >= platform.x + platform.w;
+  const prevOutsideY = prevHitbox.y + prevHitbox.height <= platform.y || prevHitbox.y >= platform.y + platform.h;
+
+  // Check if new position is inside
+  const newInside = checkEnemyPlatformCollision(definition, newX, newY, platform);
+
+  // Tunneling detected if: we were outside before, swept bounds overlap, and now inside
+  // OR: we passed completely through (both outside but path crossed platform)
+  if ((prevOutsideX || prevOutsideY) && newInside) {
+    return true;
+  }
+
+  // Additional check: passed completely through a thin platform
+  // Both positions outside, but the line between them crosses the platform
+  if (prevOutsideX && !newInside) {
+    // Check if movement crossed platform X boundaries
+    const prevCenterX = prevX;
+    const newCenterX = newX;
+    const platformLeft = platform.x;
+    const platformRight = platform.x + platform.w;
+
+    // Moving right: prev was left of platform, new is right of platform
+    const crossedRight = prevCenterX < platformLeft && newCenterX > platformRight;
+    // Moving left: prev was right of platform, new is left of platform
+    const crossedLeft = prevCenterX > platformRight && newCenterX < platformLeft;
+
+    // Check Y overlap during crossing
+    const yOverlap = Math.max(prevHitbox.y, platform.y) < Math.min(prevHitbox.y + prevHitbox.height, platform.y + platform.h) ||
+                     Math.max(hitbox.y, platform.y) < Math.min(hitbox.y + hitbox.height, platform.y + platform.h);
+
+    if ((crossedRight || crossedLeft) && yOverlap) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function checkEnemyPlayerCollision(state, enemy, player) {
   const enemyHitbox = getEnemyHitbox(state, enemy);
   if (!enemyHitbox) {
@@ -316,7 +391,16 @@ function resolveEnemyHorizontalCollisions(state, definition, enemy, prevX, nearb
   const prevHitbox = getEnemyHitboxForPosition(definition, prevX, enemy.y);
 
   for (const platform of nearbyPlatforms) {
-    if (!checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform)) {
+    // Check discrete collision (end position overlaps)
+    const discreteCollision = checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform);
+
+    // Check swept collision (path crossed through platform - tunneling detection)
+    // Why: Fast-moving enemies (like striker lunges) can completely jump over thin walls
+    // in one frame. Discrete collision fails because the end position is on the other
+    // side with no overlap. Swept detection catches this by checking the entire path.
+    const sweptCollision = checkEnemySweptPlatformCollision(definition, prevX, enemy.y, enemy.x, enemy.y, platform);
+
+    if (!discreteCollision && !sweptCollision) {
       continue;
     }
 
@@ -333,10 +417,19 @@ function resolveEnemyHorizontalCollisions(state, definition, enemy, prevX, nearb
       continue;
     }
 
+    // Resolve collision: snap to platform edge based on movement direction
     if (enemy.vx > 0) {
       setEnemyCenterFromHitbox(definition, enemy, platform.x - currentHitbox.width, currentHitbox.y);
     } else if (enemy.vx < 0) {
       setEnemyCenterFromHitbox(definition, enemy, platform.x + platform.w, currentHitbox.y);
+    } else {
+      // No velocity but colliding (e.g., spawned inside wall) - push out based on position
+      const centerDelta = (enemy.x) - (platform.x + platform.w / 2);
+      if (centerDelta > 0) {
+        setEnemyCenterFromHitbox(definition, enemy, platform.x + platform.w, currentHitbox.y);
+      } else {
+        setEnemyCenterFromHitbox(definition, enemy, platform.x - currentHitbox.width, currentHitbox.y);
+      }
     }
 
     enemy.vx = 0;
@@ -357,7 +450,14 @@ function resolveEnemyVerticalCollisions(state, definition, enemy, prevY, nearbyP
   const prevHitbox = getEnemyHitboxForPosition(definition, enemy.x, prevY);
 
   for (const platform of nearbyPlatforms) {
-    if (!checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform)) {
+    // Check discrete collision (end position overlaps)
+    const discreteCollision = checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform);
+
+    // Check swept collision (path crossed through platform - tunneling detection)
+    // Catches fast vertical movement that would skip through thin platforms
+    const sweptCollision = checkEnemySweptPlatformCollision(definition, enemy.x, prevY, enemy.x, enemy.y, platform);
+
+    if (!discreteCollision && !sweptCollision) {
       continue;
     }
 
@@ -374,7 +474,9 @@ function resolveEnemyVerticalCollisions(state, definition, enemy, prevY, nearbyP
       continue;
     }
 
+    // Resolve collision: snap to platform edge based on movement direction
     if (enemy.vy > 0) {
+      // Falling - land on top of platform
       setEnemyCenterFromHitbox(definition, enemy, currentHitbox.x, platform.y - currentHitbox.height);
       enemy.vy = 0;
       enemy.on_ground = true;
@@ -384,8 +486,19 @@ function resolveEnemyVerticalCollisions(state, definition, enemy, prevY, nearbyP
       enemy.jump_requires_double = false;
       enemy.jump_launch_vx = 0;
     } else if (enemy.vy < 0) {
+      // Rising - hit head on platform bottom
       setEnemyCenterFromHitbox(definition, enemy, currentHitbox.x, platform.y + platform.h);
       enemy.vy = 0;
+    } else {
+      // No vertical velocity but inside platform - push out to nearest edge
+      const distToTop = Math.abs(currentHitbox.y + currentHitbox.height - platform.y);
+      const distToBottom = Math.abs(currentHitbox.y - (platform.y + platform.h));
+      if (distToTop <= distToBottom) {
+        setEnemyCenterFromHitbox(definition, enemy, currentHitbox.x, platform.y - currentHitbox.height);
+        enemy.on_ground = true;
+      } else {
+        setEnemyCenterFromHitbox(definition, enemy, currentHitbox.x, platform.y + platform.h);
+      }
     }
   }
 }
@@ -2717,24 +2830,38 @@ function applyFlyingEnemyPhysics(state, enemy, definition, dt, desiredVelocityX,
     enemy.direction = 'left';
   }
 
+  // Apply X movement with swept collision detection
+  // Why swept: Flying enemies (especially strikers during lunges) move very fast.
+  // Discrete collision would let them tunnel through walls if vx*dt > wall thickness.
   enemy.x += enemy.vx * dt;
   const nearbyAfterX = getNearbyPlatforms({
     platformGrid: state.platformGrid,
     x: enemy.x,
     y: enemy.y,
   });
-  if (nearbyAfterX.some((platform) => checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform))) {
+  // Check both discrete collision (overlap) and swept collision (path crossed wall)
+  const hasXCollision = nearbyAfterX.some((platform) =>
+    checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform) ||
+    checkEnemySweptPlatformCollision(definition, prevX, enemy.y, enemy.x, enemy.y, platform)
+  );
+  if (hasXCollision) {
+    // Revert to previous position and stop horizontal velocity
     enemy.x = prevX;
     enemy.vx = 0;
   }
 
+  // Apply Y movement with swept collision detection
   enemy.y += enemy.vy * dt;
   const nearbyAfterY = getNearbyPlatforms({
     platformGrid: state.platformGrid,
     x: enemy.x,
     y: enemy.y,
   });
-  if (nearbyAfterY.some((platform) => checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform))) {
+  const hasYCollision = nearbyAfterY.some((platform) =>
+    checkEnemyPlatformCollision(definition, enemy.x, enemy.y, platform) ||
+    checkEnemySweptPlatformCollision(definition, enemy.x, prevY, enemy.x, enemy.y, platform)
+  );
+  if (hasYCollision) {
     enemy.y = prevY;
     enemy.vy = 0;
   }

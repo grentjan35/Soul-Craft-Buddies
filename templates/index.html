@@ -10,8 +10,9 @@
     <title>SoulClash - Combat RPG</title>
     <link rel="preconnect" href="/" crossorigin>
     <link rel="preload" href="/socket.io/socket.io.min.js" as="script" crossorigin>
-    <link rel="preload" href="/audio/menu/full.wav" as="audio" type="audio/wav">
+    <link rel="preload" href="/audio/menu/full.m4a" as="audio" type="audio/mp4">
     <script src="/socket.io/socket.io.min.js"></script>
+    <script src="/msgpack.min.js"></script>
     <style>
         :root {
             --mobile-ui-scale: 1;
@@ -4001,7 +4002,7 @@
         // AutoConnect FALSE prevents the socket from firing until we're ready!
         // Render is much more reliable when we skip long-polling and open a WebSocket directly.
         const prefersDirectWebSocket = location.protocol === 'https:' || location.hostname.endsWith('.onrender.com');
-        const socket = io({ 
+        const socket = io({
             autoConnect: false,
             path: '/socket.io/',
             transports: prefersDirectWebSocket ? ['websocket'] : ['websocket', 'polling'],
@@ -4010,6 +4011,159 @@
             timeout: 20000,
             forceNew: false
         });
+
+        // WebSocket response counter for bandwidth monitoring
+        let websocketResponseCount = 0;
+        let gameSessionStartTime = 0;
+        let hasLoggedWebsocketTotal = false;
+
+        /**
+         * Field name decompression mapping: short keys -> long keys (mirrors server compression).
+         *
+         * Why: Server sends compressed state payloads to reduce bandwidth. This map reverses
+         * the compression so game code can use readable field names (name, health) instead of
+         * cryptic codes (n, h).
+         *
+         * How it works:
+         * 1. Server sends: { n: 'Player', h: 100, x: 123.4, y: 456.7 }
+         * 2. socket.on('state') receives compressed payload
+         * 3. decompressStatePayload() walks the object, replaces short keys with long keys
+         * 4. Result: { name: 'Player', health: 100, x: 123.4, y: 456.7 }
+         * 5. Decompressed state passed to applyServerState() for normal game logic
+         *
+         * Critical note: 'r', 'g', 'b' are intentionally NOT mapped. Fairy colors use
+         * { r, g, b } objects - mapping these would corrupt color data and cause black/green
+         * fairies. Only multi-char short codes are safe to map.
+         */
+        const FIELD_DECOMPRESSION_MAP = Object.freeze({
+            // Player fields
+            n: 'name',
+            l: 'level',
+            x: 'x',
+            y: 'y',
+            vy: 'vy',
+            a: 'action',
+            d: 'direction',
+            g: 'on_ground',
+            c: 'character',
+            h: 'health',
+            mh: 'max_health',
+            ia: 'is_attacking',
+            ast: 'attack_start_time_ms',
+            sba: 'special_beam_active',
+            sfx: 'special_beam_from_x',
+            sfy: 'special_beam_from_y',
+            stx: 'special_beam_to_x',
+            sty: 'special_beam_to_y',
+            sbs: 'special_beam_started_at_ms',
+            sc: 'soul_count',
+            st: 'soul_title',
+            sst: 'soul_short_title',
+            sti: 'soul_tier_index',
+            snt: 'soul_next_threshold',
+            sas: 'soul_aura_strength',
+            sa: 'soul_accent',
+            sau: 'soul_aura',
+            // Base payload fields
+            t: 'ts',
+            s: 'seq',
+            p: 'players',
+            f: 'fairies',
+            so: 'souls',
+            ch: 'chests',
+            ws: 'world_sleeping',
+            // Self fields
+            se: 'self',
+            pr: 'progression',
+            i: 'inventory',
+            ss: 'selectedSlot',
+            lcu: 'lazerCooldownUntilMs',
+            lae: 'lazerAttackEndsAtMs',
+            fcu: 'fireballCooldownUntilMs',
+            // Entity collections
+            fb: 'fireballs',
+            ex: 'explosions',
+            en: 'enemies',
+            ef: 'enemies_full',
+            er: 'enemy_removed',
+            fl: 'full',
+            // Fairy fields
+            id: 'id',
+            vx: 'vx',
+            cl: 'color',
+            // Soul fields
+            v: 'value',
+            sz: 'size',
+            tn: 'tint',
+            stm: 'spawn_time_ms',
+            // Chest fields
+            ra: 'rarity',
+            sfy2: 'spawn_from_y',
+            ldm: 'landing_duration_ms',
+            adm: 'alert_duration_ms',
+            aam: 'available_at_ms',
+            ir: 'interact_radius',
+            odm: 'open_duration_ms',
+            osm: 'opening_started_at_ms',
+            os: 'opener_sid',
+            oam: 'opened_at_ms',
+            cs: 'claimed_by_sid',
+            dsm: 'despawn_started_at_ms',
+            ddm: 'despawn_duration_ms',
+            eam: 'expires_at_ms',
+            // Fireball fields
+            osid: 'owner_sid',
+            ot: 'owner_type',
+            oei: 'owner_enemy_id',
+            sx: 'start_x',
+            sy: 'start_y',
+            ivx: 'initial_vx',
+            ivy: 'initial_vy',
+            rs: 'render_scale',
+            rs2: 'radius_scale',
+            gs: 'gravity_scale',
+            gdd: 'gravity_delay_distance',
+            // Explosion fields
+            rd: 'radius',
+            ag: 'age',
+            oet: 'owner_enemy_type',
+        });
+
+        /**
+         * Recursively decompresses field names using FIELD_DECOMPRESSION_MAP.
+         *
+         * Why: Called on every 'state' event (30Hz) to restore readable field names
+         * before the game state is applied. Transforms { n: 'Player' } → { name: 'Player' }
+         *
+         * Edge case handling:
+         * - Null/primitives: returned unchanged (nothing to decompress)
+         * - Arrays: recursively decompress each element
+         * - Objects: map each short key to long form using FIELD_DECOMPRESSION_MAP
+         * - Unknown keys: left as-is via || key fallback (safety for any unmapped fields)
+         *
+         * Performance: Fast enough for 30Hz state updates even with 100+ entities.
+         * Creates new objects (doesn't mutate original) to avoid side effects.
+         *
+         * @param {any} obj - Compressed state from server (with short keys like 'n', 'h')
+         * @returns {any} - Decompressed state with original field names (name, health)
+         */
+        function decompressStatePayload(obj) {
+            if (obj === null || typeof obj !== 'object') {
+                return obj;
+            }
+
+            if (Array.isArray(obj)) {
+                return obj.map((item) => decompressStatePayload(item));
+            }
+
+            const decompressed = {};
+            for (const [key, value] of Object.entries(obj)) {
+                const longKey = FIELD_DECOMPRESSION_MAP[key] || key;
+                decompressed[longKey] = decompressStatePayload(value);
+            }
+            return decompressed;
+        }
+
         let myPlayerName = "Player";
         let selectedCharacter = null;
         let availableCharacterSelections = [];
@@ -6184,7 +6338,7 @@
             const registeredGameAudioSystems = new Set();
 
             playBtn.classList.add('disabled');
-            loadingCompleteAudio = new Audio('/audio/menu/full.wav');
+            loadingCompleteAudio = new Audio('/audio/menu/full.m4a');
             loadingCompleteAudio.preload = 'auto';
             loadingCompleteAudio.load();
             footstepAudio = createFootstepAudioSystem();
@@ -6252,12 +6406,12 @@
             function createMenuAudioSystem() {
                 const MENU_VOLUME_MULTIPLIER = 0.7;
                 const soundUrls = {
-                    click: '/audio/menu/click.wav',
-                    hover: '/audio/menu/hover.wav',
-                    navigate: '/audio/menu/navigate.wav',
-                    play: '/audio/menu/play.wav',
-                    full: '/audio/menu/full.wav',
-                    set: '/audio/menu/set.wav'
+                    click: '/audio/menu/click.m4a',
+                    hover: '/audio/menu/hover.m4a',
+                    navigate: '/audio/menu/navigate.m4a',
+                    play: '/audio/menu/play.m4a',
+                    full: '/audio/menu/full.m4a',
+                    set: '/audio/menu/set.m4a'
                 };
 
                 const audioCache = new Map();
@@ -6759,9 +6913,9 @@
             function createFootstepAudioSystem() {
                 const FOOTSTEP_VOLUME_MULTIPLIER = 1.7;
                 const soundUrls = [
-                    '/audio/footsteps/footsteps_1.wav',
-                    '/audio/footsteps/footsteps_2.wav',
-                    '/audio/footsteps/footsteps_3.wav'
+                    '/audio/footsteps/footsteps_1.m4a',
+                    '/audio/footsteps/footsteps_2.m4a',
+                    '/audio/footsteps/footsteps_3.m4a'
                 ];
                 const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
@@ -6887,7 +7041,7 @@
 
             function createFallAudioSystem() {
                 const FALL_VOLUME_MULTIPLIER = 1.25;
-                const soundUrl = '/audio/fall.wav';
+                const soundUrl = '/audio/fall.m4a';
                 const audioContext = getSharedGameAudioContext();
                 let bufferPromise = null;
                 let audioUnlocked = false;
@@ -6989,10 +7143,10 @@
             function createSpiderFootstepAudioSystem() {
                 const SPIDER_FOOTSTEP_VOLUME_MULTIPLIER = 1.05;
                 const soundUrls = [
-                    '/audio/spider_footsteps/footstep.mp3',
-                    '/audio/spider_footsteps/footstep2.mp3',
-                    '/audio/spider_footsteps/footstep3.mp3',
-                    '/audio/spider_footsteps/footstep4.mp3'
+                    '/audio/spider_footsteps/footstep.m4a',
+                    '/audio/spider_footsteps/footstep2.m4a',
+                    '/audio/spider_footsteps/footstep3.m4a',
+                    '/audio/spider_footsteps/footstep4.m4a'
                 ];
                 const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
@@ -7073,9 +7227,9 @@
             function createSlimeFootstepAudioSystem() {
                 const SLIME_FOOTSTEP_VOLUME_MULTIPLIER = 0.92;
                 const soundUrls = [
-                    '/audio/slime_footsteps/footstep.mp3',
-                    '/audio/slime_footsteps/footstep%20(2).mp3',
-                    '/audio/slime_footsteps/footstep%20(3).mp3'
+                    '/audio/slime_footsteps/footstep.m4a',
+                    '/audio/slime_footsteps/footstep%20(2).m4a',
+                    '/audio/slime_footsteps/footstep%20(3).m4a'
                 ];
                 const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
@@ -7156,10 +7310,10 @@
             function createFireballAudioSystem() {
                 const FIREBALL_VOLUME_MULTIPLIER = 1.1;
                 const soundUrls = {
-                    release: '/audio/fireball/release.wav',
-                    hit: '/audio/fireball/hit.wav',
-                    inair: '/audio/fireball/inair.wav',
-                    floorFire: '/audio/fire.wav'
+                    release: '/audio/fireball/release.m4a',
+                    hit: '/audio/fireball/hit.m4a',
+                    inair: '/audio/fireball/inair.m4a',
+                    floorFire: '/audio/fire.m4a'
                 };
                 const audioContext = getSharedGameAudioContext();
                 const bufferCache = new Map();
@@ -7353,49 +7507,49 @@
                 const COMBAT_VOLUME_MULTIPLIER = 1.05;
                 const soundUrls = {
                     spiderAmbient: [
-                        '/audio/spider/eating.mp3',
-                        '/audio/spider/growl.mp3',
-                        '/audio/spider/growling.mp3',
-                        '/audio/spider/throwing%20up.mp3'
+                        '/audio/spider/eating.m4a',
+                        '/audio/spider/growl.m4a',
+                        '/audio/spider/growling.m4a',
+                        '/audio/spider/throwing%20up.m4a'
                     ],
-                    spiderAttack: '/audio/spider/screeching.mp3',
-                    spiderHit: '/audio/spider/wine.mp3',
+                    spiderAttack: '/audio/spider/screeching.m4a',
+                    spiderHit: '/audio/spider/wine.m4a',
                     spiderDeath: [
-                        '/audio/spider/death.mp3',
-                        '/audio/spider/death2.mp3'
+                        '/audio/spider/death.m4a',
+                        '/audio/spider/death2.m4a'
                     ],
                     batAmbient: [
-                        '/audio/bat/idle.mp3',
-                        '/audio/bat/wander.mp3',
-                        '/audio/bat/wandering.mp3'
+                        '/audio/bat/idle.m4a',
+                        '/audio/bat/wander.m4a',
+                        '/audio/bat/wandering.m4a'
                     ],
-                    batDetect: '/audio/bat/detect.mp3',
-                    batHit: '/audio/bat/hurt.mp3',
-                    batDeath: '/audio/bat/death.mp3',
-                    batFlight: '/audio/bat/flying.mp3',
-                    gargoyleAmbient: '/audio/gargoyle/not%20in%20combat.mp3',
-                    gargoyleIdle: '/audio/gargoyle/idle.mp3',
-                    gargoyleAttack: '/audio/gargoyle/attack.mp3',
-                    gargoyleSwoop: '/audio/gargoyle/swoop.mp3',
-                    gargoyleFlight: '/audio/gargoyle/flying.mp3',
-                    strikerIdle: '/audio/striker/idle.mp3',
-                    strikerAttack: '/audio/striker/attack.mp3',
-                    strikerHit: '/audio/striker/hurt.mp3',
-                    strikerDeath: '/audio/striker/death.mp3',
-                    strikerFlight: '/audio/striker/flying.mp3',
-                    strikerSlam: '/audio/striker/slam.mp3',
+                    batDetect: '/audio/bat/detect.m4a',
+                    batHit: '/audio/bat/hurt.m4a',
+                    batDeath: '/audio/bat/death.m4a',
+                    batFlight: '/audio/bat/flying.m4a',
+                    gargoyleAmbient: '/audio/gargoyle/not%20in%20combat.m4a',
+                    gargoyleIdle: '/audio/gargoyle/idle.m4a',
+                    gargoyleAttack: '/audio/gargoyle/attack.m4a',
+                    gargoyleSwoop: '/audio/gargoyle/swoop.m4a',
+                    gargoyleFlight: '/audio/gargoyle/flying.m4a',
+                    strikerIdle: '/audio/striker/idle.m4a',
+                    strikerAttack: '/audio/striker/attack.m4a',
+                    strikerHit: '/audio/striker/hurt.m4a',
+                    strikerDeath: '/audio/striker/death.m4a',
+                    strikerFlight: '/audio/striker/flying.m4a',
+                    strikerSlam: '/audio/striker/slam.m4a',
                     slimeAmbient: [
-                        '/audio/slime/growl.mp3',
-                        '/audio/slime/wander.mp3'
+                        '/audio/slime/growl.m4a',
+                        '/audio/slime/wander.m4a'
                     ],
-                    slimeAttack: '/audio/slime/attack.mp3',
-                    slimeHit: '/audio/slime/hurt.mp3',
-                    slimeDeath: '/audio/slime/death.mp3',
-                    soulCollected: '/audio/soul_collected.mp3',
+                    slimeAttack: '/audio/slime/attack.m4a',
+                    slimeHit: '/audio/slime/hurt.m4a',
+                    slimeDeath: '/audio/slime/death.m4a',
+                    soulCollected: '/audio/soul_collected.m4a',
                     playerHurt: [
-                        '/audio/hurt/hurt.mp3',
-                        '/audio/hurt/hurt2.mp3',
-                        '/audio/hurt/hurt5.mp3'
+                        '/audio/hurt/hurt.m4a',
+                        '/audio/hurt/hurt2.m4a',
+                        '/audio/hurt/hurt5.m4a'
                     ]
                 };
                 const audioContext = getSharedGameAudioContext();
@@ -8414,6 +8568,10 @@
                         character: selectedCharacter
                     };
                     socket.connect();
+                    // Start WebSocket response counter for bandwidth monitoring
+                    gameSessionStartTime = Date.now();
+                    websocketResponseCount = 0;
+                    hasLoggedWebsocketTotal = false;
                 }, 300);
             }
 
@@ -10635,6 +10793,7 @@
         
         let inputs = { left: false, right: false, up: false };
         
+                
         // Debug mode for collision visualization
         let debugMode = false;
         
@@ -10781,7 +10940,11 @@
         const reusableActiveSoulIds = new Set();
         const reusableActiveFairyIds = new Set();
         const MAX_SNAPSHOT_AGE_MS = 1000;
-        const ENEMY_EXTRAPOLATION_LIMIT_MS = 80;
+        // Base extrapolation limit for enemies. Reduced from 80ms to 50ms because:
+        // - Enemies have less predictable movement than players (AI-driven, not input-driven)
+        // - Fast enemies (striker lunges, slime jumps) frequently hit walls
+        // - Combined with velocity-aware scaling, this minimizes "snap back" visual artifacts
+        const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const PLAYER_DISCONTINUITY_DISTANCE = 260;
@@ -10977,6 +11140,7 @@
                 return;
             }
             
+            
             if (e.key === 'ArrowLeft' || e.key === 'a') {
                 inputs.left = true;
             }
@@ -11020,6 +11184,7 @@
             if (chatActive || isUpgradeDraftActive()) {
                 return;
             }
+            
             
             if (e.key === 'ArrowLeft' || e.key === 'a') inputs.left = false;
             if (e.key === 'ArrowRight' || e.key === 'd') inputs.right = false;
@@ -12781,7 +12946,42 @@
         }
 
         socket.on('state', (serverState) => {
-            scheduleServerStateApply(serverState);
+            // WebSocket response counter: track bandwidth usage
+            websocketResponseCount += 1;
+
+            // After 1 minute of gameplay, log total responses received
+            // This helps validate bandwidth optimization effectiveness
+            if (!hasLoggedWebsocketTotal && gameSessionStartTime > 0) {
+                const elapsedMs = Date.now() - gameSessionStartTime;
+                if (elapsedMs >= 60000) { // 1 minute
+                    hasLoggedWebsocketTotal = true;
+                    console.log(`[WEBSOCKET] Total of WebSocket Responses so far: ${websocketResponseCount}`);
+                }
+            }
+
+            // Phase 2: MessagePack binary decoding.
+            // Server now encodes with msgpack.encode() before emit, so serverState is
+            // an ArrayBuffer or Uint8Array instead of a plain JSON object.
+            // Binary encoding shrinks wire format by ~2-3× compared to JSON.
+            //
+            // Decode flow:
+            // 1. serverState arrives as ArrayBuffer (websocket) or base64 string (polling fallback)
+            // 2. msgpack.decode() converts binary back to JS object with short field names
+            // 3. decompressStatePayload() restores original field names ('n' → 'name')
+            // 4. scheduleServerStateApply() queues for next animation frame
+            // 5. applyServerState() applies to game world
+            let decodedState = serverState;
+            if (serverState instanceof ArrayBuffer) {
+                decodedState = msgpack.decode(new Uint8Array(serverState));
+            } else if (serverState instanceof Uint8Array || (serverState && typeof serverState.byteLength === 'number')) {
+                decodedState = msgpack.decode(serverState);
+            }
+            // Guard: if decoding fails or server sent plain object (fallback), use as-is
+            if (!decodedState || typeof decodedState !== 'object') {
+                return;
+            }
+            const decompressedState = decompressStatePayload(decodedState);
+            scheduleServerStateApply(decompressedState);
         });
 
         // Handle map loaded event from server
@@ -12844,7 +13044,7 @@
             );
             
             // Play chest open sound
-            const chestOpenAudio = new Audio('/audio/chest open.mp3');
+            const chestOpenAudio = new Audio('/audio/chest open.m4a');
             chestOpenAudio.volume = 0.6;
             chestOpenAudio.play().catch(() => {});
         });
@@ -12868,9 +13068,19 @@
             
             // Play death sound if it's the current player
             if (sid === socket.id) {
-                const deathAudio = new Audio('/audio/you_died.mp3');
+                console.log('[DeathSound] Creating audio element for /audio/you_died.m4a');
+                const deathAudio = new Audio('/audio/you_died.m4a');
                 deathAudio.volume = 0.6;
-                deathAudio.play().catch(() => {});
+                
+                // Log loading errors
+                deathAudio.addEventListener('error', (e) => {
+                    console.error('[DeathSound] Failed to load audio:', e.target.error);
+                });
+                
+                // Play and log any playback errors
+                deathAudio.play().catch((err) => {
+                    console.error('[DeathSound] Play failed:', err.name, err.message);
+                });
             }
         });
 
@@ -13993,15 +14203,15 @@
             
             // Play achievement unlocked sound for achievements and chest rewards
             if (data?.type === 'achievement' || data?.type === 'chest') {
-                const achievementAudio = new Audio('/audio/achievement unlocked.MP3');
+                const achievementAudio = new Audio('/audio/achievement unlocked.m4a');
                 achievementAudio.volume = 0.5;
                 achievementAudio.play().catch(() => {});
             }
             
             // Play danger sound for danger notifications (but not for chests)
             if (data?.type === 'danger' && !data?.title?.toLowerCase().includes('chest')) {
-                console.log('Playing danger.mp3 for:', data?.title || data?.message);
-                const dangerAudio = new Audio('/audio/danger.mp3');
+                console.log('Playing danger.m4a for:', data?.title || data?.message);
+                const dangerAudio = new Audio('/audio/danger.m4a');
                 dangerAudio.volume = 0.5;
                 dangerAudio.play().catch(() => {});
             }
@@ -14286,7 +14496,23 @@
                         vy: typeof from.vy === 'number' && typeof to.vy === 'number' ? lerp(from.vy, to.vy, t) : to.vy,
                         vx: typeof from.vx === 'number' && typeof to.vx === 'number' ? lerp(from.vx, to.vx, t) : to.vx,
                         action: pickDiscreteSnapshotValue(from, to, t, 'action'),
-                        direction: pickDiscreteSnapshotValue(from, to, t, 'direction'),
+                        // Velocity-aware direction interpolation.
+                        // Why: Discrete sampling causes enemies to face wrong direction while moving.
+                        // When enemy changes direction rapidly (chase, lunge), discrete picks either
+                        // 'from' or 'to' at midpoint, causing enemy to slide left while facing right.
+                        // Solution: Use velocity sign to determine facing direction. If velocity is near
+                        // zero, fall back to discrete value from server.
+                        direction: (() => {
+                            const speedThreshold = 20; // Minimum speed to trust velocity direction
+                            const avgVx = (typeof from.vx === 'number' && typeof to.vx === 'number')
+                                ? (from.vx + to.vx) / 2
+                                : (typeof to.vx === 'number' ? to.vx : 0);
+                            if (Math.abs(avgVx) >= speedThreshold) {
+                                return avgVx < 0 ? 'left' : 'right';
+                            }
+                            // Near-zero velocity: use discrete server value
+                            return pickDiscreteSnapshotValue(from, to, t, 'direction');
+                        })(),
                         on_ground: pickDiscreteSnapshotValue(from, to, t, 'on_ground'),
                         character: pickDiscreteSnapshotValue(from, to, t, 'character'),
                         name: pickDiscreteSnapshotValue(from, to, t, 'name'),
@@ -14323,13 +14549,41 @@
             ) {
                 const extrapolatedMs = Math.min(extrapolationLimitMs, renderTs - latestSnapshot.ts);
                 const extrapolatedSeconds = extrapolatedMs / 1000;
+
+                // Velocity-aware extrapolation: reduce prediction distance for fast movers.
+                // Why: Fast enemies (striker lunges, slime jumps) often hit walls. The client
+                // doesn't know about collisions, so it predicts them flying through walls.
+                // When the server corrects this, the enemy "snaps back" visually.
+                // Solution: Cap extrapolation distance based on velocity magnitude.
+                const speed = Math.hypot(
+                    Number(latestSnapshot.vx) || 0,
+                    Number(latestSnapshot.vy) || 0
+                );
+
+                // Speed thresholds for extrapolation reduction
+                // Input: speed (units/sec), Output: max extrapolation seconds allowed
+                // - speed < 100: full extrapolation (slow movers, safe to predict)
+                // - speed 100-300: gradually reduce (moderate speed)
+                // - speed > 300: minimal extrapolation (fast movers, likely to hit walls)
+                let velocityScale = 1.0;
+                if (speed > 300) {
+                    velocityScale = 0.15; // Very fast: 15% extrapolation (12ms at 80ms limit)
+                } else if (speed > 200) {
+                    velocityScale = 0.35; // Fast: 35% extrapolation (28ms at 80ms limit)
+                } else if (speed > 100) {
+                    velocityScale = 0.6;  // Moderate: 60% extrapolation (48ms at 80ms limit)
+                }
+                // speed <= 100: full 100% extrapolation
+
+                const velocityAdjustedSeconds = extrapolatedSeconds * velocityScale;
+
                 return {
                     ...latestSnapshot,
                     x: typeof latestSnapshot.vx === 'number'
-                        ? latestSnapshot.x + latestSnapshot.vx * extrapolatedSeconds
+                        ? latestSnapshot.x + latestSnapshot.vx * velocityAdjustedSeconds
                         : latestSnapshot.x,
                     y: typeof latestSnapshot.vy === 'number'
-                        ? latestSnapshot.y + latestSnapshot.vy * extrapolatedSeconds
+                        ? latestSnapshot.y + latestSnapshot.vy * velocityAdjustedSeconds
                         : latestSnapshot.y
                 };
             }
@@ -14441,7 +14695,16 @@
                 fairy.y = sampled.y;
                 fairy.vx = typeof sampled.vx === 'number' ? sampled.vx : fairyMeta.vx;
                 fairy.vy = typeof sampled.vy === 'number' ? sampled.vy : fairyMeta.vy;
-                fairy.color = sampled.color ?? fairyMeta.color;
+                // Validate color: must be an object with numeric r, g, b properties
+                // Fallback to pink if color is missing or malformed (prevents black/green display issues)
+                const rawColor = sampled.color ?? fairyMeta.color;
+                const validColor = (
+                    rawColor &&
+                    typeof rawColor.r === 'number' &&
+                    typeof rawColor.g === 'number' &&
+                    typeof rawColor.b === 'number'
+                ) ? rawColor : { r: 255, g: 200, b: 255 }; // Default pink
+                fairy.color = validColor;
                 fairies[fairyCount] = fairy;
                 fairyCount += 1;
             }
@@ -18924,6 +19187,9 @@
                         
                         // Only render if assets are loaded or if loading has failed
                         if (playerAssets && playerAssets[action] && playerMetadata && playerMetadata[action]) {
+                            let image, frameX, frameY, frameW, frameH, frameIdx;
+                            const now = Date.now();
+                            
                             const meta = playerMetadata[action];
                             const [cols, rows] = meta.grid.split('x').map(Number);
                             const frameCount = meta.frames;
@@ -18942,7 +19208,6 @@
                             
                             // Increment frame for this player based on time (not every render frame)
                             const animSpeed = 0.25;
-                            const now = Date.now();
                             const timeSinceLastUpdate = now - playerAnimFrames[sid].lastUpdate;
                             const frameDuration = 16 / animSpeed; // Time per frame in ms
                             
@@ -18951,12 +19216,13 @@
                                 playerAnimFrames[sid].lastUpdate = now;
                             }
                             
-                            const frameIdx = playerAnimFrames[sid].frame;
+                            frameIdx = playerAnimFrames[sid].frame;
                             
-                            const frameX = (frameIdx % cols) * (playerAssets[action].width / cols);
-                            const frameY = Math.floor(frameIdx / cols) * (playerAssets[action].height / rows);
-                            const frameW = playerAssets[action].width / cols;
-                            const frameH = playerAssets[action].height / rows;
+                            frameX = (frameIdx % cols) * (playerAssets[action].width / cols);
+                            frameY = Math.floor(frameIdx / cols) * (playerAssets[action].height / rows);
+                            frameW = playerAssets[action].width / cols;
+                            frameH = playerAssets[action].height / rows;
+                            image = playerAssets[action];
 
                             // Calculate aspect-ratio-preserving render dimensions
                             const renderDims = calculateRenderDimensions(frameW, frameH);
@@ -18992,7 +19258,7 @@
                                 ctx.restore();
                             }
                             drawSpriteFrameWithHitFlash({
-                                image: playerAssets[action],
+                                image,
                                 frameX,
                                 frameY,
                                 frameW,
@@ -19068,8 +19334,10 @@
                             fairyY > -50 && fairyY < canvas.height / cameraZoom + 50) {
                             
                             // Draw 2x2 pixel fairy
+                            // Color validation: fairies were showing black/green due to malformed color data
+                            // from WebSocket decompression issues. Now validated in the sampling loop above.
                             const color = fairy.color;
-                            ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                            ctx.fillStyle = `rgb(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)})`;
                             
                             // Apply camera zoom to fairy size
                             const fairySize = FAIRY_SIZE * cameraZoom;
@@ -19086,7 +19354,7 @@
                             if (currentEffectProfile.drawFairyGlow) {
                                 ctx.save();
                                 ctx.globalAlpha = 0.3;
-                                ctx.fillStyle = `rgb(${color.r}, ${color.g}, ${color.b})`;
+                                ctx.fillStyle = `rgb(${Math.round(color.r)}, ${Math.round(color.g)}, ${Math.round(color.b)})`;
                                 ctx.fillRect(
                                     fairyX * cameraZoom - fairySize,
                                     fairyY * cameraZoom - fairySize,

@@ -3,6 +3,7 @@ const http = require('http');
 const { createApp } = require('./src/app');
 const { getConfig } = require('./src/config/getConfig');
 const { createSocketServer } = require('./src/realtime/createSocketServer');
+const { getTotalResponseStats } = require('./src/http/middleware/createResponseSizeMiddleware');
 
 /**
  * Bootstraps the HTTP + Socket.IO server.
@@ -24,6 +25,16 @@ async function main() {
     console.log('='.repeat(60));
 
   });
+
+  setInterval(() => {
+    const stats = getTotalResponseStats();
+    if (stats.responseCount > 0) {
+      console.log('='.repeat(60));
+      console.log(`Total HTTP Responses: ${stats.responseCount}`);
+      console.log(`Total Data Sent: ${stats.formattedTotal} total`);
+      console.log('='.repeat(60));
+    }
+  }, 60000);
 }
 
 main().catch((err) => {

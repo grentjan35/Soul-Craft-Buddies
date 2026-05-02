@@ -4,6 +4,7 @@ const path = require('path');
 
 const { createBackup, listBackups, restoreBackup, getBackupDir } = require('./backupService');
 const { loadEnemyCatalog, normalizeEnemySpawns } = require('../../enemies/catalog');
+const { formatBytes } = require('../../utils/formatBytes');
 const VALID_DECOR_TYPES = new Set(['fire_small', 'fire_purple']);
 
 /**
@@ -15,6 +16,18 @@ function createMapsRouter(deps) {
   const router = express.Router();
   const enemyCatalog = loadEnemyCatalog({ staticDir: deps.staticDir });
   const mobileLayoutsPath = path.join(deps.dataDir, 'mobile-layout-presets.json');
+
+  /**
+   * Wraps res.json to log the response size.
+   * @param {import('express').Response} res
+   * @param {any} data
+   */
+  function logJsonResponse(res, data) {
+    const jsonString = JSON.stringify(data);
+    const size = Buffer.byteLength(jsonString, 'utf8');
+    console.log(`JSON ${formatBytes(size)}`);
+    return res.json(data);
+  }
 
   function loadMobileLayouts() {
     try {
@@ -155,7 +168,7 @@ function createMapsRouter(deps) {
       })
     );
 
-    res.json({ success: true, message: `Map "${name}" saved successfully` });
+    logJsonResponse(res, { success: true, message: `Map "${name}" saved successfully` });
   });
 
   router.get('/api/load_map/:mapName', (req, res) => {
@@ -183,7 +196,7 @@ function createMapsRouter(deps) {
       if (!Array.isArray(mapData.decor)) {
         mapData.decor = [];
       }
-      res.json(mapData);
+      logJsonResponse(res, mapData);
     } catch {
       res.status(500).json({ error: 'Server error' });
     }
@@ -195,12 +208,12 @@ function createMapsRouter(deps) {
       .readdirSync(deps.dataDir)
       .filter((f) => f.endsWith('.json'))
       .map((f) => f.slice(0, -5));
-    res.json(maps);
+    logJsonResponse(res, maps);
   });
 
   router.get('/api/mobile_layouts', (_req, res) => {
     setRevalidationCacheHeaders(res);
-    res.json(loadMobileLayouts());
+    logJsonResponse(res, loadMobileLayouts());
   });
 
   router.post('/api/mobile_layouts', (req, res) => {
@@ -247,7 +260,7 @@ function createMapsRouter(deps) {
 
     payload.presets.sort((a, b) => String(a.name).localeCompare(String(b.name)));
     saveMobileLayouts(payload);
-    res.json({ success: true, preset: normalizedPreset });
+    logJsonResponse(res, { success: true, preset: normalizedPreset });
   });
 
   router.delete('/api/delete_map/:mapName', (req, res) => {
@@ -260,13 +273,13 @@ function createMapsRouter(deps) {
     }
 
     fs.unlinkSync(mapPath);
-    res.json({ success: true, message: `Map "${mapName}" deleted successfully` });
+    logJsonResponse(res, { success: true, message: `Map "${mapName}" deleted successfully` });
   });
 
   router.get('/api/backups/:mapName', (req, res) => {
     setRevalidationCacheHeaders(res);
     const mapName = path.basename(String(req.params.mapName ?? ''));
-    res.json(listBackups({ dataDir: deps.dataDir, mapName }));
+    logJsonResponse(res, listBackups({ dataDir: deps.dataDir, mapName }));
   });
 
   router.post('/api/restore_backup', (req, res) => {
@@ -288,7 +301,7 @@ function createMapsRouter(deps) {
       return;
     }
 
-    res.json({ success: true, message: `Map "${mapName}" restored successfully` });
+    logJsonResponse(res, { success: true, message: `Map "${mapName}" restored successfully` });
   });
 
   router.delete('/api/backups/:mapName/:backupFilename', (req, res) => {
@@ -304,7 +317,7 @@ function createMapsRouter(deps) {
     }
 
     fs.unlinkSync(backupPath);
-    res.json({ success: true, message: `Backup "${backupFilename}" deleted successfully` });
+    logJsonResponse(res, { success: true, message: `Backup "${backupFilename}" deleted successfully` });
   });
 
   router.get('/api/current_map', (req, res) => {
@@ -326,7 +339,7 @@ function createMapsRouter(deps) {
       if (!mapData.tileCollisions) {
         mapData.tileCollisions = {};
       }
-      res.json(mapData);
+      logJsonResponse(res, mapData);
       return;
     }
 
@@ -345,11 +358,11 @@ function createMapsRouter(deps) {
       if (!mapData.tileCollisions) {
         mapData.tileCollisions = {};
       }
-      res.json(mapData);
+      logJsonResponse(res, mapData);
       return;
     }
 
-    res.json({
+    logJsonResponse(res, {
       name: 'default',
       width: 25,
       height: 18,

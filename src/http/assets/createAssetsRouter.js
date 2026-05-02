@@ -7,6 +7,7 @@ const { loadEnemyCatalog, loadEnemyMetadata, saveEnemyMetadata } = require('../.
 const { resolveUnderBaseDir } = require('../../utils/pathSafety');
 const { signToken, verifyToken } = require('./tokenService');
 const { loadManifest } = require('./manifestService');
+const { formatBytes } = require('../../utils/formatBytes');
 
 /**
  * Get character asset path with WebP-first fallback to PNG.
@@ -305,6 +306,8 @@ function sendProtectedBinaryFile(input) {
     return;
   }
 
+  console.log(`FILE ${path.basename(input.fullPath)} ${formatBytes(stat.size)}`);
+
   input.res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   input.res.setHeader('Pragma', 'no-cache');
   input.res.setHeader('Expires', '0');
@@ -312,6 +315,7 @@ function sendProtectedBinaryFile(input) {
   input.res.setHeader('X-Content-Type-Options', 'nosniff');
   input.res.setHeader('Content-Disposition', `attachment; filename="${path.basename(input.downloadName)}"`);
   input.res.setHeader('Content-Length', stat.size);
+  input.res.setHeader('X-Asset-Source', 'LOCAL');
 
   const stream = fs.createReadStream(input.fullPath);
   stream.on('error', () => {
@@ -342,9 +346,29 @@ function buildFileLookup(baseDir, relativeDir, allowedNames) {
     try {
       if (fs.statSync(fullPath).isFile()) {
         lookup.set(normalizedName, fullPath);
+        continue;
       }
     } catch {
-      // Ignore missing optional assets and keep startup resilient.
+      // File with exact name doesn't exist, try audio fallbacks.
+    }
+
+    // For audio files, try common local extensions if exact .m4a not found.
+    // CDN uses .m4a, but local files may be .mp3, .wav, or .ogg.
+    const audioExtMatch = normalizedName.match(/\.(m4a|mp3|wav|ogg)$/i);
+    if (audioExtMatch) {
+      const baseName = normalizedName.slice(0, -audioExtMatch[0].length);
+      const altExts = ['.mp3', '.wav', '.ogg', '.m4a'];
+      for (const ext of altExts) {
+        const altPath = path.join(baseDir, relativeDir, `${baseName}${ext}`);
+        try {
+          if (fs.statSync(altPath).isFile()) {
+            lookup.set(normalizedName, altPath);
+            break;
+          }
+        } catch {
+          // Try next extension.
+        }
+      }
     }
   }
 
@@ -358,8 +382,16 @@ function sendPublicCachedFile(res, lookup, assetName) {
     return;
   }
 
+  try {
+    const stat = fs.statSync(fullPath);
+    console.log(`FILE ${path.basename(fullPath)} ${formatBytes(stat.size)}`);
+  } catch {
+    // File might not exist, let sendFile handle the error
+  }
+
   setPublicAssetCacheHeaders(res);
   res.type(path.extname(fullPath));
+  res.setHeader('X-Asset-Source', 'LOCAL');
   res.sendFile(fullPath);
 }
 
@@ -453,7 +485,7 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
 
   try {
     assetRecord = await fetchExternalAssetBuffer(externalUrl);
-    console.log(`CDN: ${relativeAssetPath}`);
+    console.log(`CDN ${relativeAssetPath} ${formatBytes(Buffer.byteLength(assetRecord.buffer))}`);
   } catch {
     // Try WebP/PNG fallback
     const parsedPath = path.parse(relativeAssetPath);
@@ -465,7 +497,7 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
       try {
         assetRecord = await fetchExternalAssetBuffer(fallbackUrl);
         triedFallback = true;
-        console.log(`CDN (fallback): ${fallbackPath}`);
+        console.log(`CDN ${fallbackPath} ${formatBytes(Buffer.byteLength(assetRecord.buffer))}`);
       } catch {
         return false;
       }
@@ -494,6 +526,7 @@ async function sendExternalBinaryFile(res, baseUrl, relativeAssetPath, downloadN
     }
   }
   res.setHeader('Content-Length', Buffer.byteLength(buffer));
+  res.setHeader('X-Asset-Source', 'CDN');
   res.send(buffer);
   return true;
 }
@@ -513,54 +546,54 @@ function createAssetsRouter(deps) {
   const selectableBackgrounds = listAvailableBackgrounds(deps.staticDir);
   const backgroundCompanions = listAvailableBackgroundCompanions(deps.staticDir);
   const listEnemyCatalog = () => loadEnemyCatalog({ staticDir: deps.staticDir });
-  const publicMenuSounds = new Set(['click.wav', 'hover.wav', 'navigate.wav', 'play.wav', 'full.wav', 'set.wav']);
-  const publicFootstepPattern = /^footsteps_[1-3]\.wav$/;
-  const publicSpiderFootstepPattern = /^footstep([2-4])?\.mp3$/;
-  const publicSlimeFootstepPattern = /^footstep(\s\((2|3)\))?\.mp3$/;
-  const publicGameplaySounds = new Set(['fall.wav', 'fire.wav', 'combat.mp3', 'soul_collected.mp3', 'achivement unlocked.MP3', 'chest open.mp3', 'you_died.mp3', 'danger.mp3']);
-  const publicFireballSounds = new Set(['hit.wav', 'inair.wav', 'release.wav']);
-  const publicPlayerHurtPattern = /^hurt[1-5]?\.mp3$/;
+  const publicMenuSounds = new Set(['click.m4a', 'hover.m4a', 'navigate.m4a', 'play.m4a', 'full.m4a', 'set.m4a']);
+  const publicFootstepPattern = /^footsteps_[1-3]\.m4a$/;
+  const publicSpiderFootstepPattern = /^footstep([2-4])?\.m4a$/;
+  const publicSlimeFootstepPattern = /^footstep(\s\((2|3)\))?\.m4a$/;
+  const publicGameplaySounds = new Set(['fall.m4a', 'fire.m4a', 'combat.m4a', 'soul_collected.m4a', 'achievement unlocked.m4a', 'chest open.m4a', 'you_died.m4a', 'danger.m4a']);
+  const publicFireballSounds = new Set(['hit.m4a', 'inair.m4a', 'release.m4a']);
+  const publicPlayerHurtPattern = /^hurt[1-5]?\.m4a$/;
   const publicSpiderSounds = new Set([
-    'death.mp3',
-    'death2.mp3',
-    'eating.mp3',
-    'growl.mp3',
-    'growling.mp3',
-    'hurt.mp3',
-    'screeching.mp3',
-    'throwing up.mp3',
-    'wine.mp3',
+    'death.m4a',
+    'death2.m4a',
+    'eating.m4a',
+    'growl.m4a',
+    'growling.m4a',
+    'hurt.m4a',
+    'screeching.m4a',
+    'throwing up.m4a',
+    'wine.m4a',
   ]);
   const publicBatSounds = new Set([
-    'death.mp3',
-    'detect.mp3',
-    'flying.mp3',
-    'hurt.mp3',
-    'idle.mp3',
-    'wander.mp3',
-    'wandering.mp3',
+    'death.m4a',
+    'detect.m4a',
+    'flying.m4a',
+    'hurt.m4a',
+    'idle.m4a',
+    'wander.m4a',
+    'wandering.m4a',
   ]);
   const publicSlimeSounds = new Set([
-    'attack.mp3',
-    'death.mp3',
-    'growl.mp3',
-    'hurt.mp3',
-    'wander.mp3',
+    'attack.m4a',
+    'death.m4a',
+    'growl.m4a',
+    'hurt.m4a',
+    'wander.m4a',
   ]);
   const publicGargoyleSounds = new Set([
-    'attack.mp3',
-    'flying.mp3',
-    'idle.mp3',
-    'not in combat.mp3',
-    'swoop.mp3',
+    'attack.m4a',
+    'flying.m4a',
+    'idle.m4a',
+    'not in combat.m4a',
+    'swoop.m4a',
   ]);
   const publicStrikerSounds = new Set([
-    'attack.mp3',
-    'death.mp3',
-    'flying.mp3',
-    'hurt.mp3',
-    'idle.mp3',
-    'slam.mp3',
+    'attack.m4a',
+    'death.m4a',
+    'flying.m4a',
+    'hurt.m4a',
+    'idle.m4a',
+    'slam.m4a',
   ]);
   const publicMenuSoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds'), publicMenuSounds);
   const publicGameplaySoundFiles = buildFileLookup(deps.staticDir, path.join('assets', 'sounds'), publicGameplaySounds);
@@ -662,6 +695,7 @@ function createAssetsRouter(deps) {
 
   router.get('/audio/menu/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    console.log(`REQUEST menu/${soundName}`);
     if (!publicMenuSounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
@@ -686,13 +720,15 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=footsteps/${soundName}`);
+    console.log(`LOCAL footsteps/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', soundName);
     try {
-      if (!fs.statSync(soundPath).isFile()) {
+      const stat = fs.statSync(soundPath);
+      if (!stat.isFile()) {
         res.status(404).send('Not Found');
         return;
       }
+      console.log(`FILE ${soundName} ${formatBytes(stat.size)}`);
     } catch {
       res.status(404).send('Not Found');
       return;
@@ -700,6 +736,7 @@ function createAssetsRouter(deps) {
 
     setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
+    res.setHeader('X-Asset-Source', 'LOCAL');
     res.sendFile(soundPath);
   });
 
@@ -714,13 +751,15 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=spider_footsteps/${soundName}`);
+    console.log(`LOCAL spider_footsteps/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'spider footsteps', soundName);
     try {
-      if (!fs.statSync(soundPath).isFile()) {
+      const stat = fs.statSync(soundPath);
+      if (!stat.isFile()) {
         res.status(404).send('Not Found');
         return;
       }
+      console.log(`FILE ${soundName} ${formatBytes(stat.size)}`);
     } catch {
       res.status(404).send('Not Found');
       return;
@@ -728,6 +767,7 @@ function createAssetsRouter(deps) {
 
     setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
+    res.setHeader('X-Asset-Source', 'LOCAL');
     res.sendFile(soundPath);
   });
 
@@ -742,13 +782,15 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=slime_footsteps/${soundName}`);
+    console.log(`LOCAL slime_footsteps/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'footsteps', 'slime footsteps', soundName);
     try {
-      if (!fs.statSync(soundPath).isFile()) {
+      const stat = fs.statSync(soundPath);
+      if (!stat.isFile()) {
         res.status(404).send('Not Found');
         return;
       }
+      console.log(`FILE ${soundName} ${formatBytes(stat.size)}`);
     } catch {
       res.status(404).send('Not Found');
       return;
@@ -756,11 +798,13 @@ function createAssetsRouter(deps) {
 
     setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
+    res.setHeader('X-Asset-Source', 'LOCAL');
     res.sendFile(soundPath);
   });
 
   router.get('/audio/:name', async (req, res) => {
     const soundName = String(req.params.name ?? '').trim().toLowerCase();
+    console.log(`REQUEST gameplay/${soundName}`);
     if (!publicGameplaySounds.has(soundName)) {
       res.status(404).send('Not Found');
       return;
@@ -770,7 +814,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=gameplay/${soundName}`);
+    console.log(`LOCAL gameplay/${soundName}`);
     sendPublicCachedFile(res, publicGameplaySoundFiles, soundName);
   });
 
@@ -785,7 +829,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=fireball/${soundName}`);
+    console.log(`LOCAL fireball/${soundName}`);
     sendPublicCachedFile(res, publicFireballSoundFiles, soundName);
   });
 
@@ -800,15 +844,23 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=hurt/${soundName}`);
+    console.log(`LOCAL hurt/${soundName}`);
     const soundPath = path.join(deps.staticDir, 'assets', 'sounds', 'hurt', soundName);
     if (!fs.existsSync(soundPath)) {
       res.status(404).send('Not Found');
       return;
     }
 
+    try {
+      const stat = fs.statSync(soundPath);
+      console.log(`FILE ${soundName} ${formatBytes(stat.size)}`);
+    } catch {
+      // File exists but stat failed, continue anyway
+    }
+
     setPublicAssetCacheHeaders(res);
     res.type(path.extname(soundName));
+    res.setHeader('X-Asset-Source', 'LOCAL');
     res.sendFile(soundPath);
   });
 
@@ -823,7 +875,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=spider/${soundName}`);
+    console.log(`LOCAL spider/${soundName}`);
     sendPublicCachedFile(res, publicSpiderSoundFiles, soundName);
   });
 
@@ -838,7 +890,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=bat/${soundName}`);
+    console.log(`LOCAL bat/${soundName}`);
     sendPublicCachedFile(res, publicBatSoundFiles, soundName);
   });
 
@@ -853,7 +905,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=slime/${soundName}`);
+    console.log(`LOCAL slime/${soundName}`);
     sendPublicCachedFile(res, publicSlimeSoundFiles, soundName);
   });
 
@@ -868,7 +920,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=gargoyle/${soundName}`);
+    console.log(`LOCAL gargoyle/${soundName}`);
     sendPublicCachedFile(res, publicGargoyleSoundFiles, soundName);
   });
 
@@ -883,7 +935,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: sound=striker/${soundName}`);
+    console.log(`LOCAL striker/${soundName}`);
     sendPublicCachedFile(res, publicStrikerSoundFiles, soundName);
   });
 
@@ -898,7 +950,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: gui=${assetName}`);
+    console.log(`LOCAL gui=${assetName}`);
     sendPublicCachedFile(res, publicGuiAssetFiles, assetName);
   });
 
@@ -913,7 +965,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    console.log(`LOCAL: icon=${assetName}`);
+    console.log(`LOCAL icon=${assetName}`);
     sendPublicCachedFile(res, publicIconAssetFiles, assetName);
   });
 
@@ -925,8 +977,16 @@ function createAssetsRouter(deps) {
       return;
     }
 
+    try {
+      const stat = fs.statSync(keepAliveAssetPath);
+      console.log(`FILE keep-alive.webp ${formatBytes(stat.size)}`);
+    } catch {
+      // File exists but stat failed, continue anyway
+    }
+
     setPublicAssetCacheHeaders(res);
     res.type('.webp');
+    res.setHeader('X-Asset-Source', 'LOCAL');
     res.sendFile(keepAliveAssetPath);
   });
 
@@ -1771,6 +1831,7 @@ function createAssetsRouter(deps) {
 
     setPublicAssetCacheHeaders(res);
     res.type('.png');
+    res.setHeader('X-Asset-Source', 'LOCAL');
     res.sendFile(assetPath);
   });
 

@@ -73,6 +73,35 @@ function createPagesRouter(deps) {
     res.sendFile(path.join(deps.templatesDir, 'enhancer.html'));
   });
 
+  router.get('/msgpack.min.js', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('application/javascript');
+    res.sendFile(path.join(deps.staticDir, 'msgpack.min.js'));
+  });
+
+  // Serve roll assets
+  router.get('/static/assets/characters/metadata_roll.json', (_req, res) => {
+    const metadataPath = path.join(deps.staticDir, 'assets', 'characters', 'metadata_roll.json');
+    if (!fs.existsSync(metadataPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('application/json');
+    res.sendFile(metadataPath);
+  });
+
+  router.get('/static/assets/characters/roll.webp', (_req, res) => {
+    const rollPath = path.join(deps.staticDir, 'assets', 'characters', 'roll.webp');
+    if (!fs.existsSync(rollPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+    res.setHeader('Cache-Control', 'public, max-age=604800');
+    res.type('image/webp');
+    res.sendFile(rollPath);
+  });
+
   return router;
 }
 
