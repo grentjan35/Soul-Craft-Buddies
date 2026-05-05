@@ -2464,6 +2464,20 @@ function stopGameLoop() {
     clearTimeout(gameLoopInterval);
     gameLoopInterval = null;
   }
+
+  const state = gameLoopContext?.state;
+  if (!state || state.players?.size > 0) {
+    return;
+  }
+
+  if (state.enemies?.clear) state.enemies.clear();
+  if (state.fireballs?.clear) state.fireballs.clear();
+  if (state.explosions?.clear) state.explosions.clear();
+  if (state.souls?.clear) state.souls.clear();
+  if (state.deadBodies?.clear) state.deadBodies.clear();
+  if (state.groups?.clear) state.groups.clear();
+  if (state.pendingGroupInvites?.clear) state.pendingGroupInvites.clear();
+  if (state.activeHealings?.clear) state.activeHealings.clear();
 }
 
 /**

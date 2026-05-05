@@ -43,10 +43,20 @@ function createSocketServer(input) {
     pingInterval: 10000,
   });
 
+  const monitoringEnabled = String(process.env.SOCKET_MONITORING || '').toLowerCase() === '1';
+  /** @type {Set<string>} */
+  const monitorSocketIds = new Set();
+  /** @type {NodeJS.Timeout | null} */
+  let monitorInterval = null;
+
   createGameServer({ io, config: input.config });
 
   // Monitoring middleware to track message sizes
   io.use((socket, next) => {
+    if (!monitoringEnabled) {
+      next();
+      return;
+    }
     // Track connection count
     monitorStats.activeConnections = io.sockets.sockets.size;
     
@@ -74,6 +84,37 @@ function createSocketServer(input) {
     monitorStats.activeConnections = io.sockets.sockets.size;
     
     socket.on('start-monitor', () => {
+      if (!monitoringEnabled) {
+        return;
+      }
+
+      monitorSocketIds.add(socket.id);
+
+      if (!monitorInterval) {
+        monitorStats.lastSecondMessages = 0;
+        monitorStats.lastSecondTime = Date.now();
+        monitorInterval = setInterval(() => {
+          const now = Date.now();
+          const diff = now - monitorStats.lastSecondTime;
+
+          if (diff >= 1000) {
+            monitorStats.messagesPerSecond = monitorStats.lastSecondMessages;
+            monitorStats.lastSecondMessages = 0;
+            monitorStats.lastSecondTime = now;
+
+            if (monitorSocketIds.size > 0) {
+              io.emit('monitor-stats', {
+                activeConnections: monitorStats.activeConnections,
+                totalMessages: monitorStats.totalMessages,
+                totalBytesCompressed: monitorStats.totalBytesCompressed,
+                totalBytesUncompressed: monitorStats.totalBytesUncompressed,
+                messagesPerSecond: monitorStats.messagesPerSecond
+              });
+            }
+          }
+        }, 1000);
+      }
+
       // Send current stats to monitor
       socket.emit('monitor-stats', {
         activeConnections: monitorStats.activeConnections,
@@ -86,31 +127,21 @@ function createSocketServer(input) {
     
     socket.on('disconnect', () => {
       monitorStats.activeConnections = io.sockets.sockets.size;
+
+      if (monitoringEnabled) {
+        monitorSocketIds.delete(socket.id);
+        if (monitorSocketIds.size === 0 && monitorInterval) {
+          clearInterval(monitorInterval);
+          monitorInterval = null;
+        }
+      }
     });
   });
 
-  // Update messages per second calculation
-  setInterval(() => {
-    const now = Date.now();
-    const diff = now - monitorStats.lastSecondTime;
-    
-    if (diff >= 1000) {
-      monitorStats.messagesPerSecond = monitorStats.lastSecondMessages;
-      monitorStats.lastSecondMessages = 0;
-      monitorStats.lastSecondTime = now;
-      
-      // Broadcast updated stats to all monitors
-      io.emit('monitor-stats', {
-        activeConnections: monitorStats.activeConnections,
-        totalMessages: monitorStats.totalMessages,
-        totalBytesCompressed: monitorStats.totalBytesCompressed,
-        totalBytesUncompressed: monitorStats.totalBytesUncompressed,
-        messagesPerSecond: monitorStats.messagesPerSecond
-      });
-    }
-  }, 100);
-
   function trackMessage(eventName, args, direction) {
+    if (!monitoringEnabled || monitorSocketIds.size === 0) {
+      return;
+    }
     const jsonString = JSON.stringify(args);
     const uncompressedSize = Buffer.byteLength(jsonString, 'utf8');
     
@@ -135,13 +166,14 @@ function createSocketServer(input) {
     });
     
     // Limit history to last 100 messages
-    if (monitorStats.messageHistory.length > 100) {
+    if (monitorStats.messageHistory.length > 20) {
       monitorStats.messageHistory.pop();
     }
   }
 
   // Keep-alive mechanism: request tiny image every 14 minutes if there are active connections
   // This prevents Render.com from spinning down during active WebSocket gameplay
+  const keepAliveEnabled = String(process.env.SOCKET_KEEP_ALIVE || '').toLowerCase() === '1';
   const KEEP_ALIVE_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
   let keepAliveTimer = null;
 
@@ -182,17 +214,19 @@ function createSocketServer(input) {
   };
 
   // Start keep-alive when first client connects, stop when last disconnects
-  io.on('connection', (socket) => {
-    if (io.sockets.sockets.size === 1) {
-      startKeepAlive();
-    }
-
-    socket.on('disconnect', () => {
-      if (io.sockets.sockets.size === 0) {
-        stopKeepAlive();
+  if (keepAliveEnabled) {
+    io.on('connection', (socket) => {
+      if (io.sockets.sockets.size === 1) {
+        startKeepAlive();
       }
+
+      socket.on('disconnect', () => {
+        if (io.sockets.sockets.size === 0) {
+          stopKeepAlive();
+        }
+      });
     });
-  });
+  }
 
   return io;
 }
