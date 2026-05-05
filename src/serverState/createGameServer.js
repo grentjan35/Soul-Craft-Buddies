@@ -1,4 +1,4 @@
-const { createInitialState } = require('./state/createInitialState');
+const { createInitialState, hydrateState, dehydrateState } = require('./state/createInitialState');
 const { registerSocketHandlers } = require('./sockets/registerSocketHandlers');
 const { startGameLoop, restartGameLoop } = require('./tick/startGameLoop');
 
@@ -11,9 +11,38 @@ const { startGameLoop, restartGameLoop } = require('./tick/startGameLoop');
 function createGameServer(input) {
   const state = createInitialState({ config: input.config });
 
+  /** @type {NodeJS.Timeout | null} */
+  let dehydrateTimer = null;
+  const dehydrateDelayMs = 60_000;
+
   input.io.on('connection', (socket) => {
+    if (dehydrateTimer) {
+      clearTimeout(dehydrateTimer);
+      dehydrateTimer = null;
+    }
+
+    hydrateState(state);
     restartGameLoop();
     registerSocketHandlers({ socket, io: input.io, state });
+
+    socket.on('disconnect', () => {
+      setTimeout(() => {
+        if (state.players.size > 0) {
+          return;
+        }
+
+        if (dehydrateTimer) {
+          clearTimeout(dehydrateTimer);
+        }
+
+        dehydrateTimer = setTimeout(() => {
+          if (state.players.size > 0) {
+            return;
+          }
+          dehydrateState(state);
+        }, dehydrateDelayMs);
+      }, 0);
+    });
   });
 
   startGameLoop({ io: input.io, state });

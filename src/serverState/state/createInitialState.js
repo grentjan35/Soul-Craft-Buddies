@@ -16,6 +16,47 @@ const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
 const { buildPlatformsFromMap } = require('./platforms/buildPlatformsFromMap');
 const { buildPlatformNavigation } = require('./platformNavigation/buildPlatformNavigation');
 
+function hydrateState(state) {
+  if (!state || state._hydrated) {
+    return;
+  }
+
+  const mapData = state._mapData;
+  if (!mapData) {
+    state._hydrated = true;
+    return;
+  }
+
+  const platforms = buildPlatformsFromMap(mapData);
+  state.platforms = platforms;
+  state.platformGrid = buildPlatformGrid({ platforms });
+  state.platformNavigation = buildPlatformNavigation({ platforms });
+  state.enemyDefinitions = loadEnemyCatalog({ staticDir: state.config.staticDir });
+  state.fairies = initializeFairies({ platforms });
+
+  ensureSoulState(state);
+  ensureChestState(state);
+  resetEnemiesForState({ state });
+
+  state._hydrated = true;
+}
+
+function dehydrateState(state) {
+  if (!state || !state._hydrated) {
+    return;
+  }
+
+  state.platforms = [];
+  state.platformGrid = null;
+  state.platformNavigation = null;
+  state.enemyDefinitions = null;
+  state.fairies = [];
+  state.enemySpawns = [];
+  if (state.enemies?.clear) state.enemies.clear();
+
+  state._hydrated = false;
+}
+
 /**
  * Loads map JSON if present.
  * @param {{dataDir: string, mapName: string}} input
@@ -42,7 +83,6 @@ function loadMapFromDisk(input) {
  */
 function createInitialState(input) {
   const dataDir = input.config.dataDir;
-  const enemyDefinitions = loadEnemyCatalog({ staticDir: input.config.staticDir });
 
   const mapResult = loadMapFromDisk({ dataDir, mapName: 'default' });
   const mapData = mapResult.ok
@@ -58,8 +98,6 @@ function createInitialState(input) {
         enemies: [],
       };
 
-  const platforms = buildPlatformsFromMap(mapData);
-
   const mapBounds = {
     min_x: 0,
     max_x: mapData.width * TILE_SIZE,
@@ -70,8 +108,11 @@ function createInitialState(input) {
   const spawnPoints = Array.isArray(mapData.spawnPoints)
     ? mapData.spawnPoints
     : [{ x: 100, y: 500, id: 0 }];
+
   const state = {
     config: input.config,
+    _mapData: mapData,
+    _hydrated: false,
     players: new Map(),
     deadBodies: new Map(),
     deadBodyDurationSeconds: DEAD_BODY_DURATION,
@@ -80,17 +121,17 @@ function createInitialState(input) {
     nextFireballId: 0,
     nextExplosionId: 0,
     stateSeq: 0,
-    platforms,
-    platformGrid: buildPlatformGrid({ platforms }),
-    platformNavigation: buildPlatformNavigation({ platforms }),
+    platforms: [],
+    platformGrid: null,
+    platformNavigation: null,
     mapBounds,
     currentMapName: String(mapData.name ?? 'default'),
     spawnPoints,
-    enemyDefinitions,
+    enemyDefinitions: null,
     enemySpawns: [],
     enemies: new Map(),
     spawnPointIndex: 0,
-    fairies: initializeFairies({ platforms }),
+    fairies: [],
     souls: new Map(),
     nextSoulId: 1,
     maxHealth: PLAYER_MAX_HEALTH,
@@ -103,11 +144,7 @@ function createInitialState(input) {
     nextChestId: 1,
     nextChestSpawnAtMs: Date.now() + 30_000,
   };
-
-  ensureSoulState(state);
-  ensureChestState(state);
-  resetEnemiesForState({ state });
   return state;
 }
 
-module.exports = { createInitialState };
+module.exports = { createInitialState, hydrateState, dehydrateState };
