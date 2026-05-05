@@ -2470,6 +2470,9 @@ function stopGameLoop() {
     return;
   }
 
+  socketBandwidthHistory.clear();
+  lastBandwidthLogMs = 0;
+
   if (state.enemies?.clear) state.enemies.clear();
   if (state.fireballs?.clear) state.fireballs.clear();
   if (state.explosions?.clear) state.explosions.clear();
@@ -2478,6 +2481,15 @@ function stopGameLoop() {
   if (state.groups?.clear) state.groups.clear();
   if (state.pendingGroupInvites?.clear) state.pendingGroupInvites.clear();
   if (state.activeHealings?.clear) state.activeHealings.clear();
+
+  if (state.playerPlatformCache?.clear) {
+    state.playerPlatformCache.clear();
+  }
+  state.playerPlatformCache = null;
+
+  if (typeof global.gc === 'function') {
+    global.gc();
+  }
 }
 
 /**
