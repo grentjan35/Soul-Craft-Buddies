@@ -410,6 +410,25 @@ function buildExternalAssetUrl(baseUrl, relativeAssetPath) {
   return `${normalizedBase}/assets/${normalizedRelative}`;
 }
 
+/**
+ * Redirects the client to the external CDN URL for a public asset.
+ * Why: avoids proxying bytes through the Render server, saving bandwidth.
+ * Note: Only use for public assets (no token/header based access control).
+ * @param {{res: import('express').Response, baseUrl: string, relativeAssetPath: string}} input
+ * @returns {boolean}
+ */
+function tryRedirectToExternalAsset(input) {
+  const externalUrl = buildExternalAssetUrl(input.baseUrl, input.relativeAssetPath);
+  if (!externalUrl) {
+    return false;
+  }
+
+  setPublicAssetCacheHeaders(input.res);
+  input.res.setHeader('X-Asset-Source', 'CDN-REDIRECT');
+  input.res.redirect(302, externalUrl);
+  return true;
+}
+
 const EXTERNAL_ASSET_CACHE_TTL_MS = 10 * 60 * 1000;
 const externalAssetCache = new Map();
 
@@ -701,7 +720,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', soundName), soundName)) {
+    if (tryRedirectToExternalAsset({ res, baseUrl: deps.assetCdnBaseUrl, relativeAssetPath: path.join('sounds', soundName) })) {
       return;
     }
 
@@ -716,7 +735,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'footsteps', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'footsteps', soundName),
+      })
+    ) {
       return;
     }
 
@@ -747,7 +772,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'footsteps', 'spider footsteps', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'footsteps', 'spider footsteps', soundName),
+      })
+    ) {
       return;
     }
 
@@ -778,7 +809,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'footsteps', 'slime footsteps', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'footsteps', 'slime footsteps', soundName),
+      })
+    ) {
       return;
     }
 
@@ -810,7 +847,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', soundName), soundName)) {
+    if (tryRedirectToExternalAsset({ res, baseUrl: deps.assetCdnBaseUrl, relativeAssetPath: path.join('sounds', soundName) })) {
       return;
     }
 
@@ -825,7 +862,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'fireball', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'fireball', soundName),
+      })
+    ) {
       return;
     }
 
@@ -840,7 +883,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'hurt', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'hurt', soundName),
+      })
+    ) {
       return;
     }
 
@@ -871,7 +920,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'spider', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'spider', soundName),
+      })
+    ) {
       return;
     }
 
@@ -886,7 +941,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'bat', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'bat', soundName),
+      })
+    ) {
       return;
     }
 
@@ -901,7 +962,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'slime', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'slime', soundName),
+      })
+    ) {
       return;
     }
 
@@ -916,7 +983,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'gargoyle', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'gargoyle', soundName),
+      })
+    ) {
       return;
     }
 
@@ -931,7 +1004,13 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('sounds', 'striker', soundName), soundName)) {
+    if (
+      tryRedirectToExternalAsset({
+        res,
+        baseUrl: deps.assetCdnBaseUrl,
+        relativeAssetPath: path.join('sounds', 'striker', soundName),
+      })
+    ) {
       return;
     }
 
@@ -946,7 +1025,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('GUI', assetName), assetName)) {
+    if (tryRedirectToExternalAsset({ res, baseUrl: deps.assetCdnBaseUrl, relativeAssetPath: path.join('GUI', assetName) })) {
       return;
     }
 
@@ -961,7 +1040,7 @@ function createAssetsRouter(deps) {
       return;
     }
 
-    if (await sendExternalBinaryFile(res, deps.assetCdnBaseUrl, path.join('icons', assetName), assetName)) {
+    if (tryRedirectToExternalAsset({ res, baseUrl: deps.assetCdnBaseUrl, relativeAssetPath: path.join('icons', assetName) })) {
       return;
     }
 

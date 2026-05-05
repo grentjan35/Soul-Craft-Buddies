@@ -384,8 +384,8 @@ function cleanupDeadBodies(input) {
 }
 
 /**
- * Respawns dying players after 2 seconds.
- * Why: Python server shows death animation then respawns.
+ * Respawns dying players after their respawn timer completes.
+ * Why: death animation + respawn delay.
  * @param {{state: any, io: import('socket.io').Server}} input
  */
 function updateDeathsAndRespawns(input) {
@@ -393,22 +393,14 @@ function updateDeathsAndRespawns(input) {
 
   for (const [sid, p] of input.state.players.entries()) {
     if (!p.is_dying) continue;
-    if (nowSec - (p.death_time ?? 0) < 2.0) continue;
 
-    const deathData = {
-      sid,
-      name: String(p.name ?? `P${sid.slice(0, 4)}`),
-      x: p.x,
-      y: p.y,
-      vy: p.vy,
-      on_ground: p.on_ground,
-      character: p.character,
-      direction: p.direction,
-      timestamp: nowSec,
-    };
-
-    input.state.deadBodies.set(`${sid}_${Math.floor(nowSec)}`, deathData);
-    input.io.emit('player_dying', deathData);
+    const respawnAt = Number(p.respawn_at) || 0;
+    if (respawnAt <= 0) {
+      continue;
+    }
+    if (nowSec < respawnAt) {
+      continue;
+    }
 
     const spawn = pickSpawnPoint({ state: input.state });
     p.x = spawn.x;
@@ -432,6 +424,8 @@ function updateDeathsAndRespawns(input) {
     p.queued_projectile_distance = 0;
     p.queued_projectile_direction = null;
     p.soul_count = 0;
+    p.respawn_at = 0;
+    p.death_soul_count = 0;
 
     input.io.emit('player_respawned', { sid });
   }

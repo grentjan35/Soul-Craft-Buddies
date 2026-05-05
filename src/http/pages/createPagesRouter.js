@@ -102,6 +102,12 @@ function createPagesRouter(deps) {
     res.sendFile(rollPath);
   });
 
+  // WebSocket monitor page
+  router.get('/websocket-monitor', (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    res.sendFile(path.join(deps.staticDir, 'websocket-monitor.html'));
+  });
+
   return router;
 }
 

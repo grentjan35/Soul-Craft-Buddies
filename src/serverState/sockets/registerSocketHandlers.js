@@ -265,8 +265,13 @@ function registerSocketHandlers(input) {
     if (!player) return;
     if (!player.is_dying) return;
 
+    const now = Date.now() / 1000;
+    const respawnAt = Number(player.respawn_at) || 0;
+    if (respawnAt > 0 && now < respawnAt) {
+      return;
+    }
+
     const nowMs = Date.now();
-    const now = nowMs / 1000;
     state.deadBodies.set(`${socket.id}_${Math.floor(now)}`, {
       sid: socket.id,
       name: String(player.name ?? `P${socket.id.slice(0, 4)}`),
@@ -761,6 +766,8 @@ function handleConnect(input) {
     health: PLAYER_MAX_HEALTH,
     is_dying: false,
     death_time: 0,
+    respawn_at: 0,
+    death_soul_count: 0,
     is_attacking: false,
     attack_start_time: 0,
     selected_inventory_slot: INVENTORY_SLOT_FIREBALL,
@@ -902,6 +909,8 @@ function respawnPlayer(input) {
   player.queued_projectile_distance = 0;
   player.queued_projectile_direction = null;
   player.soul_count = 0;
+  player.respawn_at = 0;
+  player.death_soul_count = 0;
 }
 
 /**

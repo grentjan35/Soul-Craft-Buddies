@@ -22,6 +22,7 @@ async function main() {
     console.log(`Main Game:    http://localhost:${config.port}/`);
     console.log(`Editor:       http://localhost:${config.port}/editor`);
     console.log(`Enhancer:     http://localhost:${config.port}/enhancer`);
+    console.log(`WebSocket Monitor: http://localhost:${config.port}/websocket-monitor`);
     console.log('='.repeat(60));
 
   });

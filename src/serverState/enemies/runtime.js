@@ -22,6 +22,23 @@ function secondsFromMs(ms) {
   return ms / 1000;
 }
 
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, value));
+}
+
+function computeRespawnDelaySeconds(soulCount) {
+  const minDelay = 3;
+  const maxDelay = 10;
+  const normalizedSouls = clampNumber(Number(soulCount) / 200, 0, 1);
+  const r1 = Math.random();
+  const r2 = Math.random();
+  const biased = r1 * (1 - normalizedSouls) + Math.max(r1, r2) * normalizedSouls;
+  return minDelay + (maxDelay - minDelay) * clampNumber(biased, 0, 1);
+}
+
 const MIN_ENEMY_RESPAWN_DELAY_SECONDS = 18;
 const ENEMY_DEATH_HOLD_SECONDS = 10;
 const ENEMY_PLATFORM_INSET = 10;
@@ -2927,9 +2944,15 @@ function damagePlayerFromEnemyHit(input) {
     player.health = 0;
     player.is_dying = true;
     player.death_time = nowSec;
+
+    const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
+    player.respawn_at = nowSec + respawnDelaySeconds;
+    player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
+
     despawnEnemiesSpawnedForPlayer(input.state, input.sid);
     dropSoulsForPlayerDeath(input.state, input.io, player);
-    input.io.emit('player_dying', {
+
+    const deathPayload = {
       sid: input.sid,
       x: player.x,
       y: player.y,
@@ -2938,7 +2961,12 @@ function damagePlayerFromEnemyHit(input) {
       character: player.character,
       direction: player.direction,
       timestamp: nowSec,
-    });
+      respawn_at_ms: Math.round(player.respawn_at * 1000),
+      soul_count: player.death_soul_count,
+    };
+
+    input.state.deadBodies.set(`${input.sid}_${Math.floor(nowSec)}`, deathPayload);
+    input.io.emit('player_dying', deathPayload);
   }
 
   input.io.emit('player_hit', {

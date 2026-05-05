@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[WS_MONITOR] :: TERMINAL INTERFACE</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
+            background: #000000;
+            color: #00ff00;
+            min-height: 100vh;
+            padding: 20px;
+            overflow-x: hidden;
+            text-shadow: 0 0 5px #00ff00;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: #0a0a0a;
+            border: 2px solid #00ff00;
+            border-radius: 0;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.5), inset 0 0 20px rgba(0, 255, 0, 0.1);
+            position: relative;
+        }
+        
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 255, 0, 0.03) 2px,
+                rgba(0, 255, 0, 0.03) 4px
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        .container > * {
+            position: relative;
+            z-index: 2;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #00ff00;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00, 0 0 30px #00ff00;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes glow {
+            from { text-shadow: 0 0 10px #00ff00, 0 0 20px #00ff00, 0 0 30px #00ff00; }
+            to { text-shadow: 0 0 20px #00ff00, 0 0 30px #00ff00, 0 0 40px #00ff00; }
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #000000;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.9em;
+            letter-spacing: 1px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+        
+        .timer-controls {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: #000000;
+            border: 1px solid #00ff00;
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+            font-size: 0.9em;
+        }
+        
+        .timer-display {
+            font-size: 1.1em;
+            font-weight: 700;
+            color: #00ffff;
+            min-width: 80px;
+            text-shadow: 0 0 5px #00ffff;
+            font-family: 'Fira Code', monospace;
+        }
+        
+        .timer-btn {
+            padding: 6px 12px;
+            border: 1px solid #00ff00;
+            background: #000000;
+            color: #00ff00;
+            border-radius: 0;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: 'Fira Code', monospace;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+        }
+        
+        .timer-btn.start {
+            color: #00ff00;
+            border-color: #00ff00;
+        }
+        
+        .timer-btn.start:hover {
+            background: #00ff00;
+            color: #000000;
+            box-shadow: 0 0 15px rgba(0, 255, 0, 0.8);
+        }
+        
+        .timer-btn.stop {
+            color: #ff0000;
+            border-color: #ff0000;
+        }
+        
+        .timer-btn.stop:hover {
+            background: #ff0000;
+            color: #000000;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.8);
+        }
+        
+        .timer-btn.reset {
+            color: #ffff00;
+            border-color: #ffff00;
+        }
+        
+        .timer-btn.reset:hover {
+            background: #ffff00;
+            color: #000000;
+            box-shadow: 0 0 15px rgba(255, 255, 0, 0.8);
+        }
+        
+        .download-btn {
+            background: #000000;
+            color: #ff00ff;
+            border: 1px solid #ff00ff;
+            padding: 8px 16px;
+            border-radius: 0;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: 'Fira Code', monospace;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            box-shadow: 0 0 5px rgba(255, 0, 255, 0.3);
+        }
+        
+        .download-btn:hover {
+            background: #ff00ff;
+            color: #000000;
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.8);
+        }
+        
+        .download-btn:disabled {
+            background: #333333;
+            color: #666666;
+            border-color: #666666;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff0000;
+            animation: pulse 2s infinite;
+            box-shadow: 0 0 5px #ff0000;
+        }
+        
+        .status-dot.connected {
+            background: #00ff00;
+            box-shadow: 0 0 5px #00ff00;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .metric-card {
+            background: #000000;
+            border: 1px solid #00ff00;
+            padding: 15px;
+            border-radius: 0;
+            text-align: center;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 0, 0.1), transparent);
+            animation: scan 3s infinite;
+        }
+        
+        @keyframes scan {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        
+        .metric-value {
+            font-size: 1.8em;
+            font-weight: 700;
+            color: #00ffff;
+            margin-bottom: 5px;
+            text-shadow: 0 0 5px #00ffff;
+            font-family: 'Fira Code', monospace;
+        }
+        
+        .metric-label {
+            color: #00ff00;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            font-weight: 600;
+        }
+        
+        .table-container {
+            background: #000000;
+            border: 1px solid #00ff00;
+            border-radius: 0;
+            padding: 15px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .table-title {
+            font-size: 1.1em;
+            font-weight: 700;
+            color: #00ff00;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 5px #00ff00;
+        }
+        
+        .clear-btn {
+            background: #000000;
+            color: #ff0000;
+            border: 1px solid #ff0000;
+            padding: 6px 12px;
+            border-radius: 0;
+            cursor: pointer;
+            font-weight: 600;
+            font-family: 'Fira Code', monospace;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+            box-shadow: 0 0 5px rgba(255, 0, 0, 0.3);
+        }
+        
+        .clear-btn:hover {
+            background: #ff0000;
+            color: #000000;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.8);
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+        
+        th, td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #00ff00;
+            font-family: 'Fira Code', monospace;
+        }
+        
+        th {
+            background: #0a0a0a;
+            font-weight: 700;
+            color: #00ffff;
+            text-transform: uppercase;
+            font-size: 0.8em;
+            letter-spacing: 2px;
+            text-shadow: 0 0 3px #00ffff;
+        }
+        
+        tr:hover {
+            background: rgba(0, 255, 0, 0.1);
+        }
+        
+        .message-type {
+            padding: 2px 6px;
+            border-radius: 0;
+            font-size: 0.75em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .message-type.emit {
+            background: rgba(0, 255, 0, 0.2);
+            color: #00ff00;
+            border: 1px solid #00ff00;
+        }
+        
+        .message-type.receive {
+            background: rgba(255, 255, 0, 0.2);
+            color: #ffff00;
+            border: 1px solid #ffff00;
+        }
+        
+        .size-compressed {
+            color: #00ff00;
+            font-weight: 600;
+            text-shadow: 0 0 3px #00ff00;
+        }
+        
+        .size-uncompressed {
+            color: #666666;
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+        
+        .compression-ratio {
+            color: #ff00ff;
+            font-weight: 600;
+            text-shadow: 0 0 3px #ff00ff;
+        }
+        
+        .timestamp {
+            color: #888888;
+            font-size: 0.8em;
+        }
+        
+        .chart-container {
+            background: #000000;
+            border: 1px solid #00ff00;
+            border-radius: 0;
+            padding: 15px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+            margin-bottom: 15px;
+        }
+        
+        .mini-chart {
+            height: 60px;
+            background: #0a0a0a;
+            border: 1px solid #00ff00;
+            border-radius: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .chart-bar {
+            position: absolute;
+            bottom: 0;
+            width: 2px;
+            background: #00ff00;
+            box-shadow: 0 0 3px #00ff00;
+            transition: height 0.3s;
+        }
+        
+        .no-data {
+            text-align: center;
+            color: #666666;
+            padding: 30px;
+            font-style: italic;
+            font-family: 'Fira Code', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>[WS_MONITOR] :: TERMINAL INTERFACE</h1>
+        
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="connectionStatus">Disconnected</span>
+            </div>
+            <div>
+                <span id="connectionTime">Connected: --</span>
+            </div>
+        </div>
+        
+        <div class="timer-controls">
+            <div class="timer-display" id="timerDisplay">00:00</div>
+            <button class="timer-btn start" id="startTimer" onclick="startTimer()">Start Timer</button>
+            <button class="timer-btn stop" id="stopTimer" onclick="stopTimer()" disabled>Stop Timer</button>
+            <button class="timer-btn reset" id="resetTimer" onclick="resetTimer()">Reset</button>
+            <button class="download-btn" id="downloadReport" onclick="downloadReport()" disabled>Download Report</button>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value" id="totalMessages">0</div>
+                <div class="metric-label">Total Messages</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="messagesPerSecond">0</div>
+                <div class="metric-label">Messages/Second</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="totalBytes">0 KB</div>
+                <div class="metric-label">Total Data</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="compressionRatio">0%</div>
+                <div class="metric-label">Avg Compression</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="activeConnections">0</div>
+                <div class="metric-label">Active Connections</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="avgMessageSize">0 B</div>
+                <div class="metric-label">Avg Message Size</div>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <div class="table-header">
+                <div class="table-title">📊 Message Rate Timeline</div>
+            </div>
+            <div class="mini-chart" id="rateChart"></div>
+        </div>
+        
+        <div class="table-container">
+            <div class="table-header">
+                <div class="table-title">📋 Recent Messages</div>
+                <button class="clear-btn" onclick="clearMessages()">Clear</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>Event</th>
+                        <th>Size (Compressed)</th>
+                        <th>Size (Original)</th>
+                        <th>Compression</th>
+                        <th>Direction</th>
+                    </tr>
+                </thead>
+                <tbody id="messagesTable">
+                    <tr>
+                        <td colspan="7" class="no-data">No messages yet. Start playing your game to see live data!</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        class WebSocketMonitor {
+            constructor() {
+                this.socket = null;
+                this.messages = [];
+                this.stats = {
+                    totalMessages: 0,
+                    totalBytesCompressed: 0,
+                    totalBytesUncompressed: 0,
+                    messagesPerSecond: 0,
+                    activeConnections: 0,
+                    connectionTime: null,
+                    rateHistory: []
+                };
+                this.lastSecondMessages = 0;
+                this.lastSecondTime = Date.now();
+                
+                // Timer state
+                this.timerStartTime = null;
+                this.timerEndTime = null;
+                this.timerInterval = null;
+                this.timerRunning = false;
+                this.timerSnapshot = null;
+                
+                this.init();
+            }
+            
+            init() {
+                this.connect();
+                this.startMetricsUpdate();
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = window.location.hostname;
+                const port = window.location.port || (window.location.protocol === 'https:' ? 443 : 80);
+                
+                this.socket = io(`${protocol}//${host}:${port}`, {
+                    transports: ['websocket']
+                });
+                
+                this.socket.on('connect', () => {
+                    this.onConnect();
+                });
+                
+                this.socket.on('disconnect', () => {
+                    this.onDisconnect();
+                });
+                
+                this.socket.on('monitor-stats', (data) => {
+                    this.updateStats(data);
+                });
+                
+                this.socket.onAny((eventName, ...args) => {
+                    this.recordMessage(eventName, args, 'receive');
+                });
+                
+                // Override emit to track outgoing messages
+                const originalEmit = this.socket.emit.bind(this.socket);
+                this.socket.emit = (eventName, ...args) => {
+                    this.recordMessage(eventName, args, 'emit');
+                    return originalEmit(eventName, ...args);
+                };
+            }
+            
+            onConnect() {
+                document.getElementById('statusDot').classList.add('connected');
+                document.getElementById('connectionStatus').textContent = 'Connected';
+                this.stats.connectionTime = new Date();
+                this.updateConnectionTime();
+                
+                // Request monitoring data
+                this.socket.emit('start-monitor');
+            }
+            
+            onDisconnect() {
+                document.getElementById('statusDot').classList.remove('connected');
+                document.getElementById('connectionStatus').textContent = 'Disconnected';
+            }
+            
+            recordMessage(eventName, args, direction) {
+                const messageData = this.estimateMessageSize(args);
+                const message = {
+                    timestamp: new Date(),
+                    eventName,
+                    direction,
+                    ...messageData
+                };
+                
+                this.messages.unshift(message);
+                if (this.messages.length > 100) {
+                    this.messages.pop();
+                }
+                
+                this.stats.totalMessages++;
+                this.stats.totalBytesCompressed += message.compressedSize;
+                this.stats.totalBytesUncompressed += message.uncompressedSize;
+                
+                this.updateMessagesTable();
+                this.updateMetrics();
+            }
+            
+            estimateMessageSize(args) {
+                const jsonString = JSON.stringify(args);
+                const uncompressedSize = new Blob([jsonString]).size;
+                
+                // Simulate compression (actual compression happens on server)
+                const compressionRatio = 0.6; // 60% of original size
+                const compressedSize = Math.floor(uncompressedSize * compressionRatio);
+                
+                return {
+                    uncompressedSize,
+                    compressedSize,
+                    compressionRatio: Math.round((1 - compressionRatio) * 100)
+                };
+            }
+            
+            updateStats(data) {
+                if (data.activeConnections !== undefined) {
+                    this.stats.activeConnections = data.activeConnections;
+                }
+                this.updateMetrics();
+            }
+            
+            updateMetrics() {
+                document.getElementById('totalMessages').textContent = this.stats.totalMessages.toLocaleString();
+                document.getElementById('totalBytes').textContent = this.formatBytes(this.stats.totalBytesCompressed);
+                document.getElementById('activeConnections').textContent = this.stats.activeConnections;
+                
+                const avgCompression = this.stats.totalBytesUncompressed > 0 
+                    ? Math.round((1 - this.stats.totalBytesCompressed / this.stats.totalBytesUncompressed) * 100)
+                    : 0;
+                document.getElementById('compressionRatio').textContent = avgCompression + '%';
+                
+                const avgSize = this.stats.totalMessages > 0 
+                    ? Math.round(this.stats.totalBytesCompressed / this.stats.totalMessages)
+                    : 0;
+                document.getElementById('avgMessageSize').textContent = this.formatBytes(avgSize);
+                
+                this.updateRateChart();
+            }
+            
+            updateMessagesTable() {
+                const tbody = document.getElementById('messagesTable');
+                
+                if (this.messages.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="no-data">No messages yet. Start playing your game to see live data!</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = this.messages.slice(0, 20).map(msg => `
+                    <tr>
+                        <td class="timestamp">${msg.timestamp.toLocaleTimeString()}</td>
+                        <td><span class="message-type ${msg.direction}">${msg.direction}</span></td>
+                        <td>${msg.eventName}</td>
+                        <td class="size-compressed">${this.formatBytes(msg.compressedSize)}</td>
+                        <td class="size-uncompressed">${this.formatBytes(msg.uncompressedSize)}</td>
+                        <td class="compression-ratio">${msg.compressionRatio}%</td>
+                        <td>${msg.direction === 'emit' ? '⬆️ Outgoing' : '⬇️ Incoming'}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            updateRateChart() {
+                const now = Date.now();
+                const currentSecond = Math.floor(now / 1000);
+                
+                // Update messages per second
+                if (currentSecond !== this.lastSecondTime) {
+                    this.stats.messagesPerSecond = this.lastSecondMessages;
+                    this.lastSecondMessages = 0;
+                    this.lastSecondTime = currentSecond;
+                    
+                    this.stats.rateHistory.push(this.stats.messagesPerSecond);
+                    if (this.stats.rateHistory.length > 60) {
+                        this.stats.rateHistory.shift();
+                    }
+                }
+                this.lastSecondMessages++;
+                
+                document.getElementById('messagesPerSecond').textContent = this.stats.messagesPerSecond;
+                
+                // Update chart
+                const chart = document.getElementById('rateChart');
+                const maxRate = Math.max(...this.stats.rateHistory, 10);
+                
+                chart.innerHTML = this.stats.rateHistory.map((rate, index) => {
+                    const height = (rate / maxRate) * 100;
+                    const left = (index / 60) * 100;
+                    return `<div class="chart-bar" style="height: ${height}%; left: ${left}%;"></div>`;
+                }).join('');
+            }
+            
+            updateConnectionTime() {
+                if (!this.stats.connectionTime) return;
+                
+                const now = new Date();
+                const diff = now - this.stats.connectionTime;
+                const minutes = Math.floor(diff / 60000);
+                const seconds = Math.floor((diff % 60000) / 1000);
+                
+                document.getElementById('connectionTime').textContent = 
+                    `Connected: ${minutes}m ${seconds}s`;
+                
+                setTimeout(() => this.updateConnectionTime(), 1000);
+            }
+            
+            startMetricsUpdate() {
+                setInterval(() => {
+                    this.updateMetrics();
+                }, 1000);
+            }
+            
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+            
+            // Timer methods
+            startTimer() {
+                if (this.timerRunning) return;
+                
+                this.timerStartTime = new Date();
+                this.timerEndTime = null;
+                this.timerRunning = true;
+                this.timerSnapshot = null;
+                
+                document.getElementById('startTimer').disabled = true;
+                document.getElementById('stopTimer').disabled = false;
+                document.getElementById('downloadReport').disabled = true;
+                
+                this.timerInterval = setInterval(() => {
+                    this.updateTimerDisplay();
+                }, 100);
+                
+                this.updateTimerDisplay();
+            }
+            
+            stopTimer() {
+                if (!this.timerRunning) return;
+                
+                this.timerEndTime = new Date();
+                this.timerRunning = false;
+                clearInterval(this.timerInterval);
+                
+                // Create snapshot of current stats
+                this.timerSnapshot = {
+                    startTime: this.timerStartTime,
+                    endTime: this.timerEndTime,
+                    duration: this.timerEndTime - this.timerStartTime,
+                    stats: { ...this.stats },
+                    messages: [...this.messages],
+                    rateHistory: [...this.stats.rateHistory]
+                };
+                
+                document.getElementById('startTimer').disabled = false;
+                document.getElementById('stopTimer').disabled = true;
+                document.getElementById('downloadReport').disabled = false;
+                
+                this.updateTimerDisplay();
+            }
+            
+            resetTimer() {
+                this.timerRunning = false;
+                clearInterval(this.timerInterval);
+                
+                this.timerStartTime = null;
+                this.timerEndTime = null;
+                this.timerSnapshot = null;
+                
+                document.getElementById('startTimer').disabled = false;
+                document.getElementById('stopTimer').disabled = true;
+                document.getElementById('downloadReport').disabled = true;
+                
+                document.getElementById('timerDisplay').textContent = '00:00';
+            }
+            
+            updateTimerDisplay() {
+                const now = this.timerEndTime || new Date();
+                const elapsed = this.timerStartTime ? now - this.timerStartTime : 0;
+                
+                const minutes = Math.floor(elapsed / 60000);
+                const seconds = Math.floor((elapsed % 60000) / 1000);
+                
+                document.getElementById('timerDisplay').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            downloadReport() {
+                if (!this.timerSnapshot) {
+                    alert('No timer data available. Start and stop a timer first.');
+                    return;
+                }
+                
+                const report = this.generateReport();
+                const blob = new Blob([report], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `websocket-monitor-report-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+            
+            generateReport() {
+                const snapshot = this.timerSnapshot;
+                const durationMinutes = snapshot.duration / 60000;
+                const durationSeconds = (snapshot.duration % 60000) / 1000;
+                
+                let report = '='.repeat(80) + '\n';
+                report += 'WEBSOCKET MONITOR REPORT\n';
+                report += '='.repeat(80) + '\n\n';
+                
+                report += `Session Duration: ${Math.floor(durationMinutes)}m ${Math.floor(durationSeconds)}s\n`;
+                report += `Start Time: ${snapshot.startTime.toLocaleString()}\n`;
+                report += `End Time: ${snapshot.endTime.toLocaleString()}\n\n`;
+                
+                report += 'SUMMARY STATISTICS\n';
+                report += '-'.repeat(40) + '\n';
+                report += `Total Messages: ${snapshot.stats.totalMessages.toLocaleString()}\n`;
+                report += `Messages/Second: ${(snapshot.stats.totalMessages / (snapshot.duration / 1000)).toFixed(2)}\n`;
+                report += `Total Data (Compressed): ${this.formatBytes(snapshot.stats.totalBytesCompressed)}\n`;
+                report += `Total Data (Uncompressed): ${this.formatBytes(snapshot.stats.totalBytesUncompressed)}\n`;
+                
+                const avgCompression = snapshot.stats.totalBytesUncompressed > 0 
+                    ? Math.round((1 - snapshot.stats.totalBytesCompressed / snapshot.stats.totalBytesUncompressed) * 100)
+                    : 0;
+                report += `Average Compression: ${avgCompression}%\n`;
+                report += `Active Connections: ${snapshot.stats.activeConnections}\n`;
+                
+                const avgSize = snapshot.stats.totalMessages > 0 
+                    ? Math.round(snapshot.stats.totalBytesCompressed / snapshot.stats.totalMessages)
+                    : 0;
+                report += `Average Message Size: ${this.formatBytes(avgSize)}\n\n`;
+                
+                report += 'MESSAGE BREAKDOWN\n';
+                report += '-'.repeat(40) + '\n';
+                
+                const eventCounts = {};
+                const eventSizes = {};
+                
+                snapshot.messages.forEach(msg => {
+                    eventCounts[msg.eventName] = (eventCounts[msg.eventName] || 0) + 1;
+                    eventSizes[msg.eventName] = (eventSizes[msg.eventName] || 0) + msg.compressedSize;
+                });
+                
+                Object.entries(eventCounts).sort((a, b) => b[1] - a[1]).forEach(([event, count]) => {
+                    const size = eventSizes[event];
+                    const avgSize = Math.round(size / count);
+                    report += `${event}: ${count} messages, ${this.formatBytes(size)} total, avg ${this.formatBytes(avgSize)}\n`;
+                });
+                
+                report += '\n' + '='.repeat(80) + '\n';
+                report += `Generated: ${new Date().toLocaleString()}\n`;
+                report += '='.repeat(80) + '\n';
+                
+                return report;
+            }
+        }
+        
+        function clearMessages() {
+            if (monitor) {
+                monitor.messages = [];
+                monitor.stats.totalMessages = 0;
+                monitor.stats.totalBytesCompressed = 0;
+                monitor.stats.totalBytesUncompressed = 0;
+                monitor.updateMessagesTable();
+                monitor.updateMetrics();
+            }
+        }
+        
+        function startTimer() {
+            if (monitor) monitor.startTimer();
+        }
+        
+        function stopTimer() {
+            if (monitor) monitor.stopTimer();
+        }
+        
+        function resetTimer() {
+            if (monitor) monitor.resetTimer();
+        }
+        
+        function downloadReport() {
+            if (monitor) monitor.downloadReport();
+        }
+        
+        // Initialize monitor when page loads
+        let monitor;
+        window.addEventListener('load', () => {
+            monitor = new WebSocketMonitor();
+        });
+    </script>
+    
+    <!-- Include Socket.IO client -->
+    <script src="/socket.io/socket.io.js"></script>
+</body>
+</html>

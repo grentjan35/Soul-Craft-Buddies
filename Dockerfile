@@ -16,7 +16,7 @@ COPY . .
 RUN mkdir -p data
 
 # Expose port (will be overridden by PORT env var)
-EXPOSE 5000
+EXPOSE 7860
 
 # Start the server
 CMD ["npm", "start"]

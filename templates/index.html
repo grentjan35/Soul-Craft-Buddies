@@ -5550,6 +5550,73 @@
             };
         }
 
+        /**
+         * Loads the character card spritesheet grid + per-character slices.
+         * Why: Used for local-only ghost respawn animation.
+         * @returns {Promise<void>}
+         */
+        async function ensureCharacterCardGridLoaded() {
+            if (characterCardGrid.loaded) {
+                return;
+            }
+
+            const manifest = await getCharacterSelectionManifest();
+            if (!manifest?.spritesheet?.url || !manifest?.spritesheet?.columns || !manifest?.spritesheet?.rows) {
+                return;
+            }
+
+            const columns = Math.max(1, Math.round(Number(manifest.spritesheet.columns) || 1));
+            const rows = Math.max(1, Math.round(Number(manifest.spritesheet.rows) || 1));
+
+            /** @type {Record<string, {column: number, row: number}>} */
+            const slicesByCharacter = {};
+            for (const entry of manifest.characters) {
+                const character = typeof entry?.character === 'string' ? entry.character : '';
+                const slice = entry?.card_slice;
+                if (!character || !slice) {
+                    continue;
+                }
+                const column = Math.max(0, Math.round(Number(slice.column) || 0));
+                const row = Math.max(0, Math.round(Number(slice.row) || 0));
+                slicesByCharacter[character] = { column, row };
+            }
+
+            // Load the spritesheet image using the same token-based fetch as character selection
+            const image = new Image();
+            const loaded = new Promise((resolve) => {
+                image.onload = () => resolve(true);
+                image.onerror = () => resolve(false);
+            });
+            const response = await fetchWithAssetSession(String(manifest.spritesheet.url));
+            if (!response.ok) {
+                console.warn('[GhostDebug] Failed to fetch character card grid spritesheet:', response.status);
+                return;
+            }
+            const blob = await response.blob();
+            image.src = URL.createObjectURL(blob);
+            const ok = await loaded;
+            URL.revokeObjectURL(image.src);
+            if (!ok) {
+                return;
+            }
+
+            const cellW = Math.floor(image.width / columns);
+            const cellH = Math.floor(image.height / rows);
+            if (cellW <= 0 || cellH <= 0) {
+                return;
+            }
+
+            characterCardGrid = {
+                image,
+                columns,
+                rows,
+                cellW,
+                cellH,
+                loaded: true,
+                slicesByCharacter,
+            };
+        }
+
         async function getCharacterCardToken(characterName) {
             const response = await fetchWithAssetSession('/api/request_character_card_token', {
                 method: 'POST',
@@ -10964,6 +11031,8 @@
         const enemyAnimFrames = {};
         // Store dying players for death animation and fade-out
         const dyingPlayers = {};
+        let localDeathState = { isDead: false, respawnAtMs: 0, deathAtMs: 0, soulCountAtDeath: 0, x: 0, y: 0, character: '' };
+        let characterCardGrid = { image: null, columns: 0, rows: 0, cellW: 0, cellH: 0, loaded: false };
         // Store fairy data from server
         let fairies = [];
         
@@ -13068,6 +13137,9 @@
             
             // Play death sound if it's the current player
             if (sid === socket.id) {
+                if (localDeathState.isDead) {
+                    return;
+                }
                 console.log('[DeathSound] Creating audio element for /audio/you_died.m4a');
                 const deathAudio = new Audio('/audio/you_died.m4a');
                 deathAudio.volume = 0.6;
@@ -13086,7 +13158,7 @@
 
         // Handle player dying event from server
         socket.on('player_dying', (data) => {
-            const { sid, x, y, vy, on_ground, character, direction, timestamp } = data;
+            const { sid, x, y, vy, on_ground, character, direction, timestamp, respawn_at_ms, soul_count } = data;
             dyingPlayers[sid] = {
                 x: x,
                 y: y,
@@ -13099,6 +13171,24 @@
                 deathFrame: 0,
                 opacity: 1.0
             };
+
+            if (sid === socket.id) {
+                if (!localDeathState.isDead) {
+                    localDeathState.isDead = true;
+                    localDeathState.deathAtMs = Date.now();
+                    localDeathState.respawnAtMs = Number(respawn_at_ms) || 0;
+                    localDeathState.soulCountAtDeath = Math.max(0, Math.round(Number(soul_count) || 0));
+                    localDeathState.x = Number(x) || 0;
+                    localDeathState.y = Number(y) || 0;
+                    localDeathState.character = String(character || '');
+
+                    ensureCharacterCardGridLoaded().catch(() => {});
+
+                    const deathAudio = new Audio('/audio/you_died.m4a');
+                    deathAudio.volume = 0.6;
+                    deathAudio.play().catch(() => {});
+                }
+            }
 
             // Load character assets for this dying player if not already loaded
             if (character && !playerCharacterAssets[character]) {
@@ -13115,6 +13205,13 @@
             }
             if (typeof sid === 'string' && sid) {
                 recentlyRespawnedPlayers.add(sid);
+            }
+
+            if (sid === socket.id) {
+                localDeathState.isDead = false;
+                localDeathState.respawnAtMs = 0;
+                localDeathState.deathAtMs = 0;
+                localDeathState.soulCountAtDeath = 0;
             }
         });
 
@@ -19540,6 +19637,80 @@
 
                         ctx.restore();
                     }
+                }
+
+                if (localDeathState.isDead && localDeathState.respawnAtMs > 0 && characterCardGrid.loaded && characterCardGrid.image) {
+                    const nowLocalMs = nowMs;
+                    const durationMs = Math.max(1, localDeathState.respawnAtMs - localDeathState.deathAtMs);
+                    const elapsedMs = Math.max(0, nowLocalMs - localDeathState.deathAtMs);
+                    const progress = Math.max(0, Math.min(1, elapsedMs / durationMs));
+
+                    const characterKey = String(localDeathState.character || '').toLowerCase();
+                    const slice = characterCardGrid.slicesByCharacter?.[characterKey] || null;
+                    // Fallback to first cell (0,0) if slice missing
+                    const column = slice?.column ?? 0;
+                    const row = slice?.row ?? 0;
+                    const srcX = column * characterCardGrid.cellW;
+                    const srcY = row * characterCardGrid.cellH;
+                    const srcW = characterCardGrid.cellW;
+                    const srcH = characterCardGrid.cellH;
+
+                    const ghostRisePx = 120;
+                    const ghostWorldX = localDeathState.x;
+                    const ghostWorldY = localDeathState.y - progress * ghostRisePx;
+                    const alpha = Math.max(0, Math.min(0.85, 0.2 + progress * 0.65));
+                    const scale = 0.7 + progress * 0.25;
+                    const drawW = srcW * 0.24 * scale;
+                    const drawH = srcH * 0.24 * scale;
+
+                    // Transition from grayscale to full color as respawn approaches
+                    const grayscaleAmount = Math.max(0, 1 - progress);
+                    const brightness = 1 + (1 - progress) * 0.4; // 1.4 -> 1.0
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.filter = `grayscale(${grayscaleAmount * 100}%) brightness(${brightness})`;
+                    ctx.drawImage(
+                        characterCardGrid.image,
+                        srcX,
+                        srcY,
+                        srcW,
+                        srcH,
+                        ghostWorldX - cameraX - drawW / 2,
+                        ghostWorldY - cameraY - drawH / 2,
+                        drawW,
+                        drawH
+                    );
+                    ctx.restore();
+                }
+
+                // DEBUG: Log ghost state once per second
+                if (localDeathState.isDead && typeof window.__ghostLogAt !== 'number') {
+                    window.__ghostLogAt = 0;
+                }
+                if (localDeathState.isDead && nowMs - window.__ghostLogAt > 1000) {
+                    window.__ghostLogAt = nowMs;
+                    const durationMs = Math.max(1, localDeathState.respawnAtMs - localDeathState.deathAtMs);
+                    const elapsedMs = Math.max(0, nowMs - localDeathState.deathAtMs);
+                    const progress = Math.max(0, Math.min(1, elapsedMs / durationMs));
+                    const characterKey = String(localDeathState.character || '').toLowerCase();
+                    const slice = characterCardGrid.slicesByCharacter?.[characterKey] || null;
+                    console.log('[GhostDebug]', {
+                      isDead: localDeathState.isDead,
+                      respawnAtMs: localDeathState.respawnAtMs,
+                      deathAtMs: localDeathState.deathAtMs,
+                      nowMs,
+                      durationMs,
+                      elapsedMs,
+                      progress,
+                      characterKey,
+                      slice,
+                      gridLoaded: characterCardGrid.loaded,
+                      gridImage: !!characterCardGrid.image,
+                      cellW: characterCardGrid.cellW,
+                      cellH: characterCardGrid.cellH,
+                      ghostWorldX: localDeathState.x,
+                      ghostWorldY: localDeathState.y - progress * 140,
+                    });
                 }
 
                 // Draw dust particles
