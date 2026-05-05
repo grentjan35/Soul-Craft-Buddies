@@ -15,10 +15,6 @@ function createGameServer(input) {
   let dehydrateTimer = null;
   const dehydrateDelayMs = 60_000;
 
-  function isServerIdle() {
-    return input.io.sockets.sockets.size === 0;
-  }
-
   input.io.on('connection', (socket) => {
     if (dehydrateTimer) {
       clearTimeout(dehydrateTimer);
@@ -31,7 +27,7 @@ function createGameServer(input) {
 
     socket.on('disconnect', () => {
       setTimeout(() => {
-        if (!isServerIdle()) {
+        if (state.players.size > 0) {
           return;
         }
 
@@ -40,7 +36,7 @@ function createGameServer(input) {
         }
 
         dehydrateTimer = setTimeout(() => {
-          if (!isServerIdle()) {
+          if (state.players.size > 0) {
             return;
           }
           dehydrateState(state);
