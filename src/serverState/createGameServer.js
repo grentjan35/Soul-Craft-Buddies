@@ -3,6 +3,35 @@ const { registerSocketHandlers } = require('./sockets/registerSocketHandlers');
 const { startGameLoop, restartGameLoop } = require('./tick/startGameLoop');
 
 /**
+ * Runs garbage collection if enabled.
+ * Why: Node/V8 may keep RSS high after gameplay; idle-only GC helps reclaim memory.
+ * @param {{state: any}} input
+ * @returns {void}
+ */
+function runIdleGarbageCollection(input) {
+  const gcFn = /** @type {undefined | (() => void)} */ (global.gc);
+  if (typeof gcFn !== 'function') {
+    return;
+  }
+
+  if (!input.state || input.state.players?.size > 0) {
+    return;
+  }
+
+  try {
+    gcFn();
+    setTimeout(() => {
+      if (!input.state || input.state.players?.size > 0) {
+        return;
+      }
+      gcFn();
+    }, 50);
+  } catch {
+    // Ignore GC errors (best-effort only).
+  }
+}
+
+/**
  * Creates the game state and registers realtime handlers + loop.
  * Why: Keep all mutable state scoped, not global.
  * @param {{io: import('socket.io').Server, config: any}} input
@@ -40,6 +69,7 @@ function createGameServer(input) {
             return;
           }
           dehydrateState(state);
+          runIdleGarbageCollection({ state });
         }, dehydrateDelayMs);
       }, 0);
     });

@@ -119,7 +119,18 @@ function dehydrateState(state) {
   state.enemyDefinitions = null;
   state.fairies = [];
   state.enemySpawns = [];
-  if (state.enemies?.clear) state.enemies.clear();
+  // Prefer replacing large Maps over .clear() so V8 can drop internal capacity.
+  // Why: after gameplay, Maps can grow and keep backing storage even when cleared.
+  state.players = new Map();
+  state.deadBodies = new Map();
+  state.fireballs = new Map();
+  state.explosions = new Map();
+  state.enemies = new Map();
+  state.souls = new Map();
+  state.groups = new Map();
+  state.pendingGroupInvites = new Map();
+  state.activeHealings = new Map();
+  state.chests = new Map();
 
   // Release the largest idle memory holder (map JSON) when nobody is playing.
   // Input: 0 players, server idle. We can reload from disk on next hydrate.

@@ -2478,6 +2478,10 @@ function stopGameLoop() {
   if (state.groups?.clear) state.groups.clear();
   if (state.pendingGroupInvites?.clear) state.pendingGroupInvites.clear();
   if (state.activeHealings?.clear) state.activeHealings.clear();
+
+  // Release loop-owned references so idle GC can reclaim memory.
+  // Why: gameLoopContext holds HealingSystem + input refs that can keep state alive.
+  gameLoopContext = null;
 }
 
 /**
