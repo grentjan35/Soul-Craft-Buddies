@@ -16,78 +16,11 @@ const { buildPlatformGrid } = require('./platformGrid/buildPlatformGrid');
 const { buildPlatformsFromMap } = require('./platforms/buildPlatformsFromMap');
 const { buildPlatformNavigation } = require('./platformNavigation/buildPlatformNavigation');
 
-/**
- * Applies map-derived fields onto state.
- * Why: Keep map parsing/loading separate so we can defer disk load until first player.
- * @param {any} state
- * @param {any} mapData
- * @returns {void}
- */
-function applyMapDataToState(state, mapData) {
-  if (!state) {
-    return;
-  }
-
-  const safeMapData = mapData || { name: String(state._mapName || 'default'), width: 1, height: 1, spawnPoints: [] };
-  state._mapData = mapData;
-
-  const width = Math.max(1, Number(safeMapData.width) || 1);
-  const height = Math.max(1, Number(safeMapData.height) || 1);
-
-  state.mapBounds = {
-    min_x: 0,
-    max_x: width * TILE_SIZE,
-    min_y: 0,
-    max_y: height * TILE_SIZE,
-  };
-
-  const spawnPoints = Array.isArray(safeMapData.spawnPoints) && safeMapData.spawnPoints.length > 0
-    ? safeMapData.spawnPoints
-    : [{ x: 100, y: 500, id: 0 }];
-  state.spawnPoints = spawnPoints;
-  state.currentMapName = String(safeMapData.name ?? 'default');
-}
-
-/**
- * Ensures state has map data loaded.
- * Why: Avoid holding large map JSON in memory while the server is idle.
- * @param {any} state
- * @returns {void}
- */
-function ensureMapDataLoaded(state) {
-  if (!state || state._mapData) {
-    return;
-  }
-
-  const dataDir = state.dataDir || state.config?.dataDir;
-  const mapName = String(state._mapName || 'default');
-  if (!dataDir) {
-    applyMapDataToState(state, null);
-    return;
-  }
-
-  const mapResult = loadMapFromDisk({ dataDir, mapName });
-  if (mapResult.ok) {
-    applyMapDataToState(state, mapResult.mapData);
-    return;
-  }
-
-  applyMapDataToState(state, {
-    name: mapName,
-    width: 25,
-    height: 18,
-    tiles: Array.from({ length: 18 }, () => Array.from({ length: 25 }, () => -1)),
-    spawnPoints: [{ x: 100, y: 500, id: 0 }],
-    enemies: [],
-  });
-}
-
 function hydrateState(state) {
   if (!state || state._hydrated) {
     return;
   }
 
-  ensureMapDataLoaded(state);
   const mapData = state._mapData;
   if (!mapData) {
     state._hydrated = true;
@@ -119,22 +52,7 @@ function dehydrateState(state) {
   state.enemyDefinitions = null;
   state.fairies = [];
   state.enemySpawns = [];
-  // Prefer replacing large Maps over .clear() so V8 can drop internal capacity.
-  // Why: after gameplay, Maps can grow and keep backing storage even when cleared.
-  state.players = new Map();
-  state.deadBodies = new Map();
-  state.fireballs = new Map();
-  state.explosions = new Map();
-  state.enemies = new Map();
-  state.souls = new Map();
-  state.groups = new Map();
-  state.pendingGroupInvites = new Map();
-  state.activeHealings = new Map();
-  state.chests = new Map();
-
-  // Release the largest idle memory holder (map JSON) when nobody is playing.
-  // Input: 0 players, server idle. We can reload from disk on next hydrate.
-  state._mapData = null;
+  if (state.enemies?.clear) state.enemies.clear();
 
   state._hydrated = false;
 }
@@ -166,12 +84,34 @@ function loadMapFromDisk(input) {
 function createInitialState(input) {
   const dataDir = input.config.dataDir;
 
+  const mapResult = loadMapFromDisk({ dataDir, mapName: 'default' });
+  const mapData = mapResult.ok
+    ? mapResult.mapData
+    : {
+        name: 'default',
+        width: 25,
+        height: 18,
+        tiles: Array.from({ length: 18 }, () =>
+          Array.from({ length: 25 }, () => -1)
+        ),
+        spawnPoints: [{ x: 100, y: 500, id: 0 }],
+        enemies: [],
+      };
+
+  const mapBounds = {
+    min_x: 0,
+    max_x: mapData.width * TILE_SIZE,
+    min_y: 0,
+    max_y: mapData.height * TILE_SIZE,
+  };
+
+  const spawnPoints = Array.isArray(mapData.spawnPoints)
+    ? mapData.spawnPoints
+    : [{ x: 100, y: 500, id: 0 }];
+
   const state = {
     config: input.config,
-    // Defer map JSON loading until first player connects.
-    // Why: baseline RSS on Railway/Render is sensitive to large parsed objects.
-    _mapData: null,
-    _mapName: 'default',
+    _mapData: mapData,
     _hydrated: false,
     players: new Map(),
     deadBodies: new Map(),
@@ -184,9 +124,9 @@ function createInitialState(input) {
     platforms: [],
     platformGrid: null,
     platformNavigation: null,
-    mapBounds: { min_x: 0, max_x: 25 * TILE_SIZE, min_y: 0, max_y: 18 * TILE_SIZE },
-    currentMapName: 'default',
-    spawnPoints: [{ x: 100, y: 500, id: 0 }],
+    mapBounds,
+    currentMapName: String(mapData.name ?? 'default'),
+    spawnPoints,
     enemyDefinitions: null,
     enemySpawns: [],
     enemies: new Map(),
@@ -204,9 +144,6 @@ function createInitialState(input) {
     nextChestId: 1,
     nextChestSpawnAtMs: Date.now() + 30_000,
   };
-
-  // Keep derived fields consistent without loading the full map at startup.
-  applyMapDataToState(state, null);
   return state;
 }
 

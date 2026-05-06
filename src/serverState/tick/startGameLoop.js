@@ -2478,10 +2478,6 @@ function stopGameLoop() {
   if (state.groups?.clear) state.groups.clear();
   if (state.pendingGroupInvites?.clear) state.pendingGroupInvites.clear();
   if (state.activeHealings?.clear) state.activeHealings.clear();
-
-  // Release loop-owned references so idle GC can reclaim memory.
-  // Why: gameLoopContext holds HealingSystem + input refs that can keep state alive.
-  gameLoopContext = null;
 }
 
 /**
@@ -2489,19 +2485,10 @@ function stopGameLoop() {
  * Why: Resume game physics when a player connects.
  * @returns {void}
  */
-function restartGameLoop(input) {
-  if (gameLoopInterval) {
+function restartGameLoop() {
+  if (gameLoopInterval || !gameLoopContext) {
     return;
   }
-
-  if (!gameLoopContext) {
-    if (!input || !input.state || !input.io) {
-      return;
-    }
-    const healingSystem = new HealingSystem(input.state);
-    gameLoopContext = { ...input, healingSystem };
-  }
-
   // Cleanup expired dead bodies before restarting loop
   cleanupDeadBodies({ state: gameLoopContext.state });
   startGameLoop(gameLoopContext);
