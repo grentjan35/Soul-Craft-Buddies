@@ -51,7 +51,7 @@ function createGameServer(input) {
     }
 
     hydrateState(state);
-    restartGameLoop();
+    restartGameLoop({ io: input.io, state });
     registerSocketHandlers({ socket, io: input.io, state });
 
     socket.on('disconnect', () => {

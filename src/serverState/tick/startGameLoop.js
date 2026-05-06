@@ -2489,10 +2489,19 @@ function stopGameLoop() {
  * Why: Resume game physics when a player connects.
  * @returns {void}
  */
-function restartGameLoop() {
-  if (gameLoopInterval || !gameLoopContext) {
+function restartGameLoop(input) {
+  if (gameLoopInterval) {
     return;
   }
+
+  if (!gameLoopContext) {
+    if (!input || !input.state || !input.io) {
+      return;
+    }
+    const healingSystem = new HealingSystem(input.state);
+    gameLoopContext = { ...input, healingSystem };
+  }
+
   // Cleanup expired dead bodies before restarting loop
   cleanupDeadBodies({ state: gameLoopContext.state });
   startGameLoop(gameLoopContext);
