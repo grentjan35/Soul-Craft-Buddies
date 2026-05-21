@@ -2965,6 +2965,13 @@ function damagePlayerFromEnemyHit(input) {
       soul_count: player.death_soul_count,
     };
 
+    console.log('[DeathDebug] Emitting player_dying:', {
+      respawn_at: player.respawn_at,
+      respawn_at_ms: deathPayload.respawn_at_ms,
+      nowSec,
+      respawnDelaySeconds,
+    });
+
     input.state.deadBodies.set(`${input.sid}_${Math.floor(nowSec)}`, deathPayload);
     input.io.emit('player_dying', deathPayload);
   }
