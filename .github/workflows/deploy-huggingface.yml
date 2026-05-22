@@ -43,6 +43,8 @@ jobs:
           git lfs track "*.mp3"
           git lfs track "*.wav"
           git lfs track "*.ogg"
+          git config --global lfs.url "https://user:${HF_TOKEN}@huggingface.co"
+          git config lfs.https://huggingface.co/spaces/${HF_SPACE_ID}.access_token ${HF_TOKEN}
           git add .
           git add .gitattributes
           git config --global user.email "action@github.com"
