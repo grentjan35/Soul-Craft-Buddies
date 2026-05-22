@@ -30,7 +30,7 @@ function createSocketServer(input) {
     perMessageDeflate: {
       threshold: 1024,
       zlibDeflateOptions: {
-        level: 3,
+        level: 1,
       },
       zlibInflateOptions: {
         chunkSize: 10 * 1024,
@@ -39,8 +39,8 @@ function createSocketServer(input) {
       serverNoContextTakeover: true,
       serverMaxWindowBits: 10,
     },
-    pingTimeout: 120000,
-    pingInterval: 10000,
+    pingTimeout: 60000,
+    pingInterval: 2500,
   });
 
   const monitoringEnabled = String(process.env.SOCKET_MONITORING || '').toLowerCase() === '1';

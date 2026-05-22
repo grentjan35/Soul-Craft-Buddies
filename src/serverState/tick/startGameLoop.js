@@ -460,9 +460,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // A slightly higher server snapshot rate gives interpolation more samples
-  // to work with and noticeably reduces remote movement snapping.
-  const broadcastIntervalMs = 1000 / 30;
+  // 60Hz broadcast rate for reduced latency on remote deployments (Hugging Face)
+  // Higher tick rate provides more frequent updates, reducing perceived input lag
+  // without client-side prediction. Localhost already feels instant due to low latency.
+  const broadcastIntervalMs = 1000 / 60;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
@@ -513,6 +514,9 @@ function startGameLoop(input) {
       }
     }
 
+    // Broadcast state every tick (60Hz) for reduced latency on remote deployments
+    // Localhost benefits from low network latency, but Hugging Face has inherent delay
+    // Higher tick rate provides more frequent updates, reducing perceived input lag
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
       const includeFairies = nowMs - lastFairyBroadcastMs >= fairyBroadcastIntervalMs;
