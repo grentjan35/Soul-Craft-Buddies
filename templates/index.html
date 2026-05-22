@@ -4719,7 +4719,18 @@
         let renderDelayMs = currentMinInterpolationDelayMs;
 
         function syncResponsivenessProfile() {
-            if (isLowEnd || isLowQualityModeEnabled()) {
+            // Detect if running on remote deployment (not localhost)
+            // Why: Remote deployments (Hugging Face, etc.) have higher network latency
+            // Reducing interpolation delay improves responsiveness at cost of slight jitter
+            const isRemoteDeployment = window.location.hostname !== 'localhost' && 
+                                       window.location.hostname !== '127.0.0.1';
+            
+            if (isRemoteDeployment) {
+                // More aggressive interpolation delay for remote deployments
+                // Reduces perceived latency from network round-trip
+                inputSendIntervalMs = HIGH_END_INPUT_SEND_INTERVAL_MS;
+                currentMinInterpolationDelayMs = 20; // Reduced from 64-92ms
+            } else if (isLowEnd || isLowQualityModeEnabled()) {
                 inputSendIntervalMs = LOW_END_INPUT_SEND_INTERVAL_MS;
                 currentMinInterpolationDelayMs = LOW_END_MIN_INTERPOLATION_DELAY_MS;
             } else if (isMobile) {
