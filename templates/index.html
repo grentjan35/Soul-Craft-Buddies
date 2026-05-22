@@ -2544,7 +2544,7 @@
         }
         
         .loading-title {
-            font-size: 1.55rem;
+            font-size: 4rem;
             color: #f6e2b4;
             letter-spacing: 0.2em;
             margin-bottom: 15px;
@@ -2586,6 +2586,7 @@
             text-align: right;
             font-variant-numeric: tabular-nums;
             text-shadow: 0 1px 0 rgba(57, 35, 15, 0.9);
+            font-size: 1.5rem;
         }
 
         .loading-complete {
@@ -3642,6 +3643,18 @@
     </div>
 
 </div>
+
+    <div id="loading-screen">
+        <div class="loading-container is-boot-hidden">
+            <div class="loading-title" data-custom-alphabet="title">LOADING</div>
+            <div class="loading-progress-container">
+                <div id="loading-bar-fill" class="loading-progress-fill"></div>
+            </div>
+            <div class="loading-meta">
+                <span id="loading-percent-text" class="loading-percent" data-custom-alphabet="dynamic">0%</span>
+            </div>
+        </div>
+    </div>
 
     <div id="gameCanvas-wrapper">
         <canvas id="gameCanvas"></canvas>
@@ -8621,9 +8634,11 @@
                 setTimeout(() => {
                     stopMenuRendering();
                     startScreen.style.display = 'none';
-                    loadingScreen.style.transition = '';
-                    loadingScreen.style.opacity = '1';
-                    loadingScreen.style.display = 'flex'; // Show loading screen
+                    if (loadingScreen) {
+                        loadingScreen.style.transition = '';
+                        loadingScreen.style.opacity = '1';
+                        loadingScreen.style.display = 'flex'; // Show loading screen
+                    }
                     loadingContainer?.classList.remove('is-boot-hidden');
                     
                     // Start the smooth loading animation loop
