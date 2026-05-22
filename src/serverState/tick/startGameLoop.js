@@ -460,9 +460,9 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // A slightly higher server snapshot rate gives interpolation more samples
-  // to work with and noticeably reduces remote movement snapping.
-  const broadcastIntervalMs = 1000 / 30;
+  // Match physics rate (60Hz) to eliminate delay between updates and rendering.
+  // Combined with MessagePack compression, this provides instant response without jitter.
+  const broadcastIntervalMs = 1000 / 60;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
