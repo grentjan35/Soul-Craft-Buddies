@@ -144,22 +144,30 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 ```
 
 ### Error 12: Deployment fails - binary files rejected
-**Problem**: Hugging Face Spaces rejects pushes containing binary files (PNG, WebP, audio, GIF, JPEG, etc.) with error: "Your push was rejected because it contains binary files. Please use https://huggingface.co/docs/hub/xet to store binary files."
-**Solution**: Hugging Face now requires using **xet storage** for binary files instead of Git LFS. The workflow must be updated to use the Hugging Face CLI with xet support.
-1. **Remove Git LFS tracking from `.gitattributes`** (if previously added):
+**Problem**: Hugging Face Spaces rejects pushes containing binary files (PNG, WebP, audio, etc.) with error: "Your push was rejected because it contains binary files."
+**Solution**: Use Git LFS (Large File Storage) to handle binary files. Hugging Face supports up to 50GB with Git LFS.
+1. **Add to `.gitattributes`**:
    ```
-   # Remove these lines:
-   # *.png filter=lfs diff=lfs merge=lfs -text
-   # *.webp filter=lfs diff=lfs merge=lfs -text
-   # *.jpg filter=lfs diff=lfs merge=lfs -text
-   # *.jpeg filter=lfs diff=lfs merge=lfs -text
-   # *.gif filter=lfs diff=lfs merge=lfs -text
-   # *.m4a filter=lfs diff=lfs merge=lfs -text
-   # *.mp3 filter=lfs diff=lfs merge=lfs -text
-   # *.wav filter=lfs diff=lfs merge=lfs -text
-   # *.ogg filter=lfs diff=lfs merge=lfs -text
+   *.png filter=lfs diff=lfs merge=lfs -text
+   *.webp filter=lfs diff=lfs merge=lfs -text
+   *.jpg filter=lfs diff=lfs merge=lfs -text
+   *.jpeg filter=lfs diff=lfs merge=lfs -text
+   *.gif filter=lfs diff=lfs merge=lfs -text
+   *.m4a filter=lfs diff=lfs merge=lfs -text
+   *.mp3 filter=lfs diff=lfs merge=lfs -text
+   *.wav filter=lfs diff=lfs merge=lfs -text
+   *.ogg filter=lfs diff=lfs merge=lfs -text
    ```
-2. **Update GitHub Actions workflow** to use Hugging Face CLI with xet (see updated workflow below)
+2. **Initialize Git LFS locally**:
+   ```bash
+   git lfs install
+   git lfs track "*.png"
+   git lfs track "*.webp"
+   git add .gitattributes
+   git add static/assets/
+   git commit -m "Set up Git LFS for binary assets"
+   ```
+3. **Update GitHub Actions workflow** to handle Git LFS with credentials (see Error 13 and Error 14)
 
 ### Error 13: Git LFS push fails - credentials not found
 **Problem**: Git LFS push fails with "Git credentials for https://huggingface.co/spaces/... not found"
