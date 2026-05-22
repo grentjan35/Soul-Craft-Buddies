@@ -22,7 +22,7 @@ jobs:
 
       - name: Copy files to Space
         run: |
-          rsync -av --exclude='huggingface-space' --exclude='.git' . huggingface-space/
+          rsync -av --exclude='huggingface-space' --exclude='.git' --exclude='static/assets' . huggingface-space/
           cd huggingface-space
           git add .
           git config --global user.email "action@github.com"
