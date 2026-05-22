@@ -31,6 +31,9 @@ jobs:
       - name: Clone Hugging Face Space
         run: |
           git clone https://huggingface.co/spaces/${HF_SPACE_ID} huggingface-space
+          cd huggingface-space
+          git fetch --all
+          git reset --hard origin/main
 
       - name: Copy files to Space
         run: |
