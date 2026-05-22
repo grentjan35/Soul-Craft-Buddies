@@ -15,18 +15,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          lfs: true
-
-      - name: Install Git LFS
-        run: |
-          curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
-          sudo apt-get install git-lfs
-
-      - name: Pull Git LFS files
-        run: |
-          git lfs install
-          git lfs pull
 
       - name: Clone Hugging Face Space
         run: |
@@ -36,9 +24,7 @@ jobs:
         run: |
           rsync -av --exclude='huggingface-space' --exclude='.git' . huggingface-space/
           cd huggingface-space
-          git lfs install
           git add .
-          git add .gitattributes
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
           git commit -m "Deploy from GitHub Actions"
@@ -47,5 +33,4 @@ jobs:
         run: |
           cd huggingface-space
           git remote set-url origin https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}
-          git lfs push origin main --all
           git push origin main
