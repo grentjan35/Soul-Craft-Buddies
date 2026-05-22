@@ -460,9 +460,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // Match physics rate (60Hz) to eliminate delay between updates and rendering.
-  // Combined with MessagePack compression, this provides instant response without jitter.
+  // Run physics at 120Hz for instant input response.
+  // Broadcast at 60Hz to balance bandwidth with responsiveness.
   const broadcastIntervalMs = 1000 / 60;
+  const physicsIntervalMs = 1000 / 120;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
@@ -529,7 +530,7 @@ function startGameLoop(input) {
     }
 
     const tickWorkDurationMs = Date.now() - nowMs;
-    const nextDelayMs = Math.max(0, frameDurationMs - tickWorkDurationMs);
+    const nextDelayMs = Math.max(0, physicsIntervalMs - tickWorkDurationMs);
     gameLoopInterval = setTimeout(tick, nextDelayMs);
   };
 
@@ -538,6 +539,7 @@ function startGameLoop(input) {
 
 /**
  * Broadcasts current state.
+ * Exported for immediate input response.
  * @param {{io: import('socket.io').Server, state: any, includeFairies?: boolean, activePlayers?: any[], worldSleeping?: boolean}} input
  */
 function broadcastState(input) {
@@ -687,6 +689,13 @@ function broadcastState(input) {
 
   logBandwidthStats();
 }
+
+module.exports = {
+  startGameLoop,
+  restartGameLoop,
+  stopGameLoop,
+  broadcastState,
+};
 
 function serializeFireballsForState(state, options = {}) {
   /** @type {Record<string, any>} */
@@ -2494,4 +2503,4 @@ function restartGameLoop() {
   startGameLoop(gameLoopContext);
 }
 
-module.exports = { startGameLoop, stopGameLoop, restartGameLoop };
+module.exports = { startGameLoop, stopGameLoop, restartGameLoop, broadcastState };

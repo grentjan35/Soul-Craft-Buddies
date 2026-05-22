@@ -201,6 +201,37 @@ function registerSocketHandlers(input) {
     }
 
     player.inputs = nextInputs;
+
+    // Immediately apply input effects for instant response
+    const runStats = getPlayerRunStats(player);
+    const canMove = !(player.is_attacking && player.on_ground) && !isPlayerDrafting(player);
+    if (canMove) {
+      const externalVx = Number.isFinite(player.knockback_vx) ? player.knockback_vx : 0;
+      player.vx = externalVx;
+      if (nextInputs.left) {
+        player.vx -= Number.isFinite(runStats.moveSpeed) ? runStats.moveSpeed : 300;
+        if (!player.is_attacking) player.direction = 'left';
+      }
+      if (nextInputs.right) {
+        player.vx += Number.isFinite(runStats.moveSpeed) ? runStats.moveSpeed : 300;
+        if (!player.is_attacking) player.direction = 'right';
+      }
+    }
+
+    // Immediate state broadcast for instant response without client prediction
+    const { broadcastState } = require('../tick/startGameLoop');
+    const activePlayers = [];
+    for (const p of state.players.values()) {
+      if (!p || p.is_dying || !p.is_ready) continue;
+      activePlayers.push(p);
+    }
+    broadcastState({
+      io,
+      state,
+      includeFairies: false,
+      activePlayers,
+      worldSleeping: false,
+    });
   });
 
   socket.on('jump', () => {
