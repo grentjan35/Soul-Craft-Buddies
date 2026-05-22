@@ -3608,6 +3608,17 @@
     </svg>
 </head>
 <body class="game-ui-hidden">
+    <!-- Logo Intro Overlay -->
+    <div id="logo-intro-overlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #000; z-index: 9999; display: flex; align-items: center; justify-content: center; opacity: 1;">
+        <div id="logo-intro-content">
+            <img id="logo-gif" src="/assets/mime.gif" alt="Mime Games Logo">
+            <img id="logo-text" src="/assets/mimegames.jpeg" alt="mimegames">
+            <div id="liquid-loading-bar">
+                <div id="liquid-fill"></div>
+            </div>
+        </div>
+    </div>
+
     <button id="open-settings-btn" class="menu-settings-btn" type="button" aria-haspopup="dialog" aria-controls="settings-modal" aria-label="Open settings">
         <span class="menu-settings-icon" aria-hidden="true"></span>
         <span>Settings</span>
@@ -19975,17 +19986,6 @@
         draw();
     </script>
 
-    <!-- Logo Intro Overlay -->
-    <div id="logo-intro-overlay">
-        <div id="logo-intro-content">
-            <img id="logo-gif" src="/assets/mime.gif" alt="Mime Games Logo">
-            <img id="logo-text" src="/assets/mimegames.jpeg" alt="mimegames">
-            <div id="liquid-loading-bar">
-                <div id="liquid-fill"></div>
-            </div>
-        </div>
-    </div>
-
     <style>
         #logo-intro-overlay {
             position: fixed;
@@ -20000,6 +20000,18 @@
             justify-content: center;
             opacity: 1;
             transition: opacity 1s ease-in-out;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+
+        #logo-intro-overlay * {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            pointer-events: none;
         }
 
         #logo-intro-overlay.fade-out {

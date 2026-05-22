@@ -1,11 +1,12 @@
 <!-- 
     LOGO INTRO SNIPPET
-    Copy this entire block and paste it before the closing </body> tag of your HTML file.
+    Copy this entire block and paste it RIGHT AFTER the opening <body> tag of your HTML file
+    (not before closing </body>) to ensure the black screen appears immediately.
     Make sure to update the logo image path to match your project structure.
 -->
 
 <!-- Logo Intro Overlay -->
-<div id="logo-intro-overlay">
+<div id="logo-intro-overlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #000; z-index: 9999; display: flex; align-items: center; justify-content: center; opacity: 1;">
     <div id="logo-intro-content">
         <img id="logo-gif" src="/assets/mime.gif" alt="Mime Games Logo">
         <img id="logo-text" src="/assets/mimegames.jpeg" alt="mimegames">
@@ -29,6 +30,18 @@
         justify-content: center;
         opacity: 1;
         transition: opacity 1s ease-in-out;
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+    }
+
+    #logo-intro-overlay * {
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        pointer-events: none;
     }
 
     #logo-intro-overlay.fade-out {
