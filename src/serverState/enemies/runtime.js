@@ -2961,7 +2961,7 @@ function damagePlayerFromEnemyHit(input) {
       character: player.character,
       direction: player.direction,
       timestamp: nowSec,
-      respawn_at_ms: Math.round(player.respawn_at * 1000),
+      respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
       soul_count: player.death_soul_count,
     };
 

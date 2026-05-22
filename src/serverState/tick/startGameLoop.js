@@ -30,6 +30,7 @@ const {
   serializeEnemiesForState,
   syncEnemyDirector,
   updateEnemies,
+  computeRespawnDelaySeconds,
 } = require('../enemies/runtime');
 const { updateFairies } = require('../state/fairies/fairySystem');
 const { serializeChestsForState, updateChests } = require('../state/chests/chestSystem');
@@ -1288,6 +1289,9 @@ function applySpecialBeamDamage(input) {
       player.health = 0;
       player.is_dying = true;
       player.death_time = nowSec;
+      const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
+      player.respawn_at = nowSec + respawnDelaySeconds;
+      player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
       despawnEnemiesSpawnedForPlayer(input.state, sid);
       dropSoulsForPlayerDeath(input.state, input.io, player);
       awardBeamKill({ state: input.state, io: input.io, ownerSid: input.ownerSid, victimSid: sid });
@@ -1300,6 +1304,8 @@ function applySpecialBeamDamage(input) {
         character: player.character,
         direction: player.direction,
         timestamp: nowSec,
+        respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
+        soul_count: player.death_soul_count,
       });
     }
 
@@ -2005,6 +2011,9 @@ function applyExplosionDamage(input) {
       player.health = 0;
       player.is_dying = true;
       player.death_time = nowSec;
+      const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
+      player.respawn_at = nowSec + respawnDelaySeconds;
+      player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
       despawnEnemiesSpawnedForPlayer(input.state, sid);
       dropSoulsForPlayerDeath(input.state, input.io, player);
       if (input.ownerType === 'player' && input.ownerSid && input.ownerSid !== sid) {
@@ -2051,6 +2060,8 @@ function applyExplosionDamage(input) {
         character: player.character,
         direction: player.direction,
         timestamp: nowSec,
+        respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
+        soul_count: player.death_soul_count,
       });
     }
 
