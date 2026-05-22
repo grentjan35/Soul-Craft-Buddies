@@ -7507,6 +7507,15 @@
                         loop.gainNode.gain.setValueAtTime(loop.gainNode.gain.value, audioContext.currentTime);
                         loop.gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.08);
                         loop.source.stop(audioContext.currentTime + 0.09);
+                        // Also disconnect the source to ensure audio is completely stopped
+                        setTimeout(() => {
+                            try {
+                                loop.source.disconnect();
+                                loop.gainNode.disconnect();
+                            } catch (_error) {
+                                // Ignore disconnect errors.
+                            }
+                        }, 100);
                     } catch (_error) {
                         // Ignore cleanup errors.
                     }
@@ -9436,6 +9445,11 @@
         });
 
         socket.on('disconnect', (reason) => {
+            // Stop all fireball audio when disconnected to prevent stuck audio
+            if (fireballAudio) {
+                fireballAudio.stopAllLoops();
+            }
+            
             localProgressionState.pendingChoices = null;
             localInventoryState = {
                 selectedSlot: INVENTORY_SLOT_FIREBALL,
@@ -9460,6 +9474,11 @@
         });
 
         socket.on('connect_error', (error) => {
+            // Stop all fireball audio on connection error to prevent stuck audio
+            if (fireballAudio) {
+                fireballAudio.stopAllLoops();
+            }
+            
             console.error('Connection error:', error);
             reportClientRuntimeError({
                 type: 'socket-connect-error',
@@ -13055,6 +13074,11 @@
 
         // Handle map loaded event from server
         socket.on('map_loaded', async (mapData) => {
+            // Stop all fireball audio when map changes to prevent stuck audio
+            if (fireballAudio) {
+                fireballAudio.stopAllLoops();
+            }
+            
             currentMap = mapData;
             if (!Array.isArray(currentMap.decor)) {
                 currentMap.decor = [];
@@ -13121,6 +13145,11 @@
         // Handle player died event from server
         socket.on('player_died', (data) => {
             const { sid, killer_sid } = data;
+            
+            // Stop all fireball audio when player dies to prevent stuck audio
+            if (fireballAudio) {
+                fireballAudio.stopAllLoops();
+            }
             
             // Show death message
             const deathMessage = {
@@ -14959,23 +14988,26 @@
                 fireballAudio.updateBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport);
             }
 
-            // Safety check: if there are no burn marks or decor fire, stop all burn loops
-            if (burnMarks.length === 0 && currentMapFireDecor.length === 0) {
-                for (const burnLoopId of fireballAudio.activeBurnLoopIds?.() ?? []) {
-                    fireballAudio.stopBurnLoop(burnLoopId);
-                }
-                return;
-            }
-
+            // Stop any burn loops that don't correspond to active burn marks or decor fire
             for (const staleId of fireballAudio.activeBurnLoopIds?.() ?? []) {
                 if (!activeFireAudioBurnIds.has(staleId)) {
                     fireballAudio.stopBurnLoop(staleId);
+                }
+            }
+
+            // Force stop all non-decor burn loops if there are no burn marks (aggressive cleanup)
+            if (burnMarks.length === 0) {
+                for (const burnLoopId of fireballAudio.activeBurnLoopIds?.() ?? []) {
+                    if (!burnLoopId.startsWith('decor_fire_')) {
+                        fireballAudio.stopBurnLoop(burnLoopId);
+                    }
                 }
             }
         }
 
         let lastSpatialAudioUpdateTime = 0;
         let lastCombatMusicUpdateTime = 0;
+        let lastBurnLoopCleanupTime = 0;
 
         function updateSpatialAudio(nowMs) {
             if (combatMusic) {
@@ -14994,6 +15026,20 @@
             updateSpatialFootstepAudio();
             updateSpatialFireballAudio();
             updateSpatialEnemyAudio(nowMs);
+
+            // Periodically force stop all non-decor burn loops to prevent stuck audio
+            if (nowMs - lastBurnLoopCleanupTime > 5000) {
+                lastBurnLoopCleanupTime = nowMs;
+                if (fireballAudio && burnMarks.length === 0) {
+                    for (const burnLoopId of fireballAudio.activeBurnLoopIds?.() ?? []) {
+                        if (!burnLoopId.startsWith('decor_fire_')) {
+                            fireballAudio.stopBurnLoop(burnLoopId);
+                        }
+                    }
+                    // Also call stopAllLoops as a last resort to clear any stuck audio
+                    fireballAudio.stopAllLoops();
+                }
+            }
         }
 
         function drawEntityHealthBar(ctx, entityX, entityY, health, maxHealth, cameraX, cameraY, yOffset = 70) {
@@ -17823,6 +17869,10 @@
 
             const existing = burnMarks.find((mark) => Math.hypot(mark.x - anchor.x, mark.y - anchor.y) < Math.max(18, sourceRadius * 0.75));
             if (existing) {
+                // Stop the existing burn loop before updating the burn mark to prevent stuck audio
+                if (fireballAudio) {
+                    fireballAudio.stopBurnLoop(existing.id);
+                }
                 existing.effect = effect;
                 existing.x = existing.x * 0.72 + anchor.x * 0.28;
                 existing.y = existing.y * 0.72 + anchor.y * 0.28;
@@ -17834,6 +17884,8 @@
                 existing.baseAngle = anchor.angle;
                 existing.angle = anchor.angle + (Math.random() - 0.5) * 0.62;
                 existing.secondaryLean = (Math.random() - 0.5) * 0.44;
+                // Generate a new ID for the updated burn mark to ensure a fresh audio loop is created
+                existing.id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
                 if (effect === 'slime') {
                     for (let i = 0; i < 8 && window.slimeParticles.length < MAX_SLIME_PARTICLES; i++) {
                         window.slimeParticles.push({
