@@ -34,15 +34,9 @@ jobs:
 
       - name: Copy files to Space
         run: |
-          rsync -av --exclude='huggingface-space' --exclude='.git' --exclude='.gitattributes' . huggingface-space/
+          rsync -av --exclude='huggingface-space' --exclude='.git' . huggingface-space/
           cd huggingface-space
           git lfs install
-          git lfs track "*.png"
-          git lfs track "*.webp"
-          git lfs track "*.m4a"
-          git lfs track "*.mp3"
-          git lfs track "*.wav"
-          git lfs track "*.ogg"
           git add .
           git add .gitattributes
           git config --global user.email "action@github.com"
