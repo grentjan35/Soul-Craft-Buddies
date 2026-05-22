@@ -167,7 +167,7 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
    git add static/assets/
    git commit -m "Set up Git LFS for binary assets"
    ```
-3. **Update GitHub Actions workflow** to handle Git LFS with credentials (see Error 15)
+3. **Update GitHub Actions workflow** to handle Git LFS with credentials (see Error 13 and Error 14)
 
 ### Error 13: Git LFS push fails - credentials not found
 **Problem**: Git LFS push fails with "Git credentials for https://huggingface.co/spaces/... not found"
@@ -181,7 +181,18 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     git push origin main
 ```
 
-### Error 14: Docker build fails on Hugging Face Space
+### Error 14: Git LFS invalid config key error
+**Problem**: Git LFS configuration fails with "error: invalid key: lfs.https://huggingface.co/spaces/...access_token"
+**Solution**: Don't use git config for LFS credentials. Instead, set the remote URL with the token:
+```yaml
+# WRONG (causes error):
+git config lfs.https://huggingface.co/spaces/${HF_SPACE_ID}.access_token ${HF_TOKEN}
+
+# CORRECT:
+git remote set-url origin https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}
+```
+
+### Error 15: Docker build fails on Hugging Face Space
 **Problem**: If .dockerignore doesn't exclude node_modules properly, the Docker build context becomes too large.
 **Solution**: Ensure .dockerignore has:
 ```

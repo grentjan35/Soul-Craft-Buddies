@@ -13114,7 +13114,7 @@
             
             // Play chest open sound
             const chestOpenAudio = new Audio('/audio/chest open.m4a');
-            chestOpenAudio.volume = 0.6;
+            chestOpenAudio.volume = 0.6 * getSfxSetting();
             chestOpenAudio.play().catch(() => {});
         });
 
@@ -13185,7 +13185,7 @@
                     ensureCharacterCardGridLoaded().catch(() => {});
 
                     const deathAudio = new Audio('/audio/you_died.m4a');
-                    deathAudio.volume = 0.6;
+                    deathAudio.volume = 0.6 * getSfxSetting();
                     deathAudio.play().catch(() => {});
                 }
             }
@@ -14301,7 +14301,7 @@
             // Play achievement unlocked sound for achievements and chest rewards
             if (data?.type === 'achievement' || data?.type === 'chest') {
                 const achievementAudio = new Audio('/audio/achievement unlocked.m4a');
-                achievementAudio.volume = 0.5;
+                achievementAudio.volume = 0.5 * getSfxSetting();
                 achievementAudio.play().catch(() => {});
             }
             
@@ -14309,7 +14309,7 @@
             if (data?.type === 'danger' && !data?.title?.toLowerCase().includes('chest')) {
                 console.log('Playing danger.m4a for:', data?.title || data?.message);
                 const dangerAudio = new Audio('/audio/danger.m4a');
-                dangerAudio.volume = 0.5;
+                dangerAudio.volume = 0.5 * getSfxSetting();
                 dangerAudio.play().catch(() => {});
             }
         });
@@ -14920,8 +14920,6 @@
             updateInterpolatedFireballs(renderNowTs, renderServerTimeMs);
         }
 
-        const activeFireAudioBurnIds = new Set();
-
         function updateSpatialFireballAudio() {
             if (!fireballAudio) {
                 return;
@@ -14933,14 +14931,13 @@
                 return;
             }
 
+            const activeFireAudioBurnIds = new Set();
             const audibleViewport = getAudibleViewport();
             for (const id in fireballs) {
                 const fireball = fireballs[id];
                 fireballAudio.startLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport, 0.5);
                 fireballAudio.updateLoop(id, fireball.x, fireball.y, listenerState.x, listenerState.y, audibleViewport);
             }
-
-            activeFireAudioBurnIds.clear();
             for (const mark of burnMarks) {
                 activeFireAudioBurnIds.add(mark.id);
                 fireballAudio.startBurnLoop(mark.id, mark.x, mark.y, listenerState.x, listenerState.y, audibleViewport, 0.34);
