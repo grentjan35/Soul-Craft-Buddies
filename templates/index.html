@@ -7375,7 +7375,7 @@
             }
 
             function createFireballAudioSystem() {
-                const FIREBALL_VOLUME_MULTIPLIER = 1.1;
+                const FIREBALL_VOLUME_MULTIPLIER = 1.0;
                 const soundUrls = {
                     release: '/audio/fireball/release.m4a',
                     hit: '/audio/fireball/hit.m4a',
@@ -14931,6 +14931,10 @@
                 return;
             }
 
+            // Prune expired burn marks before starting audio loops
+            const now = Date.now();
+            pruneArrayInPlace(burnMarks, (mark) => now - mark.startTime < mark.duration);
+
             const activeFireAudioBurnIds = new Set();
             const audibleViewport = getAudibleViewport();
             for (const id in fireballs) {
@@ -14953,6 +14957,14 @@
                 activeFireAudioBurnIds.add(decorLoopId);
                 fireballAudio.startBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport, decorStyle.loopVolume);
                 fireballAudio.updateBurnLoop(decorLoopId, x, y, listenerState.x, listenerState.y, audibleViewport);
+            }
+
+            // Safety check: if there are no burn marks or decor fire, stop all burn loops
+            if (burnMarks.length === 0 && currentMapFireDecor.length === 0) {
+                for (const burnLoopId of fireballAudio.activeBurnLoopIds?.() ?? []) {
+                    fireballAudio.stopBurnLoop(burnLoopId);
+                }
+                return;
             }
 
             for (const staleId of fireballAudio.activeBurnLoopIds?.() ?? []) {
@@ -17818,7 +17830,7 @@
                 existing.startTime = Date.now();
                 existing.duration = effect === 'slime'
                     ? 5000
-                    : Math.min(6200, existing.duration + 900);
+                    : 2000;
                 existing.baseAngle = anchor.angle;
                 existing.angle = anchor.angle + (Math.random() - 0.5) * 0.62;
                 existing.secondaryLean = (Math.random() - 0.5) * 0.44;
@@ -17845,7 +17857,7 @@
                 y: anchor.y,
                 radius: Math.max(28, sourceRadius * 0.95),
                 startTime: Date.now(),
-                duration: effect === 'slime' ? 5000 : 4400,
+                duration: effect === 'slime' ? 5000 : 2000,
                 effect,
                 baseAngle: anchor.angle,
                 angle: anchor.angle + (Math.random() - 0.5) * 0.62,
@@ -17867,8 +17879,8 @@
                 }
             }
 
-            if (burnMarks.length > 18) {
-                burnMarks = burnMarks.slice(-18);
+            if (burnMarks.length > 8) {
+                burnMarks = burnMarks.slice(-8);
             }
         }
 
