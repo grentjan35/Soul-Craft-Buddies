@@ -26,10 +26,21 @@ function createSocketServer(input) {
     cors: { origin: '*' },
     serveClient: true,
     transports: ['websocket'],
-    httpCompression: false,
-    perMessageDeflate: false,
-    pingTimeout: 5000,
-    pingInterval: 2500,
+    httpCompression: true,
+    perMessageDeflate: {
+      threshold: 1024,
+      zlibDeflateOptions: {
+        level: 3,
+      },
+      zlibInflateOptions: {
+        chunkSize: 10 * 1024,
+      },
+      clientNoContextTakeover: true,
+      serverNoContextTakeover: true,
+      serverMaxWindowBits: 10,
+    },
+    pingTimeout: 120000,
+    pingInterval: 10000,
   });
 
   const monitoringEnabled = String(process.env.SOCKET_MONITORING || '').toLowerCase() === '1';
