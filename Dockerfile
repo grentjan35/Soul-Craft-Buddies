@@ -3,6 +3,9 @@ FROM node:20-alpine
 # Set working directory
 WORKDIR /app
 
+# Set port for Hugging Face Spaces
+ENV PORT=7860
+
 # Copy package files
 COPY package*.json ./
 
@@ -15,7 +18,7 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p data
 
-# Expose port (will be overridden by PORT env var)
+# Expose port
 EXPOSE 7860
 
 # Start the server

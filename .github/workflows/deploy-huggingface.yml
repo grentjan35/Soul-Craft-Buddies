@@ -1,0 +1,35 @@
+name: Deploy to Hugging Face Spaces
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_SPACE_ID: ${{ secrets.HF_SPACE_ID }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone Hugging Face Space
+        run: |
+          git clone https://huggingface.co/spaces/${HF_SPACE_ID} huggingface-space
+
+      - name: Copy files to Space
+        run: |
+          rsync -av --exclude='huggingface-space' --exclude='.git' . huggingface-space/
+          cd huggingface-space
+          git add .
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git commit -m "Deploy from GitHub Actions"
+
+      - name: Push to Hugging Face Space
+        run: |
+          cd huggingface-space
+          git push https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID} main
