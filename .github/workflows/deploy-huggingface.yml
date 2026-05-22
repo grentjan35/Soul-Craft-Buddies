@@ -43,8 +43,6 @@ jobs:
           git lfs track "*.mp3"
           git lfs track "*.wav"
           git lfs track "*.ogg"
-          git config --global lfs.url "https://user:${HF_TOKEN}@huggingface.co"
-          git config lfs.https://huggingface.co/spaces/${HF_SPACE_ID}.access_token ${HF_TOKEN}
           git add .
           git add .gitattributes
           git config --global user.email "action@github.com"
@@ -54,5 +52,6 @@ jobs:
       - name: Push to Hugging Face Space
         run: |
           cd huggingface-space
+          git remote set-url origin https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}
           git lfs push origin main --all
-          git push https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID} main
+          git push origin main

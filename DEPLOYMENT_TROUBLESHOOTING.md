@@ -171,13 +171,14 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 
 ### Error 13: Git LFS push fails - credentials not found
 **Problem**: Git LFS push fails with "Git credentials for https://huggingface.co/spaces/... not found"
-**Solution**: Configure Git LFS to use the Hugging Face token in the URL:
+**Solution**: Configure Git remote URL with token before LFS push:
 ```yaml
-- name: Configure Git LFS credentials
+- name: Push to Hugging Face Space
   run: |
-    git config --global lfs.url "https://user:${HF_TOKEN}@huggingface.co"
     cd huggingface-space
-    git config lfs.https://huggingface.co/spaces/${HF_SPACE_ID}.access_token ${HF_TOKEN}
+    git remote set-url origin https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE_ID}
+    git lfs push origin main --all
+    git push origin main
 ```
 
 ### Error 14: Docker build fails on Hugging Face Space
