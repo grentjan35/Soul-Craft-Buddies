@@ -14,6 +14,13 @@ async function main() {
   const app = await createApp(config);
 
   const httpServer = http.createServer(app);
+  
+  // Disable Nagle's algorithm to reduce TCP buffering delay
+  // This prevents small packets from being held up, reducing latency for real-time gameplay
+  httpServer.on('connection', (socket) => {
+    socket.setNoDelay(true);
+  });
+  
   createSocketServer({ httpServer, config });
 
   httpServer.listen(config.port, config.bindHost, () => {
