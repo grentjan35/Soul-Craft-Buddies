@@ -1914,6 +1914,34 @@ function createAssetsRouter(deps) {
     res.sendFile(assetPath);
   });
 
+  // Serve mime.gif for logo intro
+  router.get('/assets/mime.gif', async (req, res) => {
+    const mimePath = path.join(deps.staticDir, 'assets', 'mime.gif');
+    if (!fs.existsSync(mimePath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type('.gif');
+    res.setHeader('X-Asset-Source', 'LOCAL');
+    res.sendFile(mimePath);
+  });
+
+  // Serve mimegames.jpeg for logo intro
+  router.get('/assets/mimegames.jpeg', async (req, res) => {
+    const mimegamesPath = path.join(deps.staticDir, 'assets', 'mimegames.jpeg');
+    if (!fs.existsSync(mimegamesPath)) {
+      res.status(404).send('Not Found');
+      return;
+    }
+
+    setPublicAssetCacheHeaders(res);
+    res.type('.jpeg');
+    res.setHeader('X-Asset-Source', 'LOCAL');
+    res.sendFile(mimegamesPath);
+  });
+
   return router;
 }
 
