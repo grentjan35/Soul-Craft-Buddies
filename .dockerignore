@@ -10,4 +10,3 @@ data/backups
 *.log
 .DS_Store
 Thumbs.db
-static/assets
