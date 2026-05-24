@@ -2942,38 +2942,43 @@ function damagePlayerFromEnemyHit(input) {
 
   if (player.health <= 0) {
     player.health = 0;
-    player.is_dying = true;
-    player.death_time = nowSec;
+    // Prevent death state from being overwritten if already dying
+    // This fixes the bug where multiple damage sources in the same frame
+    // keep resetting respawn_at, preventing the player from respawning
+    if (!player.is_dying) {
+      player.is_dying = true;
+      player.death_time = nowSec;
 
-    const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
-    player.respawn_at = nowSec + respawnDelaySeconds;
-    player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
+      const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
+      player.respawn_at = nowSec + respawnDelaySeconds;
+      player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
 
-    despawnEnemiesSpawnedForPlayer(input.state, input.sid);
-    dropSoulsForPlayerDeath(input.state, input.io, player);
+      despawnEnemiesSpawnedForPlayer(input.state, input.sid);
+      dropSoulsForPlayerDeath(input.state, input.io, player);
 
-    const deathPayload = {
-      sid: input.sid,
-      x: player.x,
-      y: player.y,
-      vy: player.vy,
-      on_ground: player.on_ground,
-      character: player.character,
-      direction: player.direction,
-      timestamp: nowSec,
-      respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
-      soul_count: player.death_soul_count,
-    };
+      const deathPayload = {
+        sid: input.sid,
+        x: player.x,
+        y: player.y,
+        vy: player.vy,
+        on_ground: player.on_ground,
+        character: player.character,
+        direction: player.direction,
+        timestamp: nowSec,
+        respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
+        soul_count: player.death_soul_count,
+      };
 
-    console.log('[DeathDebug] Emitting player_dying:', {
-      respawn_at: player.respawn_at,
-      respawn_at_ms: deathPayload.respawn_at_ms,
-      nowSec,
-      respawnDelaySeconds,
-    });
+      console.log('[DeathDebug] Emitting player_dying:', {
+        respawn_at: player.respawn_at,
+        respawn_at_ms: deathPayload.respawn_at_ms,
+        nowSec,
+        respawnDelaySeconds,
+      });
 
-    input.state.deadBodies.set(`${input.sid}_${Math.floor(nowSec)}`, deathPayload);
-    input.io.emit('player_dying', deathPayload);
+      input.state.deadBodies.set(`${input.sid}_${Math.floor(nowSec)}`, deathPayload);
+      input.io.emit('player_dying', deathPayload);
+    }
   }
 
   input.io.emit('player_hit', {

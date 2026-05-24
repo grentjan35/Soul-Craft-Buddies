@@ -1287,26 +1287,31 @@ function applySpecialBeamDamage(input) {
 
     if (player.health <= 0) {
       player.health = 0;
-      player.is_dying = true;
-      player.death_time = nowSec;
-      const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
-      player.respawn_at = nowSec + respawnDelaySeconds;
-      player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
-      despawnEnemiesSpawnedForPlayer(input.state, sid);
-      dropSoulsForPlayerDeath(input.state, input.io, player);
-      awardBeamKill({ state: input.state, io: input.io, ownerSid: input.ownerSid, victimSid: sid });
-      input.io.emit('player_dying', {
-        sid,
-        x: player.x,
-        y: player.y,
-        vy: player.vy,
-        on_ground: player.on_ground,
-        character: player.character,
-        direction: player.direction,
-        timestamp: nowSec,
-        respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
-        soul_count: player.death_soul_count,
-      });
+      // Prevent death state from being overwritten if already dying
+      // This fixes the bug where multiple damage sources in the same frame
+      // keep resetting respawn_at, preventing the player from respawning
+      if (!player.is_dying) {
+        player.is_dying = true;
+        player.death_time = nowSec;
+        const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
+        player.respawn_at = nowSec + respawnDelaySeconds;
+        player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
+        despawnEnemiesSpawnedForPlayer(input.state, sid);
+        dropSoulsForPlayerDeath(input.state, input.io, player);
+        awardBeamKill({ state: input.state, io: input.io, ownerSid: input.ownerSid, victimSid: sid });
+        input.io.emit('player_dying', {
+          sid,
+          x: player.x,
+          y: player.y,
+          vy: player.vy,
+          on_ground: player.on_ground,
+          character: player.character,
+          direction: player.direction,
+          timestamp: nowSec,
+          respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
+          soul_count: player.death_soul_count,
+        });
+      }
     }
 
     input.io.emit('player_hit', {
@@ -2009,60 +2014,65 @@ function applyExplosionDamage(input) {
 
     if (player.health <= 0) {
       player.health = 0;
-      player.is_dying = true;
-      player.death_time = nowSec;
-      const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
-      player.respawn_at = nowSec + respawnDelaySeconds;
-      player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
-      despawnEnemiesSpawnedForPlayer(input.state, sid);
-      dropSoulsForPlayerDeath(input.state, input.io, player);
-      if (input.ownerType === 'player' && input.ownerSid && input.ownerSid !== sid) {
-        const killer = input.state.players.get(input.ownerSid);
-        if (killer) {
-          const xpResult = gainPlayerXp(killer, getPlayerKillXp(player, killer));
-          const unlockedAggroWarning = consumeAggroUnlockNotification(killer);
-          const unlockedAchievements = recordProgressionMetric(killer, 'playerKills', 1);
-          const victimName = player.name || `P${sid.slice(0, 4)}`;
-          const killerName = killer.name || `P${input.ownerSid.slice(0, 4)}`;
-          // Broadcast player kill to everyone
-          input.io.emit('progression_notification', {
-            type: 'player_kill',
-            xp: 0, // No XP shown to everyone
-            message: `${killerName} killed ${victimName} with fireball`,
-            victimName,
-            killerName,
-            weapon: 'fireball',
-          });
-          // Send XP notification only to the killer
-          emitProgressionNotification(input.io, input.ownerSid, {
-            type: 'player_kill',
-            xp: xpResult.gainedXp,
-            message: `you killed ${victimName} with fireball`,
-            caption: `+${xpResult.gainedXp} xp`,
-            victimName,
-            killerName,
-            weapon: 'fireball',
-          });
-          if (unlockedAggroWarning) {
-            emitProgressionNotification(input.io, input.ownerSid, unlockedAggroWarning);
-          }
-          for (const achievement of unlockedAchievements) {
-            emitProgressionNotification(input.io, input.ownerSid, achievement);
+      // Prevent death state from being overwritten if already dying
+      // This fixes the bug where multiple damage sources in the same frame
+      // keep resetting respawn_at, preventing the player from respawning
+      if (!player.is_dying) {
+        player.is_dying = true;
+        player.death_time = nowSec;
+        const respawnDelaySeconds = computeRespawnDelaySeconds(player.soul_count);
+        player.respawn_at = nowSec + respawnDelaySeconds;
+        player.death_soul_count = Math.max(0, Math.round(player.soul_count || 0));
+        despawnEnemiesSpawnedForPlayer(input.state, sid);
+        dropSoulsForPlayerDeath(input.state, input.io, player);
+        if (input.ownerType === 'player' && input.ownerSid && input.ownerSid !== sid) {
+          const killer = input.state.players.get(input.ownerSid);
+          if (killer) {
+            const xpResult = gainPlayerXp(killer, getPlayerKillXp(player, killer));
+            const unlockedAggroWarning = consumeAggroUnlockNotification(killer);
+            const unlockedAchievements = recordProgressionMetric(killer, 'playerKills', 1);
+            const victimName = player.name || `P${sid.slice(0, 4)}`;
+            const killerName = killer.name || `P${input.ownerSid.slice(0, 4)}`;
+            // Broadcast player kill to everyone
+            input.io.emit('progression_notification', {
+              type: 'player_kill',
+              xp: 0, // No XP shown to everyone
+              message: `${killerName} killed ${victimName} with fireball`,
+              victimName,
+              killerName,
+              weapon: 'fireball',
+            });
+            // Send XP notification only to the killer
+            emitProgressionNotification(input.io, input.ownerSid, {
+              type: 'player_kill',
+              xp: xpResult.gainedXp,
+              message: `you killed ${victimName} with fireball`,
+              caption: `+${xpResult.gainedXp} xp`,
+              victimName,
+              killerName,
+              weapon: 'fireball',
+            });
+            if (unlockedAggroWarning) {
+              emitProgressionNotification(input.io, input.ownerSid, unlockedAggroWarning);
+            }
+            for (const achievement of unlockedAchievements) {
+              emitProgressionNotification(input.io, input.ownerSid, achievement);
+            }
           }
         }
+        input.io.emit('player_dying', {
+          sid,
+          x: player.x,
+          y: player.y,
+          vy: player.vy,
+          on_ground: player.on_ground,
+          character: player.character,
+          direction: player.direction,
+          timestamp: nowSec,
+          respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
+          soul_count: player.death_soul_count,
+        });
       }
-      input.io.emit('player_dying', {
-        sid,
-        x: player.x,
-        y: player.y,
-        vy: player.vy,
-        on_ground: player.on_ground,
-        character: player.character,
-        direction: player.direction,
-        timestamp: nowSec,
-        respawn_at_ms: Math.round((nowSec + respawnDelaySeconds) * 1000),
-        soul_count: player.death_soul_count,
-      });
     }
 
     input.io.emit('player_hit', {
