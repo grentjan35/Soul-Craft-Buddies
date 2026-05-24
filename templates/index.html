@@ -11044,7 +11044,8 @@
         // - Combined with velocity-aware scaling, this minimizes "snap back" visual artifacts
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
         const PLAYER_EXTRAPOLATION_LIMIT_MS = 80; // Client-side prediction to fake smoothness when choppy
-        const PLAYER_SMOOTHING_FACTOR = 0.35; // Realtime smoothing: 0-1, higher = smoother but more laggy
+        const JITTER_SMOOTHING_THRESHOLD = 15; // Only smooth position changes larger than this (pixels)
+        const JITTER_SMOOTHING_FACTOR = 0.5; // How much to smooth when jitter detected (0-1)
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const PLAYER_DISCONTINUITY_DISTANCE = 260;
@@ -14755,12 +14756,22 @@
                 const nextState = playerState[sid] || {};
                 Object.assign(nextState, authoritativeState);
                 
-                // Apply realtime smoothing using exponential moving average
-                // This smooths out small jitters before they become noticeable
+                // Apply jitter-based smoothing: only smooth sudden position changes
+                // This adds no delay during normal smooth movement
                 const prevSmoothed = smoothedPlayerPositions[sid] || { x: sampled.x, y: sampled.y };
-                const smoothFactor = PLAYER_SMOOTHING_FACTOR;
-                nextState.x = lerp(prevSmoothed.x, sampled.x, smoothFactor);
-                nextState.y = lerp(prevSmoothed.y, sampled.y, smoothFactor);
+                const deltaX = Math.abs(sampled.x - prevSmoothed.x);
+                const deltaY = Math.abs(sampled.y - prevSmoothed.y);
+                const distance = Math.hypot(deltaX, deltaY);
+                
+                if (distance > JITTER_SMOOTHING_THRESHOLD) {
+                    // Jitter detected: smooth it
+                    nextState.x = lerp(prevSmoothed.x, sampled.x, JITTER_SMOOTHING_FACTOR);
+                    nextState.y = lerp(prevSmoothed.y, sampled.y, JITTER_SMOOTHING_FACTOR);
+                } else {
+                    // Normal movement: no smoothing, no delay
+                    nextState.x = sampled.x;
+                    nextState.y = sampled.y;
+                }
                 
                 // Store smoothed position for next frame
                 smoothedPlayerPositions[sid] = { x: nextState.x, y: nextState.y };
