@@ -4615,10 +4615,11 @@
         const SIMULATE_CLOUD_DELAY = false;
         // The server broadcasts authoritative state at 30Hz (30 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 64;
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 78;
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 92;
-        const MAX_INTERPOLATION_DELAY_MS = 200;
+        // Instant response configuration: 0.5-1 tick buffer (16-33ms at 30 TPS) per BESTMODEL.md
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 20; // 0.6 ticks - instant response
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 25; // 0.75 ticks - instant response
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 33; // 1 tick - instant response
+        const MAX_INTERPOLATION_DELAY_MS = 80; // Reduced for faster adaptation
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
