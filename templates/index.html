@@ -4613,14 +4613,13 @@
         // Simulate cloud network delay for local testing (set to true to test Hugging Face conditions)
         // When enabled, adds 100ms average delay with 50ms jitter to simulate cloud deployment
         const SIMULATE_CLOUD_DELAY = false;
-        // The server broadcasts authoritative state at 45Hz (45 TPS), so interpolation
+        // The server broadcasts authoritative state at 60Hz (60 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
-        // Instant response configuration: 0.5-1 tick buffer (11-22ms at 45 TPS) per BESTMODEL.md
-        // Faster tick rate allows lower delays while maintaining smoothness
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 14; // 0.63 ticks - instant response
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 17; // 0.77 ticks - instant response
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 22; // 1 tick - instant response
-        const MAX_INTERPOLATION_DELAY_MS = 60; // Reduced for faster adaptation
+        // At 60Hz, one tick is 16.67ms. Reduced delays for instant-feel response.
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 8; // 0.48 ticks - very responsive
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 10; // 0.6 ticks - responsive
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 12; // 0.72 ticks - balanced
+        const MAX_INTERPOLATION_DELAY_MS = 40; // Reduced for faster adaptation
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
