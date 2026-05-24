@@ -15357,14 +15357,13 @@
                 return null;
             }
 
-            // Convert screen coordinates to world coordinates using proper canvas transform
+            // Convert screen coordinates to canvas pixels, accounting for render scale
             const rect = canvas.getBoundingClientRect();
-            const canvasPixelX = ((screenX - rect.left) / rect.width) * canvas.width;
-            const canvasPixelY = ((screenY - rect.top) / rect.height) * canvas.height;
-            const worldX = canvasPixelX / cameraZoom + cameraX;
-            const worldY = canvasPixelY / cameraZoom + cameraY;
+            const renderScale = canvas.width / rect.width;
+            const tapCanvasPixelX = (screenX - rect.left) * renderScale;
+            const tapCanvasPixelY = (screenY - rect.top) * renderScale;
 
-            const tapRadius = 60; // Tapping tolerance in screen pixels
+            const tapRadius = 60 * renderScale; // Scale tap radius with render scale
 
             for (const chestId in chestState) {
                 const chest = chestState[chestId];
@@ -15379,12 +15378,19 @@
                     continue; // Too far to interact
                 }
 
-                // Convert chest world position to screen position
-                const chestScreenX = (Number(chest.x) || 0) - cameraX;
-                const chestScreenY = (Number(chest.y) || 0) - cameraY;
+                // Get chest render state to match visual position
+                const renderState = getChestRenderState(chest, now);
+                const frameMetrics = getChestFrameMetrics(renderState);
+                if (!renderState || !frameMetrics) {
+                    continue;
+                }
 
-                // Check if tap is within tolerance of chest screen position
-                const tapDistance = Math.hypot(chestScreenX - screenX, chestScreenY - screenY);
+                // Convert chest visual position to canvas pixels (same as draw logic)
+                const chestCanvasPixelX = (renderState.worldX - cameraX) * cameraZoom;
+                const chestCanvasPixelY = (renderState.worldY - cameraY - frameMetrics.drawH / 2) * cameraZoom;
+
+                // Check if tap is within tolerance of chest canvas pixel position
+                const tapDistance = Math.hypot(chestCanvasPixelX - tapCanvasPixelX, chestCanvasPixelY - tapCanvasPixelY);
                 if (tapDistance <= tapRadius) {
                     return chest;
                 }
