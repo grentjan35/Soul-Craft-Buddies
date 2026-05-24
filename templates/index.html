@@ -15350,9 +15350,12 @@
                 return null;
             }
 
-            // Convert screen coordinates to world coordinates
-            const worldX = screenX + cameraX;
-            const worldY = screenY + cameraY;
+            // Convert screen coordinates to world coordinates using proper canvas transform
+            const rect = canvas.getBoundingClientRect();
+            const canvasPixelX = ((screenX - rect.left) / rect.width) * canvas.width;
+            const canvasPixelY = ((screenY - rect.top) / rect.height) * canvas.height;
+            const worldX = canvasPixelX / cameraZoom + cameraX;
+            const worldY = canvasPixelY / cameraZoom + cameraY;
 
             const tapRadius = 60; // Tapping tolerance in screen pixels
 
