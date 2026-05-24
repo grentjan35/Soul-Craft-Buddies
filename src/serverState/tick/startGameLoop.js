@@ -461,10 +461,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // 60Hz broadcast rate for smooth gameplay (2x faster than baseline 30 TPS)
-  // 60 TPS balances responsiveness with network stability
-  // Client-side interpolation will smooth between states for fluid motion
-  const broadcastIntervalMs = 1000 / 60;
+  // 75Hz broadcast rate for instant smooth gameplay (2.5x faster than baseline 30 TPS)
+  // 75 TPS provides 13.33ms between updates for very smooth interpolation
+  // Higher tick rate reduces interpolation jitter while maintaining instant feel
+  const broadcastIntervalMs = 1000 / 75;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
