@@ -4610,13 +4610,15 @@
         const HIGH_END_FPS_CAP = 120;
         const LOW_END_FPS_CAP = 30;
         const MOBILE_FPS_CAP = 60;
-        // Server broadcasts at 60Hz. Instant response config for Hugging Face deployment:
-        // 20ms MIN = near-instant input response (~1.2 ticks buffer at 60Hz)
-        // 60ms MAX = handles network jitter while keeping responsiveness
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 20;
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 20;
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 20;
-        const MAX_INTERPOLATION_DELAY_MS = 60;
+        // Simulate cloud network delay for local testing (set to true to test Hugging Face conditions)
+        // When enabled, adds 100ms average delay with 50ms jitter to simulate cloud deployment
+        const SIMULATE_CLOUD_DELAY = false;
+        // The server broadcasts authoritative state at 30Hz (30 TPS), so interpolation
+        // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 64;
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 78;
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 92;
+        const MAX_INTERPOLATION_DELAY_MS = 200;
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
@@ -13076,7 +13078,18 @@
                 return;
             }
             const decompressedState = decompressStatePayload(decodedState);
-            scheduleServerStateApply(decompressedState);
+            
+            // Simulate cloud network delay for local testing (per BESTMODEL.md)
+            // When SIMULATE_CLOUD_DELAY is true, adds 100ms average delay with 50ms jitter
+            // This allows tuning interpolation settings for Hugging Face deployment while developing locally
+            if (SIMULATE_CLOUD_DELAY) {
+                const simulatedDelay = 100 + (Math.random() - 0.5) * 100;
+                setTimeout(() => {
+                    scheduleServerStateApply(decompressedState);
+                }, simulatedDelay);
+            } else {
+                scheduleServerStateApply(decompressedState);
+            }
         });
 
         // Handle map loaded event from server

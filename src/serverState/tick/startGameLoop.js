@@ -461,10 +461,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // 60Hz broadcast rate for reduced latency on remote deployments (Hugging Face)
-  // Higher tick rate provides more frequent updates, reducing perceived input lag
-  // without client-side prediction. Localhost already feels instant due to low latency.
-  const broadcastIntervalMs = 1000 / 60;
+  // 30Hz broadcast rate for Hugging Face deployment (per BESTMODEL.md recommendations)
+  // 30 TPS provides baseline mechanics speed with acceptable input delay (50-80ms)
+  // Client interpolation smooths rendering between server states
+  const broadcastIntervalMs = 1000 / 30;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
