@@ -4613,13 +4613,14 @@
         // Simulate cloud network delay for local testing (set to true to test Hugging Face conditions)
         // When enabled, adds 100ms average delay with 50ms jitter to simulate cloud deployment
         const SIMULATE_CLOUD_DELAY = false;
-        // The server broadcasts authoritative state at 30Hz (30 TPS), so interpolation
+        // The server broadcasts authoritative state at 45Hz (45 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
-        // Instant response configuration: 0.5-1 tick buffer (16-33ms at 30 TPS) per BESTMODEL.md
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 20; // 0.6 ticks - instant response
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 25; // 0.75 ticks - instant response
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 33; // 1 tick - instant response
-        const MAX_INTERPOLATION_DELAY_MS = 80; // Reduced for faster adaptation
+        // Instant response configuration: 0.5-1 tick buffer (11-22ms at 45 TPS) per BESTMODEL.md
+        // Faster tick rate allows lower delays while maintaining smoothness
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 14; // 0.63 ticks - instant response
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 17; // 0.77 ticks - instant response
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 22; // 1 tick - instant response
+        const MAX_INTERPOLATION_DELAY_MS = 60; // Reduced for faster adaptation
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
@@ -11041,6 +11042,7 @@
         // - Fast enemies (striker lunges, slime jumps) frequently hit walls
         // - Combined with velocity-aware scaling, this minimizes "snap back" visual artifacts
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
+        const PLAYER_EXTRAPOLATION_LIMIT_MS = 80; // Client-side prediction to fake smoothness when choppy
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const PLAYER_DISCONTINUITY_DISTANCE = 260;
@@ -14743,7 +14745,9 @@
 
             for (const sid in authoritativePlayerState) {
                 const authoritativeState = authoritativePlayerState[sid];
-                const sampled = sampleSnapshots(playerSnapshots[sid], renderTs);
+                const sampled = sampleSnapshots(playerSnapshots[sid], renderTs, {
+                    extrapolationLimitMs: PLAYER_EXTRAPOLATION_LIMIT_MS
+                });
                 if (!sampled) continue;
 
                 const nextState = playerState[sid] || {};

@@ -461,10 +461,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // 30Hz broadcast rate for Hugging Face deployment (per BESTMODEL.md recommendations)
-  // 30 TPS provides baseline mechanics speed with acceptable input delay (50-80ms)
+  // 45Hz broadcast rate for faster mechanics (50% faster than baseline 30 TPS)
+  // 45 TPS provides faster mechanics with lower interpolation delay (11-22ms vs 16-33ms at 30 TPS)
   // Client interpolation smooths rendering between server states
-  const broadcastIntervalMs = 1000 / 30;
+  const broadcastIntervalMs = 1000 / 45;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 

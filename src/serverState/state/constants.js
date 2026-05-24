@@ -10,7 +10,7 @@ const PLAYER_MAX_HEALTH = 100;
 const CANVAS_HEIGHT = 600;
 const TILE_SIZE = 32;
 
-const TARGET_FPS = 30;
+const TARGET_FPS = 45;
 const FRAME_TIME = 1.0 / TARGET_FPS;
 
 const FIREBALL_POWER_MIN = 400.0;
