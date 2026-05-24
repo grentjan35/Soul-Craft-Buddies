@@ -3999,6 +3999,7 @@ function serializeEnemiesForState(state, options = {}) {
 
 module.exports = {
   checkFireballEnemyCollision,
+  computeRespawnDelaySeconds,
   damageEnemy,
   despawnEnemiesSpawnedForPlayer,
   getEnemyHitbox,
