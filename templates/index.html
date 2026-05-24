@@ -11034,6 +11034,7 @@
         const upgradeDraftSubtitleElement = document.getElementById('upgrade-draft-subtitle');
         const fairySnapshots = {};
         const authoritativeFairyState = {};
+        const smoothedPlayerPositions = {}; // Store smoothed positions for realtime smoothing
         const reusableActiveSoulIds = new Set();
         const reusableActiveFairyIds = new Set();
         const MAX_SNAPSHOT_AGE_MS = 1000;
@@ -11043,6 +11044,7 @@
         // - Combined with velocity-aware scaling, this minimizes "snap back" visual artifacts
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
         const PLAYER_EXTRAPOLATION_LIMIT_MS = 80; // Client-side prediction to fake smoothness when choppy
+        const PLAYER_SMOOTHING_FACTOR = 0.35; // Realtime smoothing: 0-1, higher = smoother but more laggy
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const PLAYER_DISCONTINUITY_DISTANCE = 260;
@@ -14752,8 +14754,16 @@
 
                 const nextState = playerState[sid] || {};
                 Object.assign(nextState, authoritativeState);
-                nextState.x = sampled.x;
-                nextState.y = sampled.y;
+                
+                // Apply realtime smoothing using exponential moving average
+                // This smooths out small jitters before they become noticeable
+                const prevSmoothed = smoothedPlayerPositions[sid] || { x: sampled.x, y: sampled.y };
+                const smoothFactor = PLAYER_SMOOTHING_FACTOR;
+                nextState.x = lerp(prevSmoothed.x, sampled.x, smoothFactor);
+                nextState.y = lerp(prevSmoothed.y, sampled.y, smoothFactor);
+                
+                // Store smoothed position for next frame
+                smoothedPlayerPositions[sid] = { x: nextState.x, y: nextState.y };
                 nextState.vy = typeof sampled.vy === 'number' ? sampled.vy : authoritativeState.vy;
                 nextState.action = sampled.action ?? authoritativeState.action;
                 nextState.direction = sampled.direction ?? authoritativeState.direction;
