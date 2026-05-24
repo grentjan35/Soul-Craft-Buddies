@@ -461,10 +461,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // 45Hz broadcast rate for faster mechanics (50% faster than baseline 30 TPS)
-  // 45 TPS provides faster mechanics with lower interpolation delay (11-22ms vs 16-33ms at 30 TPS)
-  // Client interpolation smooths rendering between server states
-  const broadcastIntervalMs = 1000 / 45;
+  // 90Hz broadcast rate for instant-feel gameplay (3x faster than baseline 30 TPS)
+  // 90 TPS provides near-instant mechanics with minimal interpolation delay (5-11ms vs 16-33ms at 30 TPS)
+  // Combined with immediate acknowledgments, this fakes instant response without client-side prediction
+  const broadcastIntervalMs = 1000 / 90;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 

@@ -201,6 +201,9 @@ function registerSocketHandlers(input) {
     }
 
     player.inputs = nextInputs;
+    
+    // Immediate acknowledgment to fake instant response
+    socket.emit('input_ack', { inputs: nextInputs, timestamp: Date.now() });
   });
 
   socket.on('jump', () => {
@@ -208,7 +211,8 @@ function registerSocketHandlers(input) {
     if (!player || !player.is_ready) return;
     if (isPlayerDrafting(player)) return;
     const runStats = getPlayerRunStats(player);
-    if (player.jumps_remaining > 0) {
+    const jumpExecuted = player.jumps_remaining > 0;
+    if (jumpExecuted) {
       player.vy = Number.isFinite(runStats.jumpVelocity) ? runStats.jumpVelocity : -12 * 60;
       player.on_ground = false;
       player.jumps_remaining -= 1;
@@ -217,6 +221,9 @@ function registerSocketHandlers(input) {
         emitProgressionNotification(io, socket.id, achievement);
       }
     }
+    
+    // Immediate acknowledgment to fake instant response
+    socket.emit('jump_ack', { executed: jumpExecuted, jumpsRemaining: player.jumps_remaining, timestamp: Date.now() });
   });
 
   // Chat functionality disabled
@@ -294,7 +301,15 @@ function registerSocketHandlers(input) {
     if (isPlayerDrafting(player)) return;
     if ((player.selected_inventory_slot || INVENTORY_SLOT_FIREBALL) !== INVENTORY_SLOT_FIREBALL) return;
     if (player.special_beam_requested || player.special_beam_active) return;
+    
+    const wasAttacking = player.is_attacking;
     queueOrStartProjectileAttack(player, data);
+    
+    // Immediate acknowledgment to fake instant response
+    socket.emit('projectile_fire_ack', { 
+      queued: wasAttacking, 
+      timestamp: Date.now() 
+    });
   });
 
   socket.on('select_inventory_slot', (data) => {
@@ -312,7 +327,16 @@ function registerSocketHandlers(input) {
     if (!player || !player.is_ready) return;
     if (isPlayerDrafting(player)) return;
     if ((player.selected_inventory_slot || INVENTORY_SLOT_FIREBALL) !== INVENTORY_SLOT_LAZER) return;
+    
+    const wasAlreadyActive = player.special_beam_requested || player.special_beam_active;
     fireLazerAttack(player, data);
+    
+    // Immediate acknowledgment to fake instant response
+    socket.emit('special_attack_fire_ack', { 
+      started: !wasAlreadyActive, 
+      updating: wasAlreadyActive,
+      timestamp: Date.now() 
+    });
   });
 
   socket.on('chest_interact', (data) => {
