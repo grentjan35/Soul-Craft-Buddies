@@ -11619,6 +11619,13 @@
 
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0 && !chatActive && allAssetsLoaded) { // Left click
+                // Check if player clicked on a chest first (desktop chest interaction)
+                const clickedChest = getChestAtScreenPosition(e.clientX, e.clientY);
+                if (clickedChest?.id) {
+                    socket.emit('chest_interact', { chestId: clickedChest.id });
+                    return;
+                }
+
                 isMouseDown = true;
                 currentMouseClientX = e.clientX;
                 currentMouseClientY = e.clientY;
