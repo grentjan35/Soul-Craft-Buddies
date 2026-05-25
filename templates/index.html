@@ -992,120 +992,6 @@
                 transform: translateX(56px) scale(0.96);
             }
         }
-        .chest-interaction-button {
-            position: fixed;
-            bottom: calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 100px);
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 180;
-            animation: chest-interaction-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-        }
-        @keyframes chest-interaction-in {
-            from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-            }
-        }
-        .chest-interaction-content {
-            background:
-                radial-gradient(circle at 50% 46%, rgba(73, 119, 212, 0.14), transparent 30%),
-                linear-gradient(180deg, rgba(18, 25, 37, 0.92), rgba(10, 13, 21, 0.96));
-            border: 3px solid rgba(205, 169, 104, 0.9);
-            box-shadow:
-                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
-                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
-                inset 0 0 30px rgba(10, 7, 4, 0.8),
-                inset 0 0 42px rgba(96, 156, 255, 0.08),
-                inset 0 0 72px rgba(91, 149, 255, 0.12),
-                0 16px 48px rgba(0, 0, 0, 0.36),
-                0 0 34px rgba(82, 138, 255, 0.12);
-            border-radius: 0;
-            padding: 18px 28px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 14px;
-            position: relative;
-            overflow: hidden;
-        }
-        .chest-interaction-content::before {
-            content: "";
-            position: absolute;
-            inset: 10px;
-            border: 2px solid rgba(237, 213, 161, 0.88);
-            border-radius: 10px;
-            opacity: 0.9;
-            pointer-events: none;
-        }
-        .chest-interaction-title {
-            font-family: 'EB Garamond', Georgia, serif;
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #f5e0b4;
-            text-shadow: 0 0 12px rgba(212, 179, 114, 0.22);
-            text-align: center;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            position: relative;
-            z-index: 1;
-        }
-        .chest-interaction-confirm {
-            background:
-                radial-gradient(circle at 50% 46%, rgba(73, 119, 212, 0.12), transparent 30%),
-                linear-gradient(180deg, rgba(18, 25, 37, 0.92), rgba(10, 13, 21, 0.96));
-            border: 3px solid rgba(205, 169, 104, 0.9);
-            box-shadow:
-                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
-                inset 0 0 0 4px rgba(237, 213, 161, 0.32),
-                inset 0 0 30px rgba(10, 7, 4, 0.8),
-                inset 0 0 42px rgba(96, 156, 255, 0.08),
-                inset 0 0 72px rgba(91, 149, 255, 0.12),
-                0 8px 24px rgba(0, 0, 0, 0.4),
-                0 0 18px rgba(82, 138, 255, 0.1);
-            border-radius: 0;
-            padding: 12px 40px;
-            font-family: 'EB Garamond', Georgia, serif;
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: #f5e0b4;
-            cursor: pointer;
-            transition: all 180ms ease;
-            text-shadow: 0 0 8px rgba(212, 179, 114, 0.18);
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            position: relative;
-            z-index: 1;
-        }
-        .chest-interaction-confirm::before {
-            content: "";
-            position: absolute;
-            inset: 8px;
-            border: 2px solid rgba(237, 213, 161, 0.88);
-            border-radius: 6px;
-            opacity: 0.9;
-            pointer-events: none;
-        }
-        .chest-interaction-confirm:hover {
-            background:
-                radial-gradient(circle at 50% 46%, rgba(73, 119, 212, 0.18), transparent 30%),
-                linear-gradient(180deg, rgba(28, 35, 47, 0.94), rgba(18, 21, 29, 0.98));
-            border-color: rgba(237, 213, 161, 0.95);
-            box-shadow:
-                inset 0 0 0 2px rgba(69, 47, 21, 0.96),
-                inset 0 0 0 4px rgba(237, 213, 161, 0.42),
-                inset 0 0 30px rgba(10, 7, 4, 0.8),
-                inset 0 0 42px rgba(96, 156, 255, 0.12),
-                inset 0 0 72px rgba(91, 149, 255, 0.16),
-                0 12px 32px rgba(0, 0, 0, 0.5),
-                0 0 24px rgba(82, 138, 255, 0.18);
-        }
-        .chest-interaction-confirm:active {
-            transform: scale(0.96);
-        }
         #upgrade-draft-overlay {
             position: fixed;
             inset: 0;
@@ -3946,14 +3832,6 @@
     <div id="jump-button" class="mobile-action-button" data-custom-alphabet="button">
         <img src="/gui/jump_button.png" alt="Jump" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;">
     </div>
-
-    <!-- Chest Interaction Button -->
-    <div id="chest-interaction-button" class="chest-interaction-button" style="display: none;">
-        <div class="chest-interaction-content">
-            <div class="chest-interaction-title" data-custom-alphabet="label">Open Chest?</div>
-            <button id="chest-interaction-confirm" class="chest-interaction-confirm" type="button" data-custom-alphabet="button">Open</button>
-        </div>
-    </div>
     <div id="settings-modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
         <div class="settings-window menu-panel-frame">
             <div class="settings-header">
@@ -4735,13 +4613,14 @@
         // Simulate cloud network delay for local testing (set to true to test Hugging Face conditions)
         // When enabled, adds 100ms average delay with 50ms jitter to simulate cloud deployment
         const SIMULATE_CLOUD_DELAY = false;
-        // The server broadcasts authoritative state at 75Hz (75 TPS), so interpolation
+        // The server broadcasts authoritative state at 45Hz (45 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
-        // At 75Hz, one tick is 13.33ms. Balanced delays for instant yet smooth response.
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 11; // 0.83 ticks - instant yet smooth
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 13; // 0.98 ticks - balanced
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 15; // 1.13 ticks - stable
-        const MAX_INTERPOLATION_DELAY_MS = 45; // Balanced for smooth adaptation
+        // Instant response configuration: 0.5-1 tick buffer (11-22ms at 45 TPS) per BESTMODEL.md
+        // Faster tick rate allows lower delays while maintaining smoothness
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 14; // 0.63 ticks - instant response
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 17; // 0.77 ticks - instant response
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 22; // 1 tick - instant response
+        const MAX_INTERPOLATION_DELAY_MS = 60; // Reduced for faster adaptation
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
@@ -5989,6 +5868,14 @@
             // Process each new touch that started on the canvas
             for (let i = 0; i < newTouches.length; i += 1) {
                 const touch = newTouches[i];
+
+                // Check if player tapped on a chest first (mobile chest interaction)
+                const tappedChest = getChestAtScreenPosition(touch.clientX, touch.clientY);
+                if (tappedChest?.id) {
+                    socket.emit('chest_interact', { chestId: tappedChest.id });
+                    suppressNextCanvasTap = true;
+                    return;
+                }
 
                 isTouchDown = true;
                 currentTouchClientX = touch.clientX;
@@ -11256,7 +11143,6 @@
             }
         };
         const CHEST_PROMPT_RADIUS = 110;
-        let currentChestForInteraction = null;
         let localProgressionState = {
             level: 1,
             xp: 0,
@@ -11305,28 +11191,6 @@
         combatInventoryElement?.addEventListener('touchstart', () => {
             revealCombatInventory();
         }, { passive: true });
-
-        // Chest interaction button handler
-        const chestInteractionButton = document.getElementById('chest-interaction-button');
-        const chestInteractionConfirm = document.getElementById('chest-interaction-confirm');
-        if (chestInteractionConfirm) {
-            chestInteractionConfirm.addEventListener('click', () => {
-                if (currentChestForInteraction?.id) {
-                    socket.emit('chest_interact', { chestId: currentChestForInteraction.id });
-                    chestInteractionButton.style.display = 'none';
-                    currentChestForInteraction = null;
-                }
-            });
-            chestInteractionConfirm.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                if (currentChestForInteraction?.id) {
-                    socket.emit('chest_interact', { chestId: currentChestForInteraction.id });
-                    chestInteractionButton.style.display = 'none';
-                    currentChestForInteraction = null;
-                }
-            }, { passive: false });
-        }
-
         let achievementPanelOpen = false;
         let upgradeSelectionPending = false;
         let achievementCollectPendingId = '';
@@ -11754,12 +11618,6 @@
 
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0 && !chatActive && allAssetsLoaded) { // Left click
-                // Check if player clicked on a chest first
-                const clickedChest = getChestAtScreenPosition(e.clientX, e.clientY);
-                if (clickedChest?.id) {
-                    socket.emit('chest_interact', { chestId: clickedChest.id });
-                    return;
-                }
                 isMouseDown = true;
                 currentMouseClientX = e.clientX;
                 currentMouseClientY = e.clientY;
@@ -13505,7 +13363,7 @@
                 fireballAudio.playReleaseAt(x, y, listenerState.x, listenerState.y, audibleViewport, 0.78);
                 fireballAudio.startLoop(id, x, y, listenerState.x, listenerState.y, audibleViewport, 0.5);
             }
-            // No screen shake when firing fireballs - only when they hit
+            addDistanceShake(x, y, 80, 650, owner_sid === socket.id ? 0.28 : 0.18);
         });
 
         // Handle projectile destroyed event from server
@@ -15481,6 +15339,10 @@
                 return null;
             }
 
+            // Convert screen coordinates to world coordinates
+            const worldX = screenX + cameraX;
+            const worldY = screenY + cameraY;
+
             const tapRadius = 60; // Tapping tolerance in screen pixels
 
             for (const chestId in chestState) {
@@ -15496,18 +15358,11 @@
                     continue; // Too far to interact
                 }
 
-                // Use the same render state as drawing to get the visual position
-                const renderState = getChestRenderState(chest, now);
-                const frameMetrics = getChestFrameMetrics(renderState);
-                if (!renderState || !frameMetrics) {
-                    continue;
-                }
+                // Convert chest world position to screen position
+                const chestScreenX = (Number(chest.x) || 0) - cameraX;
+                const chestScreenY = (Number(chest.y) || 0) - cameraY;
 
-                // Calculate the visual screen position (same as drawChests)
-                const chestScreenX = renderState.worldX - cameraX;
-                const chestScreenY = renderState.worldY - cameraY - frameMetrics.drawH / 2;
-
-                // Check if tap is within tolerance of chest visual screen position
+                // Check if tap is within tolerance of chest screen position
                 const tapDistance = Math.hypot(chestScreenX - screenX, chestScreenY - screenY);
                 if (tapDistance <= tapRadius) {
                     return chest;
@@ -15881,25 +15736,6 @@
 
         function drawChestInteractionPrompt(now = Date.now(), visibleBounds = null) {
             const chest = getNearestChestForInteraction();
-            const availableAtMs = chest ? Number(chest.available_at_ms) || 0 : 0;
-            const canInteract = chest && availableAtMs <= now && !chest.opened_at_ms && !chest.despawn_started_at_ms && (!chest.opener_sid || chest.opener_sid === socket.id);
-
-            // Update chest interaction button visibility
-            if (canInteract && chestInteractionButton) {
-                if (currentChestForInteraction?.id !== chest.id) {
-                    currentChestForInteraction = chest;
-                    const rarityLabel = getChestVisualProfile(chest.rarity).label;
-                    const titleEl = chestInteractionButton.querySelector('.chest-interaction-title');
-                    if (titleEl) {
-                        titleEl.textContent = `Open ${rarityLabel} Chest?`;
-                    }
-                    chestInteractionButton.style.display = 'block';
-                }
-            } else if (chestInteractionButton) {
-                chestInteractionButton.style.display = 'none';
-                currentChestForInteraction = null;
-            }
-
             if (!chest) {
                 return;
             }
@@ -15917,6 +15753,7 @@
             const screenY = renderState.worldY - cameraY - frameMetrics.drawH * 0.95;
             const rarityLabel = getChestVisualProfile(chest.rarity).label;
             let promptText = `Press E - ${rarityLabel} chest`;
+            const availableAtMs = Number(chest.available_at_ms) || 0;
             if (availableAtMs > now) {
                 promptText = `${rarityLabel} chest stabilizing - ${((availableAtMs - now) / 1000).toFixed(1)}s`;
             } else if (chest.opener_sid && chest.opener_sid !== socket.id && !chest.opened_at_ms) {

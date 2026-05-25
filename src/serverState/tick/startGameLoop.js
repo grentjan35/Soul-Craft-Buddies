@@ -228,14 +228,6 @@ let lastBandwidthLogMs = 0;
 const socketBandwidthHistory = new Map();
 
 /**
- * Exposes bandwidth history map for cleanup on disconnect.
- * @returns {Map<string, Array<{timestampMs: number, bytes: number}>>}
- */
-function getSocketBandwidthHistory() {
-  return socketBandwidthHistory;
-}
-
-/**
  * Records bytes sent for a socket.
  *
  * @param {string} sid - Socket ID
@@ -308,14 +300,6 @@ function logBandwidthStats() {
   const avgKbps = stats.length > 0 ? Math.round((totalKbps / stats.length) * 100) / 100 : 0;
   // eslint-disable-next-line no-console
   console.log(`[BANDWIDTH] players=${stats.length} avg=${avgKbps}KB/s max=${maxKbps}KB/s total=${Math.round(totalKbps * 100) / 100}KB/s`);
-  
-  // Clean up stale socket entries from bandwidth history
-  const cutoff = now - BANDWIDTH_WINDOW_MS * 2;
-  for (const [sid, history] of socketBandwidthHistory.entries()) {
-    if (history.length === 0 || (history.length > 0 && history[history.length - 1].timestampMs < cutoff)) {
-      socketBandwidthHistory.delete(sid);
-    }
-  }
 }
 
 const PLAYER_KILL_BONUS_FIELDS = Object.freeze([
@@ -477,10 +461,10 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // 75Hz broadcast rate for instant smooth gameplay (2.5x faster than baseline 30 TPS)
-  // 75 TPS provides 13.33ms between updates for very smooth interpolation
-  // Higher tick rate reduces interpolation jitter while maintaining instant feel
-  const broadcastIntervalMs = 1000 / 75;
+  // 45Hz broadcast rate for faster mechanics (50% faster than baseline 30 TPS)
+  // 45 TPS provides faster mechanics with lower interpolation delay (11-22ms vs 16-33ms at 30 TPS)
+  // Client interpolation smooths rendering between server states
+  const broadcastIntervalMs = 1000 / 45;
   const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
@@ -2535,4 +2519,4 @@ function restartGameLoop() {
   startGameLoop(gameLoopContext);
 }
 
-module.exports = { startGameLoop, stopGameLoop, restartGameLoop, getSocketBandwidthHistory };
+module.exports = { startGameLoop, stopGameLoop, restartGameLoop };
