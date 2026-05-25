@@ -21,21 +21,13 @@ const monitorStats = {
  * @returns {import('socket.io').Server}
  */
 function createSocketServer(input) {
-  // Cloud-optimized Socket.IO configuration
-  // Cloud deployments (Hugging Face, Render) need more aggressive ping settings
-  // to handle higher network latency and prevent connection drops
-  const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
-  
   const io = new Server(input.httpServer, {
     path: '/socket.io/',
     cors: { origin: '*' },
     serveClient: true,
     transports: ['websocket'],
     httpCompression: true,
-    // Disable perMessageDeflate on cloud to reduce CPU overhead and latency
-    // Compression adds ~5-10ms latency per message, which is noticeable on cloud
-    // MessagePack already provides good compression, so deflate is redundant
-    perMessageDeflate: isCloudDeployment ? false : {
+    perMessageDeflate: {
       threshold: 1024,
       zlibDeflateOptions: {
         level: 1,
@@ -47,14 +39,8 @@ function createSocketServer(input) {
       serverNoContextTakeover: true,
       serverMaxWindowBits: 10,
     },
-    // Cloud: More aggressive ping to detect connection issues faster
-    // Localhost: Relaxed ping since network is reliable
-    pingTimeout: isCloudDeployment ? 30000 : 60000,
-    pingInterval: isCloudDeployment ? 10000 : 2500,
-    // Increase buffer size for cloud to handle bursty network conditions
-    maxHttpBufferSize: isCloudDeployment ? 2e6 : 1e6,
-    // Reduce WebSocket upgrade timeout for faster connection establishment
-    upgradeTimeout: isCloudDeployment ? 5000 : 10000,
+    pingTimeout: 60000,
+    pingInterval: 2500,
   });
 
   const monitoringEnabled = String(process.env.SOCKET_MONITORING || '').toLowerCase() === '1';

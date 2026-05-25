@@ -461,14 +461,11 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  
-  // Adaptive broadcast rate: 30Hz for cloud deployments (Hugging Face), 45Hz for localhost
-  // Cloud environments have higher network latency, so lower tick rate reduces jitter
-  // 30Hz = 33ms intervals (more stable on cloud), 45Hz = 22ms intervals (localhost)
-  const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
-  const broadcastIntervalMs = 1000 / (isCloudDeployment ? 30 : 45);
-  // Reduce fairy broadcast interval on cloud to reduce bandwidth overhead
-  const fairyBroadcastIntervalMs = isCloudDeployment ? 500 : 250;
+  // 45Hz broadcast rate for faster mechanics (50% faster than baseline 30 TPS)
+  // 45 TPS provides faster mechanics with lower interpolation delay (11-22ms vs 16-33ms at 30 TPS)
+  // Client interpolation smooths rendering between server states
+  const broadcastIntervalMs = 1000 / 45;
+  const fairyBroadcastIntervalMs = 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
   input.state.lastActivePlayerAtMs = Date.now();
@@ -481,7 +478,6 @@ function startGameLoop(input) {
     let dt = (nowMs - lastTimeMs) / 1000;
     lastTimeMs = nowMs;
 
-    // Cap delta time to prevent physics explosions on lag spikes
     dt = Math.min(dt, 0.1);
 
     const activePlayers = getActivePlayers(input.state);
@@ -519,8 +515,9 @@ function startGameLoop(input) {
       }
     }
 
-    // Broadcast state at adaptive rate based on deployment environment
-    // Cloud: 30Hz for stability, Localhost: 45Hz for responsiveness
+    // Broadcast state every tick (60Hz) for reduced latency on remote deployments
+    // Localhost benefits from low network latency, but Hugging Face has inherent delay
+    // Higher tick rate provides more frequent updates, reducing perceived input lag
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
       const includeFairies = nowMs - lastFairyBroadcastMs >= fairyBroadcastIntervalMs;
@@ -538,15 +535,7 @@ function startGameLoop(input) {
 
     const tickWorkDurationMs = Date.now() - nowMs;
     const nextDelayMs = Math.max(0, frameDurationMs - tickWorkDurationMs);
-    
-    // Use setImmediate for cloud deployments to avoid setTimeout precision issues
-    // setTimeout can have inconsistent timing on cloud environments due to CPU throttling
-    // setImmediate is more reliable for real-time loops on cloud
-    if (isCloudDeployment && nextDelayMs < 5) {
-      gameLoopInterval = setImmediate(tick);
-    } else {
-      gameLoopInterval = setTimeout(tick, nextDelayMs);
-    }
+    gameLoopInterval = setTimeout(tick, nextDelayMs);
   };
 
   gameLoopInterval = setTimeout(tick, frameDurationMs);
@@ -564,13 +553,6 @@ function broadcastState(input) {
 
   input.state.stateSeq += 1;
   const ts = Date.now();
-  
-  // Cloud optimization: Skip broadcast if no active players to reduce unnecessary CPU
-  // This prevents the server from doing work when no one is actually playing
-  const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
-  if (isCloudDeployment && input.activePlayers && input.activePlayers.length === 0) {
-    return;
-  }
 
   /** @type {Record<string, any>} */
   const playersPayload = {};
