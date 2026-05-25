@@ -868,6 +868,26 @@ function handleDisconnect(input) {
     }
   }
   
+  // Clean up enemy replication state for this socket to prevent memory leak
+  if (input.socket.data?.enemyReplication) {
+    input.socket.data.enemyReplication.snapshotsById?.clear();
+    input.socket.data.enemyReplication.stickyFieldsById?.clear();
+    input.socket.data.enemyReplication = null;
+  }
+  
+  // Clean up bandwidth history for this socket
+  if (typeof require !== 'undefined') {
+    try {
+      const { getSocketBandwidthHistory } = require('../tick/startGameLoop');
+      const bandwidthHistory = getSocketBandwidthHistory();
+      if (bandwidthHistory?.has(input.socket.id)) {
+        bandwidthHistory.delete(input.socket.id);
+      }
+    } catch (e) {
+      // Module might not be accessible, ignore
+    }
+  }
+  
   input.state.players.delete(input.socket.id);
 }
 

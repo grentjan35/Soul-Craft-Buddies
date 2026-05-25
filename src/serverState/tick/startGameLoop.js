@@ -228,6 +228,14 @@ let lastBandwidthLogMs = 0;
 const socketBandwidthHistory = new Map();
 
 /**
+ * Exposes bandwidth history map for cleanup on disconnect.
+ * @returns {Map<string, Array<{timestampMs: number, bytes: number}>>}
+ */
+function getSocketBandwidthHistory() {
+  return socketBandwidthHistory;
+}
+
+/**
  * Records bytes sent for a socket.
  *
  * @param {string} sid - Socket ID
@@ -300,6 +308,14 @@ function logBandwidthStats() {
   const avgKbps = stats.length > 0 ? Math.round((totalKbps / stats.length) * 100) / 100 : 0;
   // eslint-disable-next-line no-console
   console.log(`[BANDWIDTH] players=${stats.length} avg=${avgKbps}KB/s max=${maxKbps}KB/s total=${Math.round(totalKbps * 100) / 100}KB/s`);
+  
+  // Clean up stale socket entries from bandwidth history
+  const cutoff = now - BANDWIDTH_WINDOW_MS * 2;
+  for (const [sid, history] of socketBandwidthHistory.entries()) {
+    if (history.length === 0 || (history.length > 0 && history[history.length - 1].timestampMs < cutoff)) {
+      socketBandwidthHistory.delete(sid);
+    }
+  }
 }
 
 const PLAYER_KILL_BONUS_FIELDS = Object.freeze([
@@ -2519,4 +2535,4 @@ function restartGameLoop() {
   startGameLoop(gameLoopContext);
 }
 
-module.exports = { startGameLoop, stopGameLoop, restartGameLoop };
+module.exports = { startGameLoop, stopGameLoop, restartGameLoop, getSocketBandwidthHistory };
