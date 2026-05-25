@@ -67,18 +67,6 @@ const ENEMY_FULL_SYNC_INTERVAL_MS = 1000;
 const ENEMY_STICKY_FIELDS = new Set(['x', 'y', 'type', 'level', 'max_health', 'health']);
 const ENEMY_STICKY_FIELD_EXTRA_SENDS = 3;
 
-// Cloud-optimized replication radii - reduced to decrease bandwidth overhead
-// Cloud deployments have higher latency, so sending fewer entities reduces jitter
-const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
-const CLOUD_ENEMY_SEND_RADIUS_X = isCloudDeployment ? 1200 : 1500;
-const CLOUD_ENEMY_SEND_RADIUS_Y = isCloudDeployment ? 800 : 1000;
-const CLOUD_FIREBALL_SEND_RADIUS_X = isCloudDeployment ? 1400 : 1750;
-const CLOUD_FIREBALL_SEND_RADIUS_Y = isCloudDeployment ? 1000 : 1200;
-const CLOUD_EXPLOSION_SEND_RADIUS_X = isCloudDeployment ? 1400 : 1800;
-const CLOUD_EXPLOSION_SEND_RADIUS_Y = isCloudDeployment ? 1000 : 1250;
-// Reduce enemy full sync interval on cloud to reduce bandwidth overhead
-const CLOUD_ENEMY_FULL_SYNC_INTERVAL_MS = isCloudDeployment ? 2000 : 1000;
-
 /**
  * Field name compression mapping: long keys -> short keys to reduce WebSocket payload size.
  *
@@ -671,27 +659,26 @@ function broadcastState(input) {
       continue;
     }
 
-    // Use cloud-optimized replication radii to reduce bandwidth overhead
     const enemyReplication = buildEnemyReplicationPayload({
       socket,
       ts,
       state: input.state,
       centerX: player.x,
       centerY: player.y,
-      radiusX: CLOUD_ENEMY_SEND_RADIUS_X,
-      radiusY: CLOUD_ENEMY_SEND_RADIUS_Y,
+      radiusX: ENEMY_SEND_RADIUS_X,
+      radiusY: ENEMY_SEND_RADIUS_Y,
     });
     const fireballsPayload = serializeFireballsForState(input.state, {
       centerX: player.x,
       centerY: player.y,
-      radiusX: CLOUD_FIREBALL_SEND_RADIUS_X,
-      radiusY: CLOUD_FIREBALL_SEND_RADIUS_Y,
+      radiusX: FIREBALL_SEND_RADIUS_X,
+      radiusY: FIREBALL_SEND_RADIUS_Y,
     });
     const explosionsPayload = serializeExplosionsForState(input.state, ts, {
       centerX: player.x,
       centerY: player.y,
-      radiusX: CLOUD_EXPLOSION_SEND_RADIUS_X,
-      radiusY: CLOUD_EXPLOSION_SEND_RADIUS_Y,
+      radiusX: EXPLOSION_SEND_RADIUS_X,
+      radiusY: EXPLOSION_SEND_RADIUS_Y,
     });
 
     // Phase 2: MessagePack binary encoding.
@@ -717,10 +704,6 @@ function broadcastState(input) {
       enemy_removed: enemyReplication.removed,
     });
     const encoded = msgpack.encode(playerPayload);
-    
-    // Cloud optimization: Use volatile.emit to drop stale packets and reduce queuing
-    // On cloud, network buffering can cause packet pile-up, leading to choppiness
-    // volatile.emit ensures only the most recent state is delivered, dropping old packets
     socket.volatile.emit('state', encoded);
     recordBandwidth(sid, encoded.length);
   }
@@ -843,10 +826,9 @@ function buildEnemyReplicationPayload(input) {
     radiusY: input.radiusY,
   });
   const replicationState = getEnemyReplicationState(input.socket);
-  // Use cloud-optimized full sync interval to reduce bandwidth overhead
   const sendFullSnapshot =
     replicationState.lastFullSyncAt <= 0 ||
-    input.ts - replicationState.lastFullSyncAt >= CLOUD_ENEMY_FULL_SYNC_INTERVAL_MS;
+    input.ts - replicationState.lastFullSyncAt >= ENEMY_FULL_SYNC_INTERVAL_MS;
   const nextSnapshotsById = new Map();
   const nextStickyFieldsById = new Map();
   const removed = [];
