@@ -4682,6 +4682,10 @@
         // Simulate cloud network delay for local testing (set to true to test Hugging Face conditions)
         // When enabled, adds 100ms average delay with 50ms jitter to simulate cloud deployment
         const SIMULATE_CLOUD_DELAY = false;
+        // Auto-detect cloud deployment based on hostname
+        const isCloudDeployment = window.location.hostname.includes('huggingface.co') || 
+                                   window.location.hostname.includes('hf.space') ||
+                                   SIMULATE_CLOUD_DELAY;
         // The server broadcasts authoritative state at 75Hz (75 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
         // At 75Hz, one tick is 13.33ms. Balanced delays for instant yet smooth response.
@@ -4689,6 +4693,9 @@
         const MOBILE_MIN_INTERPOLATION_DELAY_MS = 13; // 0.98 ticks - balanced
         const LOW_END_MIN_INTERPOLATION_DELAY_MS = 15; // 1.13 ticks - stable
         const MAX_INTERPOLATION_DELAY_MS = 45; // Balanced for smooth adaptation
+        // Cloud-optimized interpolation: much higher delay to absorb network jitter
+        // Hugging Face has variable latency (50-200ms), so we need larger buffer
+        const CLOUD_MAX_INTERPOLATION_DELAY_MS = 150; // 150ms buffer for cloud deployments
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
@@ -11098,6 +11105,8 @@
         const reusableActiveSoulIds = new Set();
         const reusableActiveFairyIds = new Set();
         const MAX_SNAPSHOT_AGE_MS = 1000;
+        // Cloud-optimized snapshot age: keep more history for smoother interpolation
+        const CLOUD_MAX_SNAPSHOT_AGE_MS = 2000; // 2 seconds for cloud deployments
         // Base extrapolation limit for enemies. Reduced from 80ms to 50ms because:
         // - Enemies have less predictable movement than players (AI-driven, not input-driven)
         // - Fast enemies (striker lunges, slime jumps) frequently hit walls
@@ -11105,6 +11114,8 @@
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
         const PLAYER_EXTRAPOLATION_LIMIT_MS = 80; // Client-side prediction to fake smoothness when choppy
         const PLAYER_SMOOTHING_FACTOR = 0.35; // Realtime smoothing: 0-1, higher = smoother but more laggy
+        // Cloud-optimized smoothing: much more aggressive to completely eliminate choppiness
+        const CLOUD_PLAYER_SMOOTHING_FACTOR = 0.6; // 0.6 for cloud to completely smooth out jitter
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const PLAYER_DISCONTINUITY_DISTANCE = 260;
@@ -14577,11 +14588,21 @@
             }
             const variance = varianceSum / intervalCount;
             const jitterMs = Math.sqrt(variance);
-            const targetDelay = Math.max(currentMinInterpolationDelayMs, meanInterval) + jitterMs * 2.5;
+            
+            // Cloud-optimized: much more aggressive jitter compensation
+            // Cloud deployments have higher and more variable latency, so we multiply jitter by 4x instead of 2.5x
+            const jitterMultiplier = isCloudDeployment ? 4.0 : 2.5;
+            const targetDelay = Math.max(currentMinInterpolationDelayMs, meanInterval) + jitterMs * jitterMultiplier;
+
+            // Use cloud-specific max interpolation delay
+            const maxDelay = isCloudDeployment ? CLOUD_MAX_INTERPOLATION_DELAY_MS : MAX_INTERPOLATION_DELAY_MS;
+            
+            // Cloud-optimized: faster adaptation (0.3 instead of 0.2) to respond quickly to changing network conditions
+            const adaptationRate = isCloudDeployment ? 0.3 : 0.2;
 
             renderDelayMs = Math.max(
                 currentMinInterpolationDelayMs,
-                Math.min(MAX_INTERPOLATION_DELAY_MS, lerp(renderDelayMs, targetDelay, 0.2))
+                Math.min(maxDelay, lerp(renderDelayMs, targetDelay, adaptationRate))
             );
         }
 
@@ -14671,7 +14692,9 @@
                 snapshots.push(snapshot);
             }
 
-            const minTs = snapshot.ts - MAX_SNAPSHOT_AGE_MS;
+            // Cloud-optimized: keep more snapshots for smoother interpolation
+            const maxSnapshotAge = isCloudDeployment ? CLOUD_MAX_SNAPSHOT_AGE_MS : MAX_SNAPSHOT_AGE_MS;
+            const minTs = snapshot.ts - maxSnapshotAge;
             while (snapshots.length > 2 && snapshots[1].ts < minTs) {
                 snapshots.shift();
             }
@@ -14691,24 +14714,31 @@
                 const to = snapshots[i + 1];
                 if (renderTs <= to.ts) {
                     const span = Math.max(1, to.ts - from.ts);
-                    const t = Math.max(0, Math.min(1, (renderTs - from.ts) / span));
+                    let t = Math.max(0, Math.min(1, (renderTs - from.ts) / span));
                     const spanSeconds = span / 1000;
-                    let x = lerp(from.x, to.x, t);
-                    let y = lerp(from.y, to.y, t);
-
-                    if (options.useBallisticPosition && typeof from.vx === 'number' && typeof to.vx === 'number') {
+                    
+                    // Cloud-optimized: use Hermite interpolation for smoother movement
+                    // Hermite provides smoother curves than linear lerp, reducing perceived choppiness
+                    const useHermite = isCloudDeployment || options.useHermitePosition;
+                    
+                    let x, y;
+                    if (useHermite && typeof from.vx === 'number' && typeof to.vx === 'number') {
+                        x = cubicHermite(from.x, from.vx * spanSeconds, to.x, to.vx * spanSeconds, t);
+                    } else if (options.useBallisticPosition && typeof from.vx === 'number' && typeof to.vx === 'number') {
                         const dtSeconds = t * spanSeconds;
                         x = from.x + from.vx * dtSeconds;
-                    } else if (options.useHermitePosition && typeof from.vx === 'number' && typeof to.vx === 'number') {
-                        x = cubicHermite(from.x, from.vx * spanSeconds, to.x, to.vx * spanSeconds, t);
+                    } else {
+                        x = lerp(from.x, to.x, t);
                     }
 
-                    if (options.useBallisticPosition && typeof from.vy === 'number' && typeof to.vy === 'number') {
+                    if (useHermite && typeof from.vy === 'number' && typeof to.vy === 'number') {
+                        y = cubicHermite(from.y, from.vy * spanSeconds, to.y, to.vy * spanSeconds, t);
+                    } else if (options.useBallisticPosition && typeof from.vy === 'number' && typeof to.vy === 'number') {
                         const acceleration = (to.vy - from.vy) / spanSeconds;
                         const dtSeconds = t * spanSeconds;
                         y = from.y + from.vy * dtSeconds + 0.5 * acceleration * dtSeconds * dtSeconds;
-                    } else if (options.useHermitePosition && typeof from.vy === 'number' && typeof to.vy === 'number') {
-                        y = cubicHermite(from.y, from.vy * spanSeconds, to.y, to.vy * spanSeconds, t);
+                    } else {
+                        y = lerp(from.y, to.y, t);
                     }
 
                     if (options.clampPositionToSegment) {
@@ -14841,7 +14871,8 @@
                 // Apply realtime smoothing using exponential moving average
                 // This smooths out small jitters before they become noticeable
                 const prevSmoothed = smoothedPlayerPositions[sid] || { x: sampled.x, y: sampled.y };
-                const smoothFactor = PLAYER_SMOOTHING_FACTOR;
+                // Cloud-optimized: use much more aggressive smoothing factor
+                const smoothFactor = isCloudDeployment ? CLOUD_PLAYER_SMOOTHING_FACTOR : PLAYER_SMOOTHING_FACTOR;
                 nextState.x = lerp(prevSmoothed.x, sampled.x, smoothFactor);
                 nextState.y = lerp(prevSmoothed.y, sampled.y, smoothFactor);
                 
