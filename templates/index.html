@@ -992,6 +992,67 @@
                 transform: translateX(56px) scale(0.96);
             }
         }
+        .chest-interaction-button {
+            position: fixed;
+            bottom: calc(var(--mobile-controls-height) + var(--mobile-chat-bottom-offset) + 100px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 180;
+            animation: chest-interaction-in 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        }
+        @keyframes chest-interaction-in {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+        .chest-interaction-content {
+            background: linear-gradient(180deg, rgba(34, 24, 11, 0.96), rgba(10, 7, 4, 0.98));
+            border: 2px solid rgba(205, 169, 104, 0.9);
+            border-radius: 8px;
+            padding: 16px 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            box-shadow:
+                inset 0 0 0 1px rgba(237, 213, 161, 0.32),
+                0 8px 32px rgba(0, 0, 0, 0.6),
+                0 0 24px rgba(205, 169, 104, 0.18);
+        }
+        .chest-interaction-title {
+            font-family: 'EB Garamond', Georgia, serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #f7efdb;
+            text-shadow: 0 0 12px rgba(212, 179, 114, 0.28);
+            text-align: center;
+        }
+        .chest-interaction-confirm {
+            background: linear-gradient(180deg, rgba(108, 77, 30, 0.9), rgba(45, 28, 12, 0.95));
+            border: 2px solid rgba(205, 169, 104, 0.8);
+            border-radius: 6px;
+            padding: 10px 32px;
+            font-family: 'Cinzel', 'Times New Roman', serif;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fef2dd;
+            cursor: pointer;
+            transition: all 180ms ease;
+            text-shadow: 0 0 8px rgba(212, 179, 114, 0.24);
+        }
+        .chest-interaction-confirm:hover {
+            background: linear-gradient(180deg, rgba(138, 105, 58, 0.95), rgba(65, 42, 22, 0.98));
+            border-color: rgba(237, 213, 161, 0.9);
+            box-shadow: 0 0 16px rgba(205, 169, 104, 0.32);
+        }
+        .chest-interaction-confirm:active {
+            transform: scale(0.96);
+        }
         #upgrade-draft-overlay {
             position: fixed;
             inset: 0;
@@ -3832,6 +3893,14 @@
     <div id="jump-button" class="mobile-action-button" data-custom-alphabet="button">
         <img src="/gui/jump_button.png" alt="Jump" style="width: 100%; height: 100%; object-fit: contain; border-radius: 50%;">
     </div>
+
+    <!-- Chest Interaction Button -->
+    <div id="chest-interaction-button" class="chest-interaction-button" style="display: none;">
+        <div class="chest-interaction-content">
+            <div class="chest-interaction-title" data-custom-alphabet="label">Open Chest?</div>
+            <button id="chest-interaction-confirm" class="chest-interaction-confirm" type="button" data-custom-alphabet="button">Open</button>
+        </div>
+    </div>
     <div id="settings-modal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
         <div class="settings-window menu-panel-frame">
             <div class="settings-header">
@@ -4613,14 +4682,13 @@
         // Simulate cloud network delay for local testing (set to true to test Hugging Face conditions)
         // When enabled, adds 100ms average delay with 50ms jitter to simulate cloud deployment
         const SIMULATE_CLOUD_DELAY = false;
-        // The server broadcasts authoritative state at 45Hz (45 TPS), so interpolation
+        // The server broadcasts authoritative state at 75Hz (75 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
-        // Instant response configuration: 0.5-1 tick buffer (11-22ms at 45 TPS) per BESTMODEL.md
-        // Faster tick rate allows lower delays while maintaining smoothness
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 14; // 0.63 ticks - instant response
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 17; // 0.77 ticks - instant response
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 22; // 1 tick - instant response
-        const MAX_INTERPOLATION_DELAY_MS = 60; // Reduced for faster adaptation
+        // At 75Hz, one tick is 13.33ms. Balanced delays for instant yet smooth response.
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 11; // 0.83 ticks - instant yet smooth
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 13; // 0.98 ticks - balanced
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 15; // 1.13 ticks - stable
+        const MAX_INTERPOLATION_DELAY_MS = 45; // Balanced for smooth adaptation
         const CLOCK_OFFSET_DEADZONE_MS = 2;
         const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
         const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
@@ -5868,14 +5936,6 @@
             // Process each new touch that started on the canvas
             for (let i = 0; i < newTouches.length; i += 1) {
                 const touch = newTouches[i];
-
-                // Check if player tapped on a chest first (mobile chest interaction)
-                const tappedChest = getChestAtScreenPosition(touch.clientX, touch.clientY);
-                if (tappedChest?.id) {
-                    socket.emit('chest_interact', { chestId: tappedChest.id });
-                    suppressNextCanvasTap = true;
-                    return;
-                }
 
                 isTouchDown = true;
                 currentTouchClientX = touch.clientX;
@@ -11143,6 +11203,7 @@
             }
         };
         const CHEST_PROMPT_RADIUS = 110;
+        let currentChestForInteraction = null;
         let localProgressionState = {
             level: 1,
             xp: 0,
@@ -11191,6 +11252,28 @@
         combatInventoryElement?.addEventListener('touchstart', () => {
             revealCombatInventory();
         }, { passive: true });
+
+        // Chest interaction button handler
+        const chestInteractionButton = document.getElementById('chest-interaction-button');
+        const chestInteractionConfirm = document.getElementById('chest-interaction-confirm');
+        if (chestInteractionConfirm) {
+            chestInteractionConfirm.addEventListener('click', () => {
+                if (currentChestForInteraction?.id) {
+                    socket.emit('chest_interact', { chestId: currentChestForInteraction.id });
+                    chestInteractionButton.style.display = 'none';
+                    currentChestForInteraction = null;
+                }
+            });
+            chestInteractionConfirm.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (currentChestForInteraction?.id) {
+                    socket.emit('chest_interact', { chestId: currentChestForInteraction.id });
+                    chestInteractionButton.style.display = 'none';
+                    currentChestForInteraction = null;
+                }
+            }, { passive: false });
+        }
+
         let achievementPanelOpen = false;
         let upgradeSelectionPending = false;
         let achievementCollectPendingId = '';
@@ -13363,7 +13446,7 @@
                 fireballAudio.playReleaseAt(x, y, listenerState.x, listenerState.y, audibleViewport, 0.78);
                 fireballAudio.startLoop(id, x, y, listenerState.x, listenerState.y, audibleViewport, 0.5);
             }
-            addDistanceShake(x, y, 80, 650, owner_sid === socket.id ? 0.28 : 0.18);
+            // No screen shake when firing fireballs - only when they hit
         });
 
         // Handle projectile destroyed event from server
@@ -15328,50 +15411,6 @@
             return nearestChest;
         }
 
-        /**
-         * Check if a screen tap is on a chest and player is close enough to interact.
-         * Input: screenX, screenY - touch coordinates in screen space
-         * Output: chest object if tapped on an interactable chest, null otherwise
-         */
-        function getChestAtScreenPosition(screenX, screenY, now = Date.now()) {
-            const localPlayer = getPlayerState(socket.id) || authoritativePlayerState[socket.id];
-            if (!localPlayer) {
-                return null;
-            }
-
-            // Convert screen coordinates to world coordinates
-            const worldX = screenX + cameraX;
-            const worldY = screenY + cameraY;
-
-            const tapRadius = 60; // Tapping tolerance in screen pixels
-
-            for (const chestId in chestState) {
-                const chest = chestState[chestId];
-                if (!isChestClientInteractable(chest, now)) {
-                    continue;
-                }
-
-                // Check player proximity first
-                const interactRadius = Math.max(24, Number(chest.interact_radius) || CHEST_PROMPT_RADIUS);
-                const playerDistance = Math.hypot((Number(chest.x) || 0) - localPlayer.x, (Number(chest.y) || 0) - localPlayer.y);
-                if (playerDistance > interactRadius + 10) {
-                    continue; // Too far to interact
-                }
-
-                // Convert chest world position to screen position
-                const chestScreenX = (Number(chest.x) || 0) - cameraX;
-                const chestScreenY = (Number(chest.y) || 0) - cameraY;
-
-                // Check if tap is within tolerance of chest screen position
-                const tapDistance = Math.hypot(chestScreenX - screenX, chestScreenY - screenY);
-                if (tapDistance <= tapRadius) {
-                    return chest;
-                }
-            }
-
-            return null;
-        }
-
         function isChestClientInteractable(chest, now = Date.now()) {
             if (!chest || chest.opened_at_ms || chest.despawn_started_at_ms) {
                 return false;
@@ -15736,6 +15775,25 @@
 
         function drawChestInteractionPrompt(now = Date.now(), visibleBounds = null) {
             const chest = getNearestChestForInteraction();
+            const availableAtMs = chest ? Number(chest.available_at_ms) || 0 : 0;
+            const canInteract = chest && availableAtMs <= now && !chest.opened_at_ms && !chest.despawn_started_at_ms && (!chest.opener_sid || chest.opener_sid === socket.id);
+
+            // Update chest interaction button visibility
+            if (canInteract && chestInteractionButton) {
+                if (currentChestForInteraction?.id !== chest.id) {
+                    currentChestForInteraction = chest;
+                    const rarityLabel = getChestVisualProfile(chest.rarity).label;
+                    const titleEl = chestInteractionButton.querySelector('.chest-interaction-title');
+                    if (titleEl) {
+                        titleEl.textContent = `Open ${rarityLabel} Chest?`;
+                    }
+                    chestInteractionButton.style.display = 'block';
+                }
+            } else if (chestInteractionButton) {
+                chestInteractionButton.style.display = 'none';
+                currentChestForInteraction = null;
+            }
+
             if (!chest) {
                 return;
             }
@@ -15753,7 +15811,6 @@
             const screenY = renderState.worldY - cameraY - frameMetrics.drawH * 0.95;
             const rarityLabel = getChestVisualProfile(chest.rarity).label;
             let promptText = `Press E - ${rarityLabel} chest`;
-            const availableAtMs = Number(chest.available_at_ms) || 0;
             if (availableAtMs > now) {
                 promptText = `${rarityLabel} chest stabilizing - ${((availableAtMs - now) / 1000).toFixed(1)}s`;
             } else if (chest.opener_sid && chest.opener_sid !== socket.id && !chest.opened_at_ms) {
