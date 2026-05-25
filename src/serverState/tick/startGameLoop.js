@@ -67,6 +67,18 @@ const ENEMY_FULL_SYNC_INTERVAL_MS = 1000;
 const ENEMY_STICKY_FIELDS = new Set(['x', 'y', 'type', 'level', 'max_health', 'health']);
 const ENEMY_STICKY_FIELD_EXTRA_SENDS = 3;
 
+// Cloud-optimized replication radii - reduced to decrease bandwidth overhead
+// Cloud deployments have higher latency, so sending fewer entities reduces jitter
+const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
+const CLOUD_ENEMY_SEND_RADIUS_X = isCloudDeployment ? 1200 : 1500;
+const CLOUD_ENEMY_SEND_RADIUS_Y = isCloudDeployment ? 800 : 1000;
+const CLOUD_FIREBALL_SEND_RADIUS_X = isCloudDeployment ? 1400 : 1750;
+const CLOUD_FIREBALL_SEND_RADIUS_Y = isCloudDeployment ? 1000 : 1200;
+const CLOUD_EXPLOSION_SEND_RADIUS_X = isCloudDeployment ? 1400 : 1800;
+const CLOUD_EXPLOSION_SEND_RADIUS_Y = isCloudDeployment ? 1000 : 1250;
+// Reduce enemy full sync interval on cloud to reduce bandwidth overhead
+const CLOUD_ENEMY_FULL_SYNC_INTERVAL_MS = isCloudDeployment ? 2000 : 1000;
+
 /**
  * Field name compression mapping: long keys -> short keys to reduce WebSocket payload size.
  *
@@ -461,11 +473,14 @@ function startGameLoop(input) {
   let lastTimeMs = Date.now();
   let lastBroadcastMs = Date.now();
   let lastFairyBroadcastMs = 0;
-  // 45Hz broadcast rate for faster mechanics (50% faster than baseline 30 TPS)
-  // 45 TPS provides faster mechanics with lower interpolation delay (11-22ms vs 16-33ms at 30 TPS)
-  // Client interpolation smooths rendering between server states
-  const broadcastIntervalMs = 1000 / 45;
-  const fairyBroadcastIntervalMs = 250;
+  
+  // Adaptive broadcast rate: 30Hz for cloud deployments (Hugging Face), 45Hz for localhost
+  // Cloud environments have higher network latency, so lower tick rate reduces jitter
+  // 30Hz = 33ms intervals (more stable on cloud), 45Hz = 22ms intervals (localhost)
+  const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
+  const broadcastIntervalMs = 1000 / (isCloudDeployment ? 30 : 45);
+  // Reduce fairy broadcast interval on cloud to reduce bandwidth overhead
+  const fairyBroadcastIntervalMs = isCloudDeployment ? 500 : 250;
   const frameDurationMs = FRAME_TIME * 1000;
 
   input.state.lastActivePlayerAtMs = Date.now();
@@ -478,6 +493,7 @@ function startGameLoop(input) {
     let dt = (nowMs - lastTimeMs) / 1000;
     lastTimeMs = nowMs;
 
+    // Cap delta time to prevent physics explosions on lag spikes
     dt = Math.min(dt, 0.1);
 
     const activePlayers = getActivePlayers(input.state);
@@ -515,9 +531,8 @@ function startGameLoop(input) {
       }
     }
 
-    // Broadcast state every tick (60Hz) for reduced latency on remote deployments
-    // Localhost benefits from low network latency, but Hugging Face has inherent delay
-    // Higher tick rate provides more frequent updates, reducing perceived input lag
+    // Broadcast state at adaptive rate based on deployment environment
+    // Cloud: 30Hz for stability, Localhost: 45Hz for responsiveness
     if (nowMs - lastBroadcastMs >= broadcastIntervalMs) {
       lastBroadcastMs = nowMs;
       const includeFairies = nowMs - lastFairyBroadcastMs >= fairyBroadcastIntervalMs;
@@ -535,7 +550,15 @@ function startGameLoop(input) {
 
     const tickWorkDurationMs = Date.now() - nowMs;
     const nextDelayMs = Math.max(0, frameDurationMs - tickWorkDurationMs);
-    gameLoopInterval = setTimeout(tick, nextDelayMs);
+    
+    // Use setImmediate for cloud deployments to avoid setTimeout precision issues
+    // setTimeout can have inconsistent timing on cloud environments due to CPU throttling
+    // setImmediate is more reliable for real-time loops on cloud
+    if (isCloudDeployment && nextDelayMs < 5) {
+      gameLoopInterval = setImmediate(tick);
+    } else {
+      gameLoopInterval = setTimeout(tick, nextDelayMs);
+    }
   };
 
   gameLoopInterval = setTimeout(tick, frameDurationMs);
@@ -553,6 +576,13 @@ function broadcastState(input) {
 
   input.state.stateSeq += 1;
   const ts = Date.now();
+  
+  // Cloud optimization: Skip broadcast if no active players to reduce unnecessary CPU
+  // This prevents the server from doing work when no one is actually playing
+  const isCloudDeployment = process.env.HUGGING_FACE === '1' || process.env.RENDER === '1';
+  if (isCloudDeployment && input.activePlayers && input.activePlayers.length === 0) {
+    return;
+  }
 
   /** @type {Record<string, any>} */
   const playersPayload = {};
@@ -641,26 +671,27 @@ function broadcastState(input) {
       continue;
     }
 
+    // Use cloud-optimized replication radii to reduce bandwidth overhead
     const enemyReplication = buildEnemyReplicationPayload({
       socket,
       ts,
       state: input.state,
       centerX: player.x,
       centerY: player.y,
-      radiusX: ENEMY_SEND_RADIUS_X,
-      radiusY: ENEMY_SEND_RADIUS_Y,
+      radiusX: CLOUD_ENEMY_SEND_RADIUS_X,
+      radiusY: CLOUD_ENEMY_SEND_RADIUS_Y,
     });
     const fireballsPayload = serializeFireballsForState(input.state, {
       centerX: player.x,
       centerY: player.y,
-      radiusX: FIREBALL_SEND_RADIUS_X,
-      radiusY: FIREBALL_SEND_RADIUS_Y,
+      radiusX: CLOUD_FIREBALL_SEND_RADIUS_X,
+      radiusY: CLOUD_FIREBALL_SEND_RADIUS_Y,
     });
     const explosionsPayload = serializeExplosionsForState(input.state, ts, {
       centerX: player.x,
       centerY: player.y,
-      radiusX: EXPLOSION_SEND_RADIUS_X,
-      radiusY: EXPLOSION_SEND_RADIUS_Y,
+      radiusX: CLOUD_EXPLOSION_SEND_RADIUS_X,
+      radiusY: CLOUD_EXPLOSION_SEND_RADIUS_Y,
     });
 
     // Phase 2: MessagePack binary encoding.
@@ -686,6 +717,10 @@ function broadcastState(input) {
       enemy_removed: enemyReplication.removed,
     });
     const encoded = msgpack.encode(playerPayload);
+    
+    // Cloud optimization: Use volatile.emit to drop stale packets and reduce queuing
+    // On cloud, network buffering can cause packet pile-up, leading to choppiness
+    // volatile.emit ensures only the most recent state is delivered, dropping old packets
     socket.volatile.emit('state', encoded);
     recordBandwidth(sid, encoded.length);
   }
@@ -808,9 +843,10 @@ function buildEnemyReplicationPayload(input) {
     radiusY: input.radiusY,
   });
   const replicationState = getEnemyReplicationState(input.socket);
+  // Use cloud-optimized full sync interval to reduce bandwidth overhead
   const sendFullSnapshot =
     replicationState.lastFullSyncAt <= 0 ||
-    input.ts - replicationState.lastFullSyncAt >= ENEMY_FULL_SYNC_INTERVAL_MS;
+    input.ts - replicationState.lastFullSyncAt >= CLOUD_ENEMY_FULL_SYNC_INTERVAL_MS;
   const nextSnapshotsById = new Map();
   const nextStickyFieldsById = new Map();
   const removed = [];

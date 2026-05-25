@@ -46,6 +46,8 @@ jobs:
           git lfs track "*.mp3"
           git lfs track "*.wav"
           git lfs track "*.ogg"
+          # Add HUGGING_FACE environment variable for cloud optimizations
+          echo "HUGGING_FACE=1" >> .env
           git add .
           git add .gitattributes
           git config --global user.email "action@github.com"
