@@ -11177,7 +11177,7 @@
         const smoothedPlayerPositions = {}; // Store smoothed positions for realtime smoothing
         const reusableActiveSoulIds = new Set();
         const reusableActiveFairyIds = new Set();
-        const MAX_SNAPSHOT_AGE_MS = 3000; // Extended history for maximum smooth interpolation
+        const MAX_SNAPSHOT_AGE_MS = 1000;
         // Base extrapolation limit for enemies. Reduced from 80ms to 50ms because:
         // - Enemies have less predictable movement than players (AI-driven, not input-driven)
         // - Fast enemies (striker lunges, slime jumps) frequently hit walls
@@ -14627,7 +14627,7 @@
                 return;
             }
 
-            serverClockOffsetMs = lerp(serverClockOffsetMs, measuredOffset, 0.05);
+            serverClockOffsetMs = lerp(serverClockOffsetMs, measuredOffset, 0.15);
         }
 
         function updateAdaptiveInterpolationDelay() {
@@ -14661,7 +14661,7 @@
 
             renderDelayMs = Math.max(
                 currentMinInterpolationDelayMs,
-                Math.min(MAX_INTERPOLATION_DELAY_MS, lerp(renderDelayMs, targetDelay, 0.08))
+                Math.min(MAX_INTERPOLATION_DELAY_MS, lerp(renderDelayMs, targetDelay, 0.2))
             );
         }
 

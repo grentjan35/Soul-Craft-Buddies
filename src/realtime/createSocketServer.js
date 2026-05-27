@@ -39,8 +39,8 @@ function createSocketServer(input) {
       serverNoContextTakeover: true,
       serverMaxWindowBits: 10,
     },
-    pingTimeout: 120000,
-    pingInterval: 1000,
+    pingTimeout: 60000,
+    pingInterval: 2500,
   });
 
   const monitoringEnabled = String(process.env.SOCKET_MONITORING || '').toLowerCase() === '1';
