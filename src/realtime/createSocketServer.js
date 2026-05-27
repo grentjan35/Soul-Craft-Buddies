@@ -28,19 +28,20 @@ function createSocketServer(input) {
     transports: ['websocket'],
     httpCompression: true,
     perMessageDeflate: {
-      threshold: 1024,
+      threshold: 512,
       zlibDeflateOptions: {
-        level: 1,
+        level: 3,
+        memLevel: 5,
       },
       zlibInflateOptions: {
-        chunkSize: 10 * 1024,
+        chunkSize: 8 * 1024,
       },
       clientNoContextTakeover: true,
       serverNoContextTakeover: true,
-      serverMaxWindowBits: 10,
+      serverMaxWindowBits: 11,
     },
-    pingTimeout: 60000,
-    pingInterval: 2500,
+    pingTimeout: 5000,
+    pingInterval: 1000,
   });
 
   const monitoringEnabled = String(process.env.SOCKET_MONITORING || '').toLowerCase() === '1';

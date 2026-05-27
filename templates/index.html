@@ -11185,6 +11185,12 @@
         const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
         const PLAYER_EXTRAPOLATION_LIMIT_MS = 80; // Client-side prediction to fake smoothness when choppy
         const PLAYER_SMOOTHING_FACTOR = 0.35; // Realtime smoothing: 0-1, higher = smoother but more laggy
+        
+        // Kalman filter for predictive jitter elimination
+        // Predicts position based on velocity/acceleration before jitter becomes visible
+        const KALMAN_PROCESS_NOISE = 0.5; // How much we trust our prediction (lower = more trust)
+        const KALMAN_MEASUREMENT_NOISE = 8.0; // How much we trust server data (higher = less trust)
+        const KALMAN_PREDICTION_STRENGTH = 0.72; // How much to rely on prediction vs measurement
         const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
         const PACKET_HISTORY_LIMIT = 20;
         const PLAYER_DISCONTINUITY_DISTANCE = 260;
@@ -11194,6 +11200,10 @@
         let scheduledServerStateApplyFrame = 0;
         let serverClockOffsetMs = 0;
         const recentlyRespawnedPlayers = new Set();
+        
+        // Kalman filter state for each player
+        // Stores: position (x, y), velocity (vx, vy), error covariance
+        const playerKalmanFilters = {};
         // Store rendered dimensions for each player (aspect-ratio-preserving)
         const playerRenderDimensions = {};
         const enemyRenderDimensions = {};
@@ -14579,6 +14589,67 @@
 
         function lerp(start, end, t) {
             return start + (end - start) * t;
+        }
+
+        // Kalman filter implementation for predictive jitter elimination
+        // Predicts position based on velocity/acceleration, then blends with measurements
+        // This detects and eliminates jitter BEFORE it becomes visible
+        function initKalmanFilter(sid, x, y, vx, vy) {
+            playerKalmanFilters[sid] = {
+                x: x,
+                y: y,
+                vx: vx || 0,
+                vy: vy || 0,
+                px: KALMAN_PROCESS_NOISE, // Position error covariance
+                pv: KALMAN_PROCESS_NOISE, // Velocity error covariance
+                lastUpdate: performance.now()
+            };
+        }
+
+        function predictKalman(filter, dtSeconds) {
+            // Predict next position based on velocity
+            filter.x += filter.vx * dtSeconds;
+            filter.y += filter.vy * dtSeconds;
+            
+            // Increase uncertainty (process noise)
+            filter.px += KALMAN_PROCESS_NOISE * dtSeconds;
+            filter.pv += KALMAN_PROCESS_NOISE * dtSeconds;
+            
+            filter.lastUpdate = performance.now();
+        }
+
+        function updateKalman(filter, measuredX, measuredY, measuredVx, measuredVy) {
+            // Calculate Kalman gain - how much to trust measurement vs prediction
+            // Higher measurement noise = lower gain (trust prediction more)
+            const kx = filter.px / (filter.px + KALMAN_MEASUREMENT_NOISE);
+            const kv = filter.pv / (filter.pv + KALMAN_MEASUREMENT_NOISE);
+            
+            // Update position with blend of prediction and measurement
+            filter.x = filter.x + kx * (measuredX - filter.x);
+            filter.y = filter.y + kx * (measuredY - filter.y);
+            
+            // Update velocity with blend of prediction and measurement
+            if (typeof measuredVx === 'number' && typeof measuredVy === 'number') {
+                filter.vx = filter.vx + kv * (measuredVx - filter.vx);
+                filter.vy = filter.vy + kv * (measuredVy - filter.vy);
+            }
+            
+            // Decrease uncertainty after update
+            filter.px = (1 - kx) * filter.px;
+            filter.pv = (1 - kv) * filter.pv;
+            
+            filter.lastUpdate = performance.now();
+        }
+
+        function getKalmanPrediction(sid, dtSeconds) {
+            const filter = playerKalmanFilters[sid];
+            if (!filter) return null;
+            
+            // Clone filter to avoid mutating state
+            const predicted = { ...filter };
+            predictKalman(predicted, dtSeconds);
+            
+            return { x: predicted.x, y: predicted.y, vx: predicted.vx, vy: predicted.vy };
         }
 
         function pruneArrayInPlace(array, shouldKeep) {
