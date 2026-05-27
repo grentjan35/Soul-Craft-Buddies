@@ -4765,15 +4765,15 @@
         // The server broadcasts authoritative state at 75Hz (75 TPS), so interpolation
         // needs at least one full packet interval of buffer to avoid hold-then-jump snaps.
         // At 75Hz, one tick is 13.33ms. Balanced delays for instant yet smooth response.
-        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 100; // 7.5 ticks - maximum smoothness for cloud deployment
-        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 120; // 9 ticks - maximum smoothness for mobile cloud
-        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 150; // 11.25 ticks - maximum stability
-        const MAX_INTERPOLATION_DELAY_MS = 300; // Maximum buffer for extreme network conditions
-        const CLOCK_OFFSET_DEADZONE_MS = 5;
-        const CLOCK_OFFSET_MAX_STEP_MS = 0.25;
-        const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 80;
-        const RENDER_DELAY_DEADZONE_MS = 3;
-        const RENDER_DELAY_MAX_STEP_MS = 0.15;
+        const DESKTOP_MIN_INTERPOLATION_DELAY_MS = 11; // 0.83 ticks - instant yet smooth
+        const MOBILE_MIN_INTERPOLATION_DELAY_MS = 13; // 0.98 ticks - balanced
+        const LOW_END_MIN_INTERPOLATION_DELAY_MS = 15; // 1.13 ticks - stable
+        const MAX_INTERPOLATION_DELAY_MS = 45; // Balanced for smooth adaptation
+        const CLOCK_OFFSET_DEADZONE_MS = 2;
+        const CLOCK_OFFSET_MAX_STEP_MS = 0.75;
+        const STABLE_INTERPOLATION_EXTRA_BUDGET_MS = 18;
+        const RENDER_DELAY_DEADZONE_MS = 1;
+        const RENDER_DELAY_MAX_STEP_MS = 0.35;
         let fpsCap = HIGH_END_FPS_CAP; // Default for high-end
         let isLowEnd = false;
         let frameCount = 0;
@@ -11048,7 +11048,7 @@
         let targetCameraX = 0;
         let targetCameraY = 0;
         let lastCameraFocusWorldPos = null;
-        const cameraLerpFactor = 0.25;
+        const cameraLerpFactor = 0.08;
 
         function clampCameraToMapBounds(nextCameraX, nextCameraY) {
             const visibleW = canvas.width / cameraZoom;
@@ -11182,13 +11182,13 @@
         // - Enemies have less predictable movement than players (AI-driven, not input-driven)
         // - Fast enemies (striker lunges, slime jumps) frequently hit walls
         // - Combined with velocity-aware scaling, this minimizes "snap back" visual artifacts
-        const ENEMY_EXTRAPOLATION_LIMIT_MS = 150; // Increased for maximum smoothness
-        const PLAYER_EXTRAPOLATION_LIMIT_MS = 300; // Maximum prediction for cloud deployment
-        const PLAYER_SMOOTHING_FACTOR = 0.75; // Maximum smoothing: 0-1, higher = smoother but more laggy
-        const FAIRY_EXTRAPOLATION_LIMIT_MS = 400; // Extended fairy extrapolation
-        const PACKET_HISTORY_LIMIT = 40; // More history for better interpolation
-        const PLAYER_DISCONTINUITY_DISTANCE = 400; // Increased to prevent snapping
-        const ENEMY_DISCONTINUITY_DISTANCE = 350;
+        const ENEMY_EXTRAPOLATION_LIMIT_MS = 50;
+        const PLAYER_EXTRAPOLATION_LIMIT_MS = 80; // Client-side prediction to fake smoothness when choppy
+        const PLAYER_SMOOTHING_FACTOR = 0.35; // Realtime smoothing: 0-1, higher = smoother but more laggy
+        const FAIRY_EXTRAPOLATION_LIMIT_MS = 280;
+        const PACKET_HISTORY_LIMIT = 20;
+        const PLAYER_DISCONTINUITY_DISTANCE = 260;
+        const ENEMY_DISCONTINUITY_DISTANCE = 220;
         const packetReceiveTimes = [];
         let pendingServerStatePackets = [];
         let scheduledServerStateApplyFrame = 0;
@@ -14657,7 +14657,7 @@
             }
             const variance = varianceSum / intervalCount;
             const jitterMs = Math.sqrt(variance);
-            const targetDelay = Math.max(currentMinInterpolationDelayMs, meanInterval) + jitterMs * 5.0;
+            const targetDelay = Math.max(currentMinInterpolationDelayMs, meanInterval) + jitterMs * 2.5;
 
             renderDelayMs = Math.max(
                 currentMinInterpolationDelayMs,
@@ -17661,8 +17661,8 @@
                 if (visibleBounds && !isWorldRectVisible(soul.x - 48, soul.y - 48, 96, 96, 48, visibleBounds)) {
                     continue;
                 }
-                soul.render_x = Number.isFinite(soul.render_x) ? lerp(soul.render_x, soul.x, 0.55) : soul.x;
-                soul.render_y = Number.isFinite(soul.render_y) ? lerp(soul.render_y, soul.y, 0.55) : soul.y;
+                soul.render_x = Number.isFinite(soul.render_x) ? lerp(soul.render_x, soul.x, 0.34) : soul.x;
+                soul.render_y = Number.isFinite(soul.render_y) ? lerp(soul.render_y, soul.y, 0.34) : soul.y;
 
                 const age = (now - (soul.spawn_time_ms || now)) / 1000;
                 const pulseSeed = Number.isFinite(soul.renderPulseSeed)
